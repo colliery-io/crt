@@ -280,7 +280,7 @@ impl ApplicationHandler for App {
                 .expect("Failed to find adapter");
 
             let (device, queue) = adapter
-                .request_device(&wgpu::DeviceDescriptor::default(), None)
+                .request_device(&wgpu::DeviceDescriptor::default())
                 .await
                 .expect("Failed to create device");
 

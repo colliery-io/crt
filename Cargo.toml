@@ -1,17 +1,48 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+# Core terminal (to be added in future tasks)
+# vte = "0.13"
+# alacritty_terminal = "0.24"
+
+# Rendering
+wgpu = "25"
+glyphon = "0.9"
+bytemuck = { version = "1.14", features = ["derive"] }
+
+# Windowing
+winit = "0.30"
+
+# Theme parsing (to be added in future tasks)
+# cssparser = "0.34"
+
+# Utilities
+pollster = "0.4"
+log = "0.4"
+env_logger = "0.11"
+naga = { version = "25", features = ["wgsl-out", "wgsl-in"] }
+
+# Root package for examples
 [package]
 name = "crt"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-wgpu = "25"
-winit = "0.30"
-pollster = "0.4"
-bytemuck = { version = "1.14", features = ["derive"] }
-env_logger = "0.11"
-log = "0.4"
-naga = { version = "25", features = ["wgsl-out", "wgsl-in"] }
-glyphon = "0.9"
+wgpu = { workspace = true }
+winit = { workspace = true }
+pollster = { workspace = true }
+bytemuck = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }
+naga = { workspace = true }
+glyphon = { workspace = true }
 
 [[example]]
 name = "prototype_a"

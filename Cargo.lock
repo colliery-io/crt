@@ -418,6 +418,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "crt-app"
+version = "0.1.0"
+dependencies = [
+ "crt-core",
+ "crt-renderer",
+ "crt-theme",
+ "env_logger",
+ "log",
+ "pollster",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
+name = "crt-core"
+version = "0.1.0"
+dependencies = [
+ "log",
+]
+
+[[package]]
+name = "crt-renderer"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "crt-core",
+ "crt-theme",
+ "glyphon",
+ "log",
+ "wgpu",
+]
+
+[[package]]
+name = "crt-theme"
+version = "0.1.0"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "crunchy"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

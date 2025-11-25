@@ -1,0 +1,13 @@
+[package]
+name = "crt-renderer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+crt-core = { path = "../crt-core" }
+crt-theme = { path = "../crt-theme" }
+
+wgpu.workspace = true
+glyphon.workspace = true
+bytemuck.workspace = true
+log.workspace = true
