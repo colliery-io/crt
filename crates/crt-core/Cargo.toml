@@ -7,3 +7,5 @@ edition = "2024"
 log.workspace = true
 vte.workspace = true
 alacritty_terminal.workspace = true
+portable-pty.workspace = true
+anyhow.workspace = true

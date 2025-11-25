@@ -3,7 +3,11 @@
 //! This crate provides:
 //! - Terminal grid state (via alacritty_terminal)
 //! - ANSI escape sequence parsing (via vte)
-//! - PTY process management (future)
+//! - PTY process management (via portable-pty)
+
+pub mod pty;
+
+pub use pty::Pty;
 
 use std::sync::{Arc, Mutex};
 
@@ -135,9 +139,73 @@ impl Terminal {
     }
 }
 
+/// A terminal connected to a PTY running a shell
+pub struct ShellTerminal {
+    terminal: Terminal,
+    pty: Pty,
+}
+
+impl ShellTerminal {
+    /// Create a new shell terminal with the given size
+    pub fn new(size: Size) -> anyhow::Result<Self> {
+        let terminal = Terminal::new(size);
+        let pty = Pty::spawn(None, size.columns as u16, size.lines as u16)?;
+
+        Ok(Self { terminal, pty })
+    }
+
+    /// Create a new shell terminal with a specific shell
+    pub fn with_shell(size: Size, shell: &str) -> anyhow::Result<Self> {
+        let terminal = Terminal::new(size);
+        let pty = Pty::spawn(Some(shell), size.columns as u16, size.lines as u16)?;
+
+        Ok(Self { terminal, pty })
+    }
+
+    /// Process any available PTY output through the terminal
+    /// Returns true if any output was processed
+    pub fn process_pty_output(&mut self) -> bool {
+        let output = self.pty.read_available();
+        if !output.is_empty() {
+            self.terminal.process_input(&output);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Send keyboard input to the PTY
+    pub fn send_input(&self, data: &[u8]) {
+        self.pty.write(data);
+    }
+
+    /// Resize both the terminal and PTY
+    pub fn resize(&mut self, size: Size) {
+        self.terminal.resize(size);
+        self.pty.resize(size.columns as u16, size.lines as u16);
+    }
+
+    /// Get access to the terminal for rendering
+    pub fn terminal(&self) -> &Terminal {
+        &self.terminal
+    }
+
+    /// Get mutable access to the terminal
+    pub fn terminal_mut(&mut self) -> &mut Terminal {
+        &mut self.terminal
+    }
+
+    /// Get access to the PTY
+    pub fn pty(&self) -> &Pty {
+        &self.pty
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::thread;
+    use std::time::Duration;
 
     #[test]
     fn create_terminal() {
@@ -151,5 +219,28 @@ mod tests {
         let mut term = Terminal::new(Size::new(80, 24));
         term.process_input(b"Hello, World!");
         // Text should be in the grid now
+    }
+
+    #[test]
+    fn shell_terminal_integration() {
+        let mut shell = ShellTerminal::new(Size::new(80, 24)).expect("Failed to create shell");
+
+        // Give the shell time to start and output prompt
+        thread::sleep(Duration::from_millis(100));
+
+        // Process initial output (shell prompt)
+        shell.process_pty_output();
+
+        // Send a command
+        shell.send_input(b"echo test123\n");
+
+        // Wait for output
+        thread::sleep(Duration::from_millis(100));
+
+        // Process the output
+        shell.process_pty_output();
+
+        // Terminal should now have content
+        // (We're not checking specific content as it depends on shell)
     }
 }
