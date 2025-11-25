@@ -42,6 +42,7 @@ struct App {
     window: Option<Arc<Window>>,
     gpu: Option<GpuState>,
     shell: Option<ShellTerminal>,
+    dirty: bool, // Track if we need to rebuild text buffer
 }
 
 impl App {
@@ -50,6 +51,7 @@ impl App {
             window: None,
             gpu: None,
             shell: None,
+            dirty: true,
         }
     }
 
@@ -59,15 +61,25 @@ impl App {
 
         // Build text content from terminal grid
         let content = shell.terminal().renderable_content();
+        let cursor = content.cursor;
+        let cursor_point = cursor.point;
         let mut text = String::new();
 
         // Iterate over visible lines
         for indexed in content.display_iter {
             let cell = &indexed.cell;
-            text.push(cell.c);
+            let point = indexed.point;
+
+            // Check if this is the cursor position
+            if point.line == cursor_point.line && point.column == cursor_point.column {
+                // Show block cursor
+                text.push('\u{2588}'); // Full block character
+            } else {
+                text.push(cell.c);
+            }
 
             // Add newline at end of each row
-            if indexed.point.column.0 == COLS - 1 {
+            if point.column.0 == COLS - 1 {
                 text.push('\n');
             }
         }
@@ -198,29 +210,45 @@ impl ApplicationHandler for App {
                         }
                         Key::Named(NamedKey::Enter) => {
                             shell.send_input(b"\r");
+                            self.dirty = true;
                         }
                         Key::Named(NamedKey::Backspace) => {
                             shell.send_input(b"\x7f");
+                            self.dirty = true;
                         }
                         Key::Named(NamedKey::Tab) => {
                             shell.send_input(b"\t");
+                            self.dirty = true;
                         }
                         Key::Named(NamedKey::ArrowUp) => {
                             shell.send_input(b"\x1b[A");
+                            self.dirty = true;
                         }
                         Key::Named(NamedKey::ArrowDown) => {
                             shell.send_input(b"\x1b[B");
+                            self.dirty = true;
                         }
                         Key::Named(NamedKey::ArrowRight) => {
                             shell.send_input(b"\x1b[C");
+                            self.dirty = true;
                         }
                         Key::Named(NamedKey::ArrowLeft) => {
                             shell.send_input(b"\x1b[D");
+                            self.dirty = true;
+                        }
+                        Key::Named(NamedKey::Space) => {
+                            shell.send_input(b" ");
+                            self.dirty = true;
                         }
                         Key::Character(c) => {
                             shell.send_input(c.as_bytes());
+                            self.dirty = true;
                         }
                         _ => {}
+                    }
+                    // Request redraw after input
+                    if let Some(window) = &self.window {
+                        window.request_redraw();
                     }
                 }
             }
@@ -242,11 +270,16 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 // Process PTY output
                 if let Some(shell) = &mut self.shell {
-                    shell.process_pty_output();
+                    if shell.process_pty_output() {
+                        self.dirty = true;
+                    }
                 }
 
-                // Update text buffer from terminal content
-                self.update_text_buffer();
+                // Only rebuild text buffer when dirty
+                if self.dirty {
+                    self.update_text_buffer();
+                    self.dirty = false;
+                }
 
                 if let Some(gpu) = &mut self.gpu {
                     // Update viewport
@@ -325,6 +358,13 @@ impl ApplicationHandler for App {
             _ => {}
         }
     }
+
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        // Request periodic redraws to poll PTY
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
 }
 
 fn main() {
@@ -334,7 +374,8 @@ fn main() {
     log::info!("Press ESC to exit");
 
     let event_loop = EventLoop::new().unwrap();
-    event_loop.set_control_flow(ControlFlow::Poll);
+    // Use WaitUntil for periodic PTY polling (16ms ~ 60fps)
+    event_loop.set_control_flow(ControlFlow::wait_duration(std::time::Duration::from_millis(16)));
 
     let mut app = App::new();
     event_loop.run_app(&mut app).unwrap();
