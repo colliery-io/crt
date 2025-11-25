@@ -66,19 +66,25 @@ fn perspective_grid(uv: vec2<f32>, time: f32) -> f32 {
     let grid_y = (uv.y - horizon) / (1.0 - horizon);
     let perspective = pow(grid_y, params.grid_perspective);
 
+    // Fade out near horizon to prevent moire/aliasing artifacts
+    let horizon_fade = smoothstep(0.0, 0.15, grid_y);
+
     let x_centered = uv.x - 0.5;
-    let x_perspective = x_centered / (perspective + 0.001);
+    let x_perspective = x_centered / (perspective + 0.01);
     let x_grid = abs(fract(x_perspective * params.grid_spacing + 0.5) - 0.5);
-    let x_line = 1.0 - smoothstep(0.0, params.grid_line_width / (perspective + 0.1), x_grid);
+    // Thicker lines near horizon to reduce aliasing
+    let line_width = params.grid_line_width / (perspective + 0.2);
+    let x_line = 1.0 - smoothstep(0.0, line_width, x_grid);
 
     let y_scroll = perspective * params.grid_spacing * 2.0 - time * 0.5;
     let y_grid = abs(fract(y_scroll + 0.5) - 0.5);
-    let y_line = 1.0 - smoothstep(0.0, params.grid_line_width * 2.0, y_grid);
+    let y_line = 1.0 - smoothstep(0.0, params.grid_line_width * 3.0, y_grid);
 
     let grid = max(x_line, y_line);
-    let fade = 1.0 - perspective * 0.5;
+    // Stronger fade near horizon, gentler fade toward camera
+    let distance_fade = 1.0 - perspective * 0.3;
 
-    return grid * fade * params.grid_intensity;
+    return grid * horizon_fade * distance_fade * params.grid_intensity;
 }
 
 // Gaussian blur for glow

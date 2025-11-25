@@ -272,9 +272,13 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::Resized(new_size) => {
+                if new_size.width == 0 || new_size.height == 0 {
+                    return;
+                }
+
                 if let Some(gpu) = &mut self.gpu {
-                    gpu.config.width = new_size.width.max(1);
-                    gpu.config.height = new_size.height.max(1);
+                    gpu.config.width = new_size.width;
+                    gpu.config.height = new_size.height;
                     gpu.surface.configure(&gpu.device, &gpu.config);
 
                     gpu.text_buffer.set_size(
@@ -290,8 +294,11 @@ impl ApplicationHandler for App {
                         new_size.height,
                         gpu.format,
                     );
+                }
+                self.dirty = true;
 
-                    self.dirty = true;
+                if let Some(window) = &self.window {
+                    window.request_redraw();
                 }
             }
 
