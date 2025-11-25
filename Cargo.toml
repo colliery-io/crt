@@ -45,6 +45,8 @@ env_logger = { workspace = true }
 log = { workspace = true }
 naga = { workspace = true }
 glyphon = { workspace = true }
+crt-core = { path = "crates/crt-core" }
+anyhow = { workspace = true }
 
 [[example]]
 name = "prototype_a"
@@ -65,3 +67,7 @@ path = "examples/synthwave.rs"
 [[example]]
 name = "font_rendering"
 path = "examples/font_rendering.rs"
+
+[[example]]
+name = "terminal"
+path = "examples/terminal.rs"

@@ -9,6 +9,17 @@ pub mod pty;
 
 pub use pty::Pty;
 
+// Re-export alacritty_terminal types needed for rendering
+pub use alacritty_terminal::term::{
+    cell::Cell,
+    cell::Flags as CellFlags,
+    color::{self, Colors},
+    RenderableCursor,
+    RenderableContent,
+};
+pub use alacritty_terminal::index::{Column, Line, Point};
+pub use alacritty_terminal::vte::ansi::Color as AnsiColor;
+
 use std::sync::{Arc, Mutex};
 
 use alacritty_terminal::event::{Event, EventListener};
