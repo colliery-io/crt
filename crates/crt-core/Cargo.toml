@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 log.workspace = true
+vte.workspace = true
+alacritty_terminal.workspace = true

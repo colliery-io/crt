@@ -7,9 +7,9 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
-# Core terminal (to be added in future tasks)
-# vte = "0.13"
-# alacritty_terminal = "0.24"
+# Core terminal
+vte = "0.15"
+alacritty_terminal = "0.25"
 
 # Rendering
 wgpu = "25"
