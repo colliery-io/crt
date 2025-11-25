@@ -23,3 +23,7 @@ path = "examples/prototype_b.rs"
 [[example]]
 name = "text_glow"
 path = "examples/text_glow.rs"
+
+[[example]]
+name = "synthwave"
+path = "examples/synthwave.rs"
