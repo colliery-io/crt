@@ -71,7 +71,9 @@ impl App {
         let Some(gpu) = &mut self.gpu else { return };
         let Some(shell) = &self.shell else { return };
 
-        let content = shell.terminal().renderable_content();
+        let term = shell.terminal();
+        let cols = term.columns();
+        let content = term.renderable_content();
         let cursor = content.cursor;
         let cursor_point = cursor.point;
         let mut text = String::new();
@@ -86,7 +88,7 @@ impl App {
                 text.push(cell.c);
             }
 
-            if point.column.0 == COLS - 1 {
+            if point.column.0 == cols - 1 {
                 text.push('\n');
             }
         }
@@ -274,6 +276,17 @@ impl ApplicationHandler for App {
             WindowEvent::Resized(new_size) => {
                 if new_size.width == 0 || new_size.height == 0 {
                     return;
+                }
+
+                // Calculate new terminal size based on window size
+                let new_cols = ((new_size.width as f32 - 40.0) / (FONT_SIZE * 0.6)) as usize;
+                let new_rows = ((new_size.height as f32 - 40.0) / LINE_HEIGHT) as usize;
+                let new_cols = new_cols.max(10);
+                let new_rows = new_rows.max(4);
+
+                // Resize shell terminal
+                if let Some(shell) = &mut self.shell {
+                    shell.resize(Size::new(new_cols, new_rows));
                 }
 
                 if let Some(gpu) = &mut self.gpu {
