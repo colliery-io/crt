@@ -453,6 +453,8 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "crt-core",
+ "crt-renderer",
+ "crt-theme",
  "env_logger",
  "glyphon",
  "log",
@@ -503,6 +505,7 @@ dependencies = [
 name = "crt-theme"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "log",
 ]
 

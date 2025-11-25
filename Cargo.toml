@@ -46,6 +46,8 @@ log = { workspace = true }
 naga = { workspace = true }
 glyphon = { workspace = true }
 crt-core = { path = "crates/crt-core" }
+crt-renderer = { path = "crates/crt-renderer" }
+crt-theme = { path = "crates/crt-theme" }
 anyhow = { workspace = true }
 
 [[example]]
@@ -71,3 +73,7 @@ path = "examples/font_rendering.rs"
 [[example]]
 name = "terminal"
 path = "examples/terminal.rs"
+
+[[example]]
+name = "terminal_effects"
+path = "examples/terminal_effects.rs"
