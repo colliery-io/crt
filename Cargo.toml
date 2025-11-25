@@ -19,3 +19,7 @@ path = "examples/prototype_a.rs"
 [[example]]
 name = "prototype_b"
 path = "examples/prototype_b.rs"
+
+[[example]]
+name = "text_glow"
+path = "examples/text_glow.rs"
