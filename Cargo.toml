@@ -4,13 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-wgpu = "24"
+wgpu = "25"
 winit = "0.30"
 pollster = "0.4"
 bytemuck = { version = "1.14", features = ["derive"] }
 env_logger = "0.11"
 log = "0.4"
-naga = { version = "24", features = ["wgsl-out", "wgsl-in"] }
+naga = { version = "25", features = ["wgsl-out", "wgsl-in"] }
+glyphon = "0.9"
 
 [[example]]
 name = "prototype_a"
@@ -27,3 +28,7 @@ path = "examples/text_glow.rs"
 [[example]]
 name = "synthwave"
 path = "examples/synthwave.rs"
+
+[[example]]
+name = "font_rendering"
+path = "examples/font_rendering.rs"
