@@ -5,10 +5,11 @@
 //! 2. Composite text with effects (gradient, grid, glow) to screen
 
 mod config;
+mod gpu;
+mod menu;
+mod window;
 
 use std::collections::HashMap;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hasher;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -16,6 +17,9 @@ use config::Config;
 use crt_core::{ShellTerminal, Size};
 use crt_renderer::{GlyphCache, GridRenderer, EffectPipeline, TextRenderTarget, TabBar, TabPosition};
 use crt_theme::Theme;
+use gpu::{SharedGpuState, WindowGpuState};
+use menu::MenuAction;
+use window::WindowState;
 
 use winit::{
     application::ApplicationHandler,
@@ -29,10 +33,10 @@ use winit::{
 use winit::platform::macos::WindowAttributesExtMacOS;
 
 #[cfg(target_os = "macos")]
-use muda::{
-    accelerator::{Accelerator, Code, Modifiers as AccelMods},
-    Menu, MenuEvent, MenuItem, MenuId, PredefinedMenuItem, Submenu,
-};
+use muda::{Menu, MenuEvent};
+
+#[cfg(target_os = "macos")]
+use menu::{MenuIds, build_menu_bar, menu_id_to_action};
 
 // Font scale bounds
 const MIN_FONT_SCALE: f32 = 0.5;
@@ -41,429 +45,6 @@ const FONT_SCALE_STEP: f32 = 0.1;
 
 // Embedded fonts - MesloLGS NF (Nerd Font with powerline glyphs)
 const FONT_DATA: &[u8] = include_bytes!("../assets/fonts/MesloLGS-NF-Regular.ttf");
-const FONT_DATA_BOLD: &[u8] = include_bytes!("../assets/fonts/MesloLGS-NF-Bold.ttf");
-const FONT_DATA_ITALIC: &[u8] = include_bytes!("../assets/fonts/MesloLGS-NF-Italic.ttf");
-const FONT_DATA_BOLD_ITALIC: &[u8] = include_bytes!("../assets/fonts/MesloLGS-NF-BoldItalic.ttf");
-
-/// Menu action identifiers
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MenuAction {
-    // Shell menu
-    NewTab,
-    NewWindow,
-    CloseTab,
-    CloseWindow,
-    Quit,
-    // Edit menu
-    Copy,
-    Paste,
-    SelectAll,
-    Find,
-    ClearScrollback,
-    // View menu
-    ToggleFullScreen,
-    IncreaseFontSize,
-    DecreaseFontSize,
-    ResetFontSize,
-    // Window menu
-    Minimize,
-    NextTab,
-    PrevTab,
-    SelectTab1,
-    SelectTab2,
-    SelectTab3,
-    SelectTab4,
-    SelectTab5,
-    SelectTab6,
-    SelectTab7,
-    SelectTab8,
-    SelectTab9,
-}
-
-/// Menu item IDs stored for event handling
-#[cfg(target_os = "macos")]
-struct MenuIds {
-    new_tab: MenuId,
-    new_window: MenuId,
-    close_tab: MenuId,
-    close_window: MenuId,
-    quit: MenuId,
-    copy: MenuId,
-    paste: MenuId,
-    select_all: MenuId,
-    find: MenuId,
-    clear_scrollback: MenuId,
-    toggle_fullscreen: MenuId,
-    increase_font: MenuId,
-    decrease_font: MenuId,
-    reset_font: MenuId,
-    minimize: MenuId,
-    next_tab: MenuId,
-    prev_tab: MenuId,
-    select_tab: [MenuId; 9],
-}
-
-#[cfg(target_os = "macos")]
-fn build_menu_bar() -> (Menu, MenuIds) {
-    let menu = Menu::new();
-
-    // Shell menu
-    let new_tab = MenuItem::with_id(
-        "new_tab",
-        "New Tab",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::KeyT)),
-    );
-    let new_window = MenuItem::with_id(
-        "new_window",
-        "New Window",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::KeyN)),
-    );
-    let close_tab = MenuItem::with_id(
-        "close_tab",
-        "Close Tab",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::KeyW)),
-    );
-    let close_window = MenuItem::with_id(
-        "close_window",
-        "Close Window",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER | AccelMods::SHIFT), Code::KeyW)),
-    );
-    let quit = MenuItem::with_id(
-        "quit",
-        "Quit CRT",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::KeyQ)),
-    );
-
-    let shell_menu = Submenu::with_items(
-        "Shell",
-        true,
-        &[
-            &new_tab,
-            &new_window,
-            &PredefinedMenuItem::separator(),
-            &close_tab,
-            &close_window,
-            &PredefinedMenuItem::separator(),
-            &quit,
-        ],
-    ).unwrap();
-
-    // Edit menu
-    let copy = MenuItem::with_id(
-        "copy",
-        "Copy",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::KeyC)),
-    );
-    let paste = MenuItem::with_id(
-        "paste",
-        "Paste",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::KeyV)),
-    );
-    let select_all = MenuItem::with_id(
-        "select_all",
-        "Select All",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::KeyA)),
-    );
-    let find = MenuItem::with_id(
-        "find",
-        "Find...",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::KeyF)),
-    );
-    let clear_scrollback = MenuItem::with_id(
-        "clear_scrollback",
-        "Clear Scrollback",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::KeyK)),
-    );
-
-    let edit_menu = Submenu::with_items(
-        "Edit",
-        true,
-        &[
-            &copy,
-            &paste,
-            &select_all,
-            &PredefinedMenuItem::separator(),
-            &find,
-            &PredefinedMenuItem::separator(),
-            &clear_scrollback,
-        ],
-    ).unwrap();
-
-    // View menu
-    let toggle_fullscreen = MenuItem::with_id(
-        "toggle_fullscreen",
-        "Enter Full Screen",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER | AccelMods::CONTROL), Code::KeyF)),
-    );
-    let increase_font = MenuItem::with_id(
-        "increase_font",
-        "Increase Font Size",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Equal)),
-    );
-    let decrease_font = MenuItem::with_id(
-        "decrease_font",
-        "Decrease Font Size",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Minus)),
-    );
-    let reset_font = MenuItem::with_id(
-        "reset_font",
-        "Reset Font Size",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit0)),
-    );
-
-    let view_menu = Submenu::with_items(
-        "View",
-        true,
-        &[
-            &toggle_fullscreen,
-            &PredefinedMenuItem::separator(),
-            &increase_font,
-            &decrease_font,
-            &reset_font,
-        ],
-    ).unwrap();
-
-    // Window menu
-    let minimize = MenuItem::with_id(
-        "minimize",
-        "Minimize",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::KeyM)),
-    );
-    let next_tab = MenuItem::with_id(
-        "next_tab",
-        "Show Next Tab",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER | AccelMods::SHIFT), Code::BracketRight)),
-    );
-    let prev_tab = MenuItem::with_id(
-        "prev_tab",
-        "Show Previous Tab",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER | AccelMods::SHIFT), Code::BracketLeft)),
-    );
-
-    // Tab selection items
-    let select_tab_1 = MenuItem::with_id(
-        "select_tab_1",
-        "Select Tab 1",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit1)),
-    );
-    let select_tab_2 = MenuItem::with_id(
-        "select_tab_2",
-        "Select Tab 2",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit2)),
-    );
-    let select_tab_3 = MenuItem::with_id(
-        "select_tab_3",
-        "Select Tab 3",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit3)),
-    );
-    let select_tab_4 = MenuItem::with_id(
-        "select_tab_4",
-        "Select Tab 4",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit4)),
-    );
-    let select_tab_5 = MenuItem::with_id(
-        "select_tab_5",
-        "Select Tab 5",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit5)),
-    );
-    let select_tab_6 = MenuItem::with_id(
-        "select_tab_6",
-        "Select Tab 6",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit6)),
-    );
-    let select_tab_7 = MenuItem::with_id(
-        "select_tab_7",
-        "Select Tab 7",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit7)),
-    );
-    let select_tab_8 = MenuItem::with_id(
-        "select_tab_8",
-        "Select Tab 8",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit8)),
-    );
-    let select_tab_9 = MenuItem::with_id(
-        "select_tab_9",
-        "Select Tab 9",
-        true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit9)),
-    );
-
-    let window_menu = Submenu::with_items(
-        "Window",
-        true,
-        &[
-            &minimize,
-            &PredefinedMenuItem::separator(),
-            &next_tab,
-            &prev_tab,
-            &PredefinedMenuItem::separator(),
-            &select_tab_1,
-            &select_tab_2,
-            &select_tab_3,
-            &select_tab_4,
-            &select_tab_5,
-            &select_tab_6,
-            &select_tab_7,
-            &select_tab_8,
-            &select_tab_9,
-        ],
-    ).unwrap();
-
-    // Build the menu bar
-    menu.append(&shell_menu).unwrap();
-    menu.append(&edit_menu).unwrap();
-    menu.append(&view_menu).unwrap();
-    menu.append(&window_menu).unwrap();
-
-    let ids = MenuIds {
-        new_tab: new_tab.id().clone(),
-        new_window: new_window.id().clone(),
-        close_tab: close_tab.id().clone(),
-        close_window: close_window.id().clone(),
-        quit: quit.id().clone(),
-        copy: copy.id().clone(),
-        paste: paste.id().clone(),
-        select_all: select_all.id().clone(),
-        find: find.id().clone(),
-        clear_scrollback: clear_scrollback.id().clone(),
-        toggle_fullscreen: toggle_fullscreen.id().clone(),
-        increase_font: increase_font.id().clone(),
-        decrease_font: decrease_font.id().clone(),
-        reset_font: reset_font.id().clone(),
-        minimize: minimize.id().clone(),
-        next_tab: next_tab.id().clone(),
-        prev_tab: prev_tab.id().clone(),
-        select_tab: [
-            select_tab_1.id().clone(),
-            select_tab_2.id().clone(),
-            select_tab_3.id().clone(),
-            select_tab_4.id().clone(),
-            select_tab_5.id().clone(),
-            select_tab_6.id().clone(),
-            select_tab_7.id().clone(),
-            select_tab_8.id().clone(),
-            select_tab_9.id().clone(),
-        ],
-    };
-
-    (menu, ids)
-}
-
-#[cfg(target_os = "macos")]
-fn menu_id_to_action(id: &MenuId, ids: &MenuIds) -> Option<MenuAction> {
-    if *id == ids.new_tab { return Some(MenuAction::NewTab); }
-    if *id == ids.new_window { return Some(MenuAction::NewWindow); }
-    if *id == ids.close_tab { return Some(MenuAction::CloseTab); }
-    if *id == ids.close_window { return Some(MenuAction::CloseWindow); }
-    if *id == ids.quit { return Some(MenuAction::Quit); }
-    if *id == ids.copy { return Some(MenuAction::Copy); }
-    if *id == ids.paste { return Some(MenuAction::Paste); }
-    if *id == ids.select_all { return Some(MenuAction::SelectAll); }
-    if *id == ids.find { return Some(MenuAction::Find); }
-    if *id == ids.clear_scrollback { return Some(MenuAction::ClearScrollback); }
-    if *id == ids.toggle_fullscreen { return Some(MenuAction::ToggleFullScreen); }
-    if *id == ids.increase_font { return Some(MenuAction::IncreaseFontSize); }
-    if *id == ids.decrease_font { return Some(MenuAction::DecreaseFontSize); }
-    if *id == ids.reset_font { return Some(MenuAction::ResetFontSize); }
-    if *id == ids.minimize { return Some(MenuAction::Minimize); }
-    if *id == ids.next_tab { return Some(MenuAction::NextTab); }
-    if *id == ids.prev_tab { return Some(MenuAction::PrevTab); }
-    if *id == ids.select_tab[0] { return Some(MenuAction::SelectTab1); }
-    if *id == ids.select_tab[1] { return Some(MenuAction::SelectTab2); }
-    if *id == ids.select_tab[2] { return Some(MenuAction::SelectTab3); }
-    if *id == ids.select_tab[3] { return Some(MenuAction::SelectTab4); }
-    if *id == ids.select_tab[4] { return Some(MenuAction::SelectTab5); }
-    if *id == ids.select_tab[5] { return Some(MenuAction::SelectTab6); }
-    if *id == ids.select_tab[6] { return Some(MenuAction::SelectTab7); }
-    if *id == ids.select_tab[7] { return Some(MenuAction::SelectTab8); }
-    if *id == ids.select_tab[8] { return Some(MenuAction::SelectTab9); }
-    None
-}
-
-/// Shared GPU resources across all windows
-struct SharedGpuState {
-    instance: wgpu::Instance,
-    adapter: wgpu::Adapter,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-}
-
-/// Per-window GPU state (surface tied to specific window)
-struct WindowGpuState {
-    surface: wgpu::Surface<'static>,
-    config: wgpu::SurfaceConfiguration,
-
-    // Text rendering with swash glyph cache (scales with zoom)
-    glyph_cache: GlyphCache,
-    grid_renderer: GridRenderer,
-
-    // Fixed-size glyph cache for tab titles (doesn't scale with zoom)
-    tab_glyph_cache: GlyphCache,
-    // Separate renderer for tab titles to avoid buffer conflicts
-    // (terminal and tab titles render in different passes but the GPU
-    // commands are batched, so they need separate instance buffers)
-    tab_title_renderer: GridRenderer,
-
-    // Offscreen text target
-    text_target: TextRenderTarget,
-
-    // Effect pipeline
-    effect_pipeline: EffectPipeline,
-    composite_bind_group: Option<wgpu::BindGroup>,
-
-    // Tab bar
-    tab_bar: TabBar,
-}
-
-/// Per-window state containing window handle, GPU state, shells, and interaction state
-struct WindowState {
-    window: Arc<Window>,
-    gpu: WindowGpuState,
-    // Map of tab_id -> shell (each window has its own tabs)
-    shells: HashMap<u64, ShellTerminal>,
-    // Content hash to skip reshaping when unchanged (per tab)
-    content_hashes: HashMap<u64, u64>,
-    // Window-specific sizing
-    cols: usize,
-    rows: usize,
-    scale_factor: f32,
-    // User font scale multiplier (1.0 = default)
-    font_scale: f32,
-    // Rendering state
-    dirty: bool,
-    frame_count: u32,
-    // Interaction state
-    cursor_position: (f32, f32),
-    last_click_time: Option<Instant>,
-    last_click_tab: Option<u64>,
-    // Tab ID counter for this window
-    next_tab_id: u64,
-}
 
 struct App {
     // Multiple windows keyed by winit WindowId
@@ -507,34 +88,7 @@ impl App {
         if self.shared_gpu.is_some() {
             return;
         }
-
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-
-        // Request adapter without a surface first (we'll create surfaces per-window)
-        let adapter = pollster::block_on(async {
-            instance
-                .request_adapter(&wgpu::RequestAdapterOptions {
-                    power_preference: wgpu::PowerPreference::default(),
-                    compatible_surface: None,
-                    force_fallback_adapter: false,
-                })
-                .await
-                .expect("Failed to find suitable GPU adapter")
-        });
-
-        let (device, queue) = pollster::block_on(async {
-            adapter
-                .request_device(&wgpu::DeviceDescriptor::default())
-                .await
-                .expect("Failed to create device")
-        });
-
-        self.shared_gpu = Some(SharedGpuState {
-            instance,
-            adapter,
-            device,
-            queue,
-        });
+        self.shared_gpu = Some(SharedGpuState::new());
     }
 
     /// Create a new window and add it to the windows map
@@ -694,7 +248,6 @@ impl App {
             cursor_position: (0.0, 0.0),
             last_click_time: None,
             last_click_tab: None,
-            next_tab_id: 1, // Tab 0 already created
         };
 
         self.windows.insert(window_id, window_state);
@@ -729,14 +282,7 @@ impl App {
                     let tab_num = state.gpu.tab_bar.tab_count() + 1;
                     let tab_id = state.gpu.tab_bar.add_tab(format!("Terminal {}", tab_num));
                     state.gpu.tab_bar.select_tab_index(state.gpu.tab_bar.tab_count() - 1);
-                    // Create shell for new tab
-                    match ShellTerminal::new(Size::new(state.cols, state.rows)) {
-                        Ok(shell) => {
-                            state.shells.insert(tab_id, shell);
-                            state.content_hashes.insert(tab_id, 0);
-                        }
-                        Err(e) => log::error!("Failed to spawn shell: {}", e),
-                    }
+                    state.create_shell_for_tab(tab_id);
                     state.dirty = true;
                     state.window.request_redraw();
                 }
@@ -807,7 +353,6 @@ impl App {
                     let new_scale = (state.font_scale + FONT_SCALE_STEP).min(MAX_FONT_SCALE);
                     if (new_scale - state.font_scale).abs() > 0.001 {
                         state.font_scale = new_scale;
-                        // TODO: Rebuild glyph cache for this window
                         state.dirty = true;
                         state.window.request_redraw();
                     }
@@ -818,7 +363,6 @@ impl App {
                     let new_scale = (state.font_scale - FONT_SCALE_STEP).max(MIN_FONT_SCALE);
                     if (new_scale - state.font_scale).abs() > 0.001 {
                         state.font_scale = new_scale;
-                        // TODO: Rebuild glyph cache for this window
                         state.dirty = true;
                         state.window.request_redraw();
                     }
@@ -828,7 +372,6 @@ impl App {
                 if let Some(state) = self.focused_window_mut() {
                     if (state.font_scale - 1.0).abs() > 0.001 {
                         state.font_scale = 1.0;
-                        // TODO: Rebuild glyph cache for this window
                         state.dirty = true;
                         state.window.request_redraw();
                     }
@@ -842,21 +385,14 @@ impl App {
             MenuAction::NextTab => {
                 if let Some(state) = self.focused_window_mut() {
                     state.gpu.tab_bar.next_tab();
-                    // Force redraw of active tab
-                    if let Some(tab_id) = state.gpu.tab_bar.active_tab_id() {
-                        state.content_hashes.insert(tab_id, 0);
-                    }
-                    state.dirty = true;
+                    state.force_active_tab_redraw();
                     state.window.request_redraw();
                 }
             }
             MenuAction::PrevTab => {
                 if let Some(state) = self.focused_window_mut() {
                     state.gpu.tab_bar.prev_tab();
-                    if let Some(tab_id) = state.gpu.tab_bar.active_tab_id() {
-                        state.content_hashes.insert(tab_id, 0);
-                    }
-                    state.dirty = true;
+                    state.force_active_tab_redraw();
                     state.window.request_redraw();
                 }
             }
@@ -877,124 +413,8 @@ impl App {
     fn select_tab_by_index(&mut self, index: usize) {
         if let Some(state) = self.focused_window_mut() {
             state.gpu.tab_bar.select_tab_index(index);
-            if let Some(tab_id) = state.gpu.tab_bar.active_tab_id() {
-                state.content_hashes.insert(tab_id, 0);
-            }
-            state.dirty = true;
+            state.force_active_tab_redraw();
             state.window.request_redraw();
-        }
-    }
-}
-
-/// WindowState helper methods for per-window operations
-impl WindowState {
-    /// Update text buffer for this window's active shell
-    fn update_text_buffer(&mut self, shared_gpu: &SharedGpuState) -> bool {
-        let active_tab_id = self.gpu.tab_bar.active_tab_id();
-        let shell = active_tab_id.and_then(|id| self.shells.get(&id));
-
-        if shell.is_none() {
-            return false;
-        }
-        let shell = shell.unwrap();
-        let terminal = shell.terminal();
-
-        // Compute content hash to avoid re-rendering unchanged content
-        let mut hasher = DefaultHasher::new();
-        let content = terminal.renderable_content();
-        hasher.write_i32(content.cursor.point.line.0);
-        hasher.write_usize(content.cursor.point.column.0);
-        for cell in content.display_iter {
-            hasher.write_u32(cell.c as u32);
-        }
-        let content_hash = hasher.finish();
-
-        // Check if content changed
-        let tab_id = active_tab_id.unwrap();
-        let prev_hash = self.content_hashes.get(&tab_id).copied().unwrap_or(0);
-        if content_hash == prev_hash && prev_hash != 0 {
-            return false; // No changes
-        }
-        self.content_hashes.insert(tab_id, content_hash);
-
-        // Get content offset (excluding tab bar)
-        let (offset_x, offset_y) = self.gpu.tab_bar.content_offset();
-
-        // Re-read content since we consumed it above
-        let content = terminal.renderable_content();
-        self.gpu.grid_renderer.clear();
-
-        let cell_width = self.gpu.glyph_cache.cell_width();
-        let line_height = self.gpu.glyph_cache.line_height();
-        let padding = 10.0 * self.scale_factor;
-
-        // Cursor info
-        let cursor = content.cursor;
-        let cursor_point = cursor.point;
-
-        // Render cells
-        for cell in content.display_iter {
-            let col = cell.point.column.0;
-            let row = cell.point.line.0;
-
-            let is_cursor = cell.point.column == cursor_point.column
-                && cell.point.line == cursor_point.line;
-
-            let x = offset_x + padding + (col as f32 * cell_width);
-            let y = offset_y + padding + (row as f32 * line_height);
-
-            let c = cell.c;
-            if c == ' ' && !is_cursor {
-                continue;
-            }
-
-            // Default text color (could be extended to support ANSI colors)
-            let color = [0.9, 0.9, 0.9, 1.0];
-
-            if let Some(glyph) = self.gpu.glyph_cache.position_char(c, x, y) {
-                self.gpu.grid_renderer.push_glyphs(&[glyph], color);
-            }
-
-            // Render cursor as a highlighted space
-            if is_cursor {
-                let cursor_color = [0.8, 0.8, 0.2, 0.8];
-                // Use a block character for cursor visualization
-                if let Some(glyph) = self.gpu.glyph_cache.position_char('\u{2588}', x, y) {
-                    self.gpu.grid_renderer.push_glyphs(&[glyph], cursor_color);
-                }
-            }
-        }
-
-        self.gpu.glyph_cache.flush(&shared_gpu.queue);
-        true
-    }
-
-    /// Create a shell for a new tab
-    fn create_shell_for_tab(&mut self, tab_id: u64) {
-        match ShellTerminal::new(Size::new(self.cols, self.rows)) {
-            Ok(shell) => {
-                log::info!("Shell spawned for tab {}", tab_id);
-                self.shells.insert(tab_id, shell);
-                self.content_hashes.insert(tab_id, 0);
-            }
-            Err(e) => {
-                log::error!("Failed to spawn shell for tab {}: {}", tab_id, e);
-            }
-        }
-    }
-
-    /// Remove shell for a closed tab
-    fn remove_shell_for_tab(&mut self, tab_id: u64) {
-        self.shells.remove(&tab_id);
-        self.content_hashes.remove(&tab_id);
-        log::info!("Removed shell for tab {}", tab_id);
-    }
-
-    /// Force redraw of active tab by clearing its content hash
-    fn force_active_tab_redraw(&mut self) {
-        if let Some(tab_id) = self.gpu.tab_bar.active_tab_id() {
-            self.content_hashes.insert(tab_id, 0);
-            self.dirty = true;
         }
     }
 }
@@ -1030,14 +450,12 @@ impl ApplicationHandler for App {
 
         match event {
             WindowEvent::CloseRequested => {
-                // Close this specific window
                 log::info!("Window {:?} close requested", id);
                 self.windows.remove(&id);
                 if self.focused_window == Some(id) {
                     self.focused_window = self.windows.keys().next().copied();
                 }
                 log::info!("Remaining windows: {}", self.windows.len());
-                // Note: Don't exit app when all windows close (macOS behavior)
             }
 
             WindowEvent::Focused(focused) => {
@@ -1153,7 +571,6 @@ impl ApplicationHandler for App {
                             return;
                         }
                         Key::Character(c) if c.as_str() == "n" => {
-                            // New window - set flag to create in about_to_wait
                             log::info!("New window requested via Cmd+N");
                             self.pending_new_window = true;
                             return;
