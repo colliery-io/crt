@@ -4,6 +4,16 @@
 
 use crate::gpu::SharedGpuState;
 use crate::window::WindowState;
+use std::sync::OnceLock;
+
+/// Cached blit pipeline for compositing vello textures
+static BLIT_PIPELINE: OnceLock<BlitPipeline> = OnceLock::new();
+
+struct BlitPipeline {
+    pipeline: wgpu::RenderPipeline,
+    sampler: wgpu::Sampler,
+    bind_group_layout: wgpu::BindGroupLayout,
+}
 
 /// Render a single frame for a window
 pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
@@ -123,25 +133,44 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
 
     // Pass 4: Render tab bar
     {
-        state.gpu.tab_bar.prepare(&shared.queue);
+        state.gpu.tab_bar.prepare(&shared.device, &shared.queue);
 
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Tab Bar Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &frame_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
+        // Render vello scene to texture (if using vello)
+        if let Err(e) = state.gpu.tab_bar.render_vello(&shared.device, &shared.queue) {
+            log::warn!("Vello tab bar render error: {:?}", e);
+        }
 
-        state.gpu.tab_bar.render(&mut pass);
+        // Render legacy tab bar (if not using vello) or composite vello texture
+        if !state.gpu.tab_bar.is_using_vello() {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Tab Bar Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &frame_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            state.gpu.tab_bar.render(&mut pass);
+        } else if let Some(vello_view) = state.gpu.tab_bar.vello_texture_view() {
+            // Composite vello texture onto frame
+            composite_vello_texture(
+                &shared.device,
+                &mut encoder,
+                &frame_view,
+                vello_view,
+                state.gpu.config.width,
+                state.gpu.config.height,
+                state.gpu.tab_bar.height() * state.scale_factor,
+            );
+        }
     }
 
     // Pass 5: Render tab title text with glow
@@ -243,4 +272,171 @@ fn render_tab_titles(
     });
 
     state.gpu.tab_title_renderer.render(&shared.queue, &mut pass);
+}
+
+/// Simple blit shader for compositing vello textures
+const BLIT_SHADER: &str = r#"
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+    // Full-screen triangle
+    var positions = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>(3.0, -1.0),
+        vec2<f32>(-1.0, 3.0),
+    );
+    var uvs = array<vec2<f32>, 3>(
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(2.0, 1.0),
+        vec2<f32>(0.0, -1.0),
+    );
+
+    var out: VertexOutput;
+    out.position = vec4<f32>(positions[vertex_index], 0.0, 1.0);
+    out.uv = uvs[vertex_index];
+    return out;
+}
+
+@group(0) @binding(0) var t_source: texture_2d<f32>;
+@group(0) @binding(1) var s_source: sampler;
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let color = textureSample(t_source, s_source, in.uv);
+    // Pre-multiplied alpha blending will be handled by the blend state
+    return color;
+}
+"#;
+
+fn get_or_init_blit_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> &'static BlitPipeline {
+    BLIT_PIPELINE.get_or_init(|| {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Blit Shader"),
+            source: wgpu::ShaderSource::Wgsl(BLIT_SHADER.into()),
+        });
+
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Blit Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Blit Pipeline Layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Blit Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Blit Sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+
+        BlitPipeline {
+            pipeline,
+            sampler,
+            bind_group_layout,
+        }
+    })
+}
+
+/// Composite vello-rendered texture onto the framebuffer
+fn composite_vello_texture(
+    device: &wgpu::Device,
+    encoder: &mut wgpu::CommandEncoder,
+    frame_view: &wgpu::TextureView,
+    vello_view: &wgpu::TextureView,
+    _width: u32,
+    _height: u32,
+    _tab_bar_height: f32,
+) {
+    // Get or create the blit pipeline
+    // Note: We use Rgba8Unorm as source format, destination format from surface
+    let blit = get_or_init_blit_pipeline(device, wgpu::TextureFormat::Bgra8UnormSrgb);
+
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Vello Blit Bind Group"),
+        layout: &blit.bind_group_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(vello_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(&blit.sampler),
+            },
+        ],
+    });
+
+    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("Vello Composite Pass"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: frame_view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+            depth_slice: None,
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    });
+
+    pass.set_pipeline(&blit.pipeline);
+    pass.set_bind_group(0, &bind_group, &[]);
+    pass.draw(0..3, 0..1);
 }
