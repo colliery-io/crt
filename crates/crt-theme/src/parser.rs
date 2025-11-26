@@ -574,55 +574,9 @@ fn apply_terminal_properties(
         theme.text_shadow = Some(parse_text_shadow(shadow)?);
     }
 
-    // Custom properties for ANSI colors
-    if let Some(c) = custom.get("--color-black") {
-        theme.palette.black = parse_color(c)?;
-    }
-    if let Some(c) = custom.get("--color-red") {
-        theme.palette.red = parse_color(c)?;
-    }
-    if let Some(c) = custom.get("--color-green") {
-        theme.palette.green = parse_color(c)?;
-    }
-    if let Some(c) = custom.get("--color-yellow") {
-        theme.palette.yellow = parse_color(c)?;
-    }
-    if let Some(c) = custom.get("--color-blue") {
-        theme.palette.blue = parse_color(c)?;
-    }
-    if let Some(c) = custom.get("--color-magenta") {
-        theme.palette.magenta = parse_color(c)?;
-    }
-    if let Some(c) = custom.get("--color-cyan") {
-        theme.palette.cyan = parse_color(c)?;
-    }
-    if let Some(c) = custom.get("--color-white") {
-        theme.palette.white = parse_color(c)?;
-    }
-    if let Some(c) = custom.get("--color-bright-black") {
-        theme.palette.bright_black = parse_color(c)?;
-    }
-    if let Some(c) = custom.get("--color-bright-red") {
-        theme.palette.bright_red = parse_color(c)?;
-    }
-    if let Some(c) = custom.get("--color-bright-green") {
-        theme.palette.bright_green = parse_color(c)?;
-    }
-    if let Some(c) = custom.get("--color-bright-yellow") {
-        theme.palette.bright_yellow = parse_color(c)?;
-    }
-    if let Some(c) = custom.get("--color-bright-blue") {
-        theme.palette.bright_blue = parse_color(c)?;
-    }
-    if let Some(c) = custom.get("--color-bright-magenta") {
-        theme.palette.bright_magenta = parse_color(c)?;
-    }
-    if let Some(c) = custom.get("--color-bright-cyan") {
-        theme.palette.bright_cyan = parse_color(c)?;
-    }
-    if let Some(c) = custom.get("--color-bright-white") {
-        theme.palette.bright_white = parse_color(c)?;
-    }
+    // ANSI palette colors - supports both --ansi-* and --color-* naming
+    // --ansi-* is the preferred/documented format
+    apply_ansi_palette(theme, custom)?;
 
     // Font variants
     if let Some(f) = custom.get("--font-bold") {
@@ -812,6 +766,77 @@ fn apply_tab_close_properties(
     Ok(())
 }
 
+/// Apply ANSI palette colors from custom properties
+/// Supports multiple naming conventions:
+/// - --ansi-black, --ansi-red, etc. (preferred)
+/// - --ansi-bright-black, --ansi-bright-red, etc. (preferred)
+/// - --color-black, --color-red, etc. (legacy)
+/// - --color-bright-black, etc. (legacy)
+fn apply_ansi_palette(
+    theme: &mut Theme,
+    custom: &HashMap<String, String>,
+) -> Result<(), ThemeParseError> {
+    // Helper to get color from either --ansi-* or --color-* format
+    fn get_color<'a>(custom: &'a HashMap<String, String>, name: &str) -> Option<&'a String> {
+        custom.get(&format!("--ansi-{}", name))
+            .or_else(|| custom.get(&format!("--color-{}", name)))
+    }
+
+    // Normal colors (0-7)
+    if let Some(c) = get_color(custom, "black") {
+        theme.palette.black = parse_color(c)?;
+    }
+    if let Some(c) = get_color(custom, "red") {
+        theme.palette.red = parse_color(c)?;
+    }
+    if let Some(c) = get_color(custom, "green") {
+        theme.palette.green = parse_color(c)?;
+    }
+    if let Some(c) = get_color(custom, "yellow") {
+        theme.palette.yellow = parse_color(c)?;
+    }
+    if let Some(c) = get_color(custom, "blue") {
+        theme.palette.blue = parse_color(c)?;
+    }
+    if let Some(c) = get_color(custom, "magenta") {
+        theme.palette.magenta = parse_color(c)?;
+    }
+    if let Some(c) = get_color(custom, "cyan") {
+        theme.palette.cyan = parse_color(c)?;
+    }
+    if let Some(c) = get_color(custom, "white") {
+        theme.palette.white = parse_color(c)?;
+    }
+
+    // Bright colors (8-15)
+    if let Some(c) = get_color(custom, "bright-black") {
+        theme.palette.bright_black = parse_color(c)?;
+    }
+    if let Some(c) = get_color(custom, "bright-red") {
+        theme.palette.bright_red = parse_color(c)?;
+    }
+    if let Some(c) = get_color(custom, "bright-green") {
+        theme.palette.bright_green = parse_color(c)?;
+    }
+    if let Some(c) = get_color(custom, "bright-yellow") {
+        theme.palette.bright_yellow = parse_color(c)?;
+    }
+    if let Some(c) = get_color(custom, "bright-blue") {
+        theme.palette.bright_blue = parse_color(c)?;
+    }
+    if let Some(c) = get_color(custom, "bright-magenta") {
+        theme.palette.bright_magenta = parse_color(c)?;
+    }
+    if let Some(c) = get_color(custom, "bright-cyan") {
+        theme.palette.bright_cyan = parse_color(c)?;
+    }
+    if let Some(c) = get_color(custom, "bright-white") {
+        theme.palette.bright_white = parse_color(c)?;
+    }
+
+    Ok(())
+}
+
 fn apply_palette_properties(
     theme: &mut Theme,
     custom: &HashMap<String, String>,
@@ -928,5 +953,47 @@ mod tests {
     fn test_parse_gradient() {
         let g = parse_linear_gradient("linear-gradient(to bottom, #1a0a2e, #16213e)").unwrap();
         assert!(g.top.r < 0.2);
+    }
+
+    #[test]
+    fn test_parse_ansi_palette() {
+        let css = r#"
+            :terminal {
+                --ansi-black: #1a1a2e;
+                --ansi-red: #ff5555;
+                --ansi-green: #50fa7b;
+                --ansi-yellow: #f1fa8c;
+                --ansi-blue: #6272a4;
+                --ansi-magenta: #ff79c6;
+                --ansi-cyan: #8be9fd;
+                --ansi-white: #f8f8f2;
+                --ansi-bright-black: #44475a;
+                --ansi-bright-red: #ff6e6e;
+                --ansi-bright-green: #69ff94;
+                --ansi-bright-yellow: #ffffa5;
+                --ansi-bright-blue: #d6acff;
+                --ansi-bright-magenta: #ff92df;
+                --ansi-bright-cyan: #a4ffff;
+                --ansi-bright-white: #ffffff;
+            }
+        "#;
+
+        let theme = parse_theme(css).unwrap();
+
+        // Check normal colors
+        assert!((theme.palette.red.r - 1.0).abs() < 0.01); // #ff5555
+        assert!((theme.palette.green.g - 0.98).abs() < 0.02); // #50fa7b
+        assert!((theme.palette.cyan.b - 0.99).abs() < 0.02); // #8be9fd
+
+        // Check bright colors
+        assert!((theme.palette.bright_white.r - 1.0).abs() < 0.01); // #ffffff
+        assert!((theme.palette.bright_black.r - 0.267).abs() < 0.02); // #44475a
+
+        // Test palette.get() method
+        let red = theme.palette.get(1);
+        assert!((red.r - 1.0).abs() < 0.01);
+
+        let bright_cyan = theme.palette.get(14);
+        assert!((bright_cyan.r - 0.643).abs() < 0.02); // #a4ffff
     }
 }
