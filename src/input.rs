@@ -428,3 +428,57 @@ pub fn get_terminal_selection_text(state: &WindowState) -> Option<String> {
     let shell = state.shells.get(&tab_id)?;
     shell.selection_to_string()
 }
+
+/// Get clipboard content from system clipboard
+#[cfg(target_os = "macos")]
+pub fn get_clipboard_content() -> Option<String> {
+    use std::process::Command;
+    Command::new("pbpaste")
+        .output()
+        .ok()
+        .and_then(|output| {
+            if output.status.success() {
+                String::from_utf8(output.stdout).ok()
+            } else {
+                None
+            }
+        })
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn get_clipboard_content() -> Option<String> {
+    // TODO: Implement for other platforms (xclip, wl-paste, etc.)
+    None
+}
+
+/// Paste content to terminal with bracketed paste mode support
+///
+/// If the terminal has bracketed paste mode enabled, the content will be
+/// wrapped with escape sequences to indicate a paste operation.
+pub fn paste_to_terminal(state: &mut WindowState, content: &str) {
+    let tab_id = state.gpu.tab_bar.active_tab_id();
+    let Some(tab_id) = tab_id else { return };
+    let Some(shell) = state.shells.get_mut(&tab_id) else { return };
+
+    // Check if bracketed paste mode is enabled
+    let bracketed = shell.bracketed_paste_enabled();
+
+    if bracketed {
+        // Bracketed paste mode: wrap with escape sequences
+        shell.send_input(b"\x1b[200~");
+        shell.send_input(content.as_bytes());
+        shell.send_input(b"\x1b[201~");
+    } else {
+        shell.send_input(content.as_bytes());
+    }
+
+    // Scroll to bottom and clear selection
+    if shell.is_scrolled_back() {
+        shell.scroll_to_bottom();
+        state.content_hashes.insert(tab_id, 0);
+    }
+    clear_terminal_selection(state);
+
+    state.dirty = true;
+    state.window.request_redraw();
+}

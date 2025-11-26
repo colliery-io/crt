@@ -25,6 +25,7 @@ pub use alacritty_terminal::vte::ansi::NamedColor;
 pub use alacritty_terminal::selection::{Selection, SelectionRange, SelectionType};
 pub use alacritty_terminal::index::Side;
 pub use alacritty_terminal::grid::Scroll;
+pub use alacritty_terminal::term::TermMode;
 
 use std::sync::{Arc, Mutex};
 
@@ -233,6 +234,11 @@ impl Terminal {
     pub fn scroll_to_bottom(&mut self) {
         self.term.scroll_display(alacritty_terminal::grid::Scroll::Bottom);
     }
+
+    /// Check if bracketed paste mode is enabled
+    pub fn bracketed_paste_enabled(&self) -> bool {
+        self.term.mode().contains(TermMode::BRACKETED_PASTE)
+    }
 }
 
 /// A terminal connected to a PTY running a shell
@@ -364,6 +370,11 @@ impl ShellTerminal {
     /// Scroll to the bottom (show live output)
     pub fn scroll_to_bottom(&mut self) {
         self.terminal.scroll_to_bottom();
+    }
+
+    /// Check if bracketed paste mode is enabled
+    pub fn bracketed_paste_enabled(&self) -> bool {
+        self.terminal.bracketed_paste_enabled()
     }
 }
 

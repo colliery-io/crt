@@ -23,7 +23,7 @@ use gpu::{SharedGpuState, WindowGpuState};
 use input::{
     TabEditResult, handle_tab_editing, handle_shell_input, handle_tab_click, handle_resize,
     handle_terminal_mouse_press, handle_terminal_mouse_move, handle_terminal_mouse_release,
-    clear_terminal_selection, get_terminal_selection_text,
+    clear_terminal_selection, get_terminal_selection_text, get_clipboard_content, paste_to_terminal,
 };
 use menu::MenuAction;
 use render::render_frame;
@@ -328,6 +328,13 @@ impl App {
             MenuAction::SelectTab7 => self.select_tab_index(6),
             MenuAction::SelectTab8 => self.select_tab_index(7),
             MenuAction::SelectTab9 => self.select_tab_index(8),
+            MenuAction::Paste => {
+                if let Some(state) = self.focused_window_mut() {
+                    if let Some(content) = get_clipboard_content() {
+                        paste_to_terminal(state, &content);
+                    }
+                }
+            }
             _ => log::info!("{:?} not yet implemented", action),
         }
     }
@@ -461,6 +468,13 @@ impl ApplicationHandler for App {
                                 }
                                 return;
                             }
+                        }
+                        Key::Character(c) if c.as_str() == "v" => {
+                            // Paste from clipboard
+                            if let Some(content) = get_clipboard_content() {
+                                paste_to_terminal(state, &content);
+                            }
+                            return;
                         }
                         Key::Character(c) if c.as_str() == "q" => { event_loop.exit(); return; }
                         Key::Character(c) if c.as_str() == "w" => {
