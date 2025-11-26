@@ -167,13 +167,14 @@ fn render_tab_titles(
 
     // First pass: render glow layers for active tabs
     if let Some((radius, glow_color)) = active_shadow {
+        // Tighter glow offsets for a subtle halo effect
         let offsets = [
-            (-1.5, -1.5), (1.5, -1.5), (-1.5, 1.5), (1.5, 1.5),
-            (-2.0, 0.0), (2.0, 0.0), (0.0, -2.0), (0.0, 2.0),
+            (-0.75, -0.75), (0.75, -0.75), (-0.75, 0.75), (0.75, 0.75),
             (-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0),
+            (-0.5, 0.0), (0.5, 0.0), (0.0, -0.5), (0.0, 0.5),
         ];
 
-        let glow_alpha = (glow_color[3] * (radius / 20.0).min(1.0)).min(0.6);
+        let glow_alpha = (glow_color[3] * (radius / 25.0).min(1.0)).min(0.4);
         let glow_render_color = [glow_color[0], glow_color[1], glow_color[2], glow_alpha];
 
         for (x, y, title, is_active, _is_editing) in &tab_labels {

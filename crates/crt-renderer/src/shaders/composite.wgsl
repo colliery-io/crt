@@ -38,10 +38,12 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     return out;
 }
 
-// Proper 25-sample (5x5) Gaussian blur for high-quality glow
+// Tighter 25-sample (5x5) Gaussian blur for subtle glow
 fn sample_blur(uv: vec2<f32>, radius: f32) -> f32 {
     let texel_size = 1.0 / params.screen_size;
-    let sigma = radius / 2.0;
+    // Clamp radius to prevent overly spread blur
+    let effective_radius = min(radius, 8.0);
+    let sigma = effective_radius / 3.0;
 
     var total = 0.0;
     var weight_sum = 0.0;
@@ -50,7 +52,8 @@ fn sample_blur(uv: vec2<f32>, radius: f32) -> f32 {
     let samples = 2i;
     for (var x = -samples; x <= samples; x++) {
         for (var y = -samples; y <= samples; y++) {
-            let offset = vec2<f32>(f32(x), f32(y)) * texel_size * (radius / 4.0);
+            // Tighter sampling - divide by 8 instead of 4
+            let offset = vec2<f32>(f32(x), f32(y)) * texel_size * (effective_radius / 8.0);
             let dist = length(vec2<f32>(f32(x), f32(y)));
             let w = exp(-(dist * dist) / (2.0 * sigma * sigma));
 
@@ -73,9 +76,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Glow effect (if enabled)
     if params.glow_intensity > 0.0 {
         let blur = sample_blur(in.uv, params.glow_radius);
-        let glow_alpha = blur * params.glow_intensity;
-        color = mix(color, params.glow_color.rgb, glow_alpha);
-        alpha = max(alpha, glow_alpha);
+        // Boost intensity to compensate for tighter blur
+        let glow_alpha = blur * params.glow_intensity * 1.5;
+        color = mix(color, params.glow_color.rgb, min(glow_alpha, 1.0));
+        alpha = max(alpha, min(glow_alpha, 0.9));
     }
 
     // Text
