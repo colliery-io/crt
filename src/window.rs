@@ -171,21 +171,27 @@ impl WindowState {
         let line_height = self.gpu.glyph_cache.line_height();
         let padding = 10.0 * self.scale_factor;
 
+        // Get display offset to convert grid lines to viewport lines
+        let display_offset = terminal.display_offset() as i32;
+
         // Cursor info
         let cursor = content.cursor;
         let cursor_point = cursor.point;
 
-        // Compute cursor position
+        // Compute cursor position (adjust for scroll offset)
+        let cursor_viewport_line = cursor_point.line.0 + display_offset;
         let cursor_x = offset_x + padding + (cursor_point.column.0 as f32 * cell_width);
-        let cursor_y = offset_y + padding + (cursor_point.line.0 as f32 * line_height);
+        let cursor_y = offset_y + padding + (cursor_viewport_line as f32 * line_height);
 
         // Render cells (text only, no cursor)
         for cell in content.display_iter {
             let col = cell.point.column.0;
-            let row = cell.point.line.0;
+            // Convert grid line to viewport line (grid lines can be negative for history)
+            let grid_line = cell.point.line.0;
+            let viewport_line = grid_line + display_offset;
 
             let x = offset_x + padding + (col as f32 * cell_width);
-            let y = offset_y + padding + (row as f32 * line_height);
+            let y = offset_y + padding + (viewport_line as f32 * line_height);
 
             let c = cell.c;
             if c == ' ' {

@@ -96,7 +96,7 @@ pub fn handle_shell_input(
 ) -> bool {
     let tab_id = state.gpu.tab_bar.active_tab_id();
     let Some(tab_id) = tab_id else { return false };
-    let Some(shell) = state.shells.get(&tab_id) else { return false };
+    let Some(shell) = state.shells.get_mut(&tab_id) else { return false };
 
     let mut input_sent = false;
     match key {
@@ -146,6 +146,11 @@ pub fn handle_shell_input(
     }
 
     if input_sent {
+        // Scroll to bottom when user types (show live output)
+        if shell.is_scrolled_back() {
+            shell.scroll_to_bottom();
+            state.content_hashes.insert(tab_id, 0); // Force redraw
+        }
         state.dirty = true;
         state.window.request_redraw();
     }

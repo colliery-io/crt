@@ -24,6 +24,7 @@ pub use alacritty_terminal::vte::ansi::Color as AnsiColor;
 pub use alacritty_terminal::vte::ansi::NamedColor;
 pub use alacritty_terminal::selection::{Selection, SelectionRange, SelectionType};
 pub use alacritty_terminal::index::Side;
+pub use alacritty_terminal::grid::Scroll;
 
 use std::sync::{Arc, Mutex};
 
@@ -208,6 +209,30 @@ impl Terminal {
     pub fn selection_to_string(&self) -> Option<String> {
         self.term.selection_to_string()
     }
+
+    /// Scroll the terminal viewport
+    ///
+    /// Use `Scroll::Delta(n)` to scroll by n lines (positive = up into history)
+    /// Use `Scroll::PageUp`, `Scroll::PageDown`, `Scroll::Top`, `Scroll::Bottom`
+    pub fn scroll(&mut self, scroll: alacritty_terminal::grid::Scroll) {
+        self.term.scroll_display(scroll);
+    }
+
+    /// Get the current display offset (how far scrolled into history)
+    /// Returns 0 when at the bottom (live output), >0 when scrolled back
+    pub fn display_offset(&self) -> usize {
+        self.term.grid().display_offset()
+    }
+
+    /// Check if the terminal is scrolled back (not showing live output)
+    pub fn is_scrolled_back(&self) -> bool {
+        self.display_offset() > 0
+    }
+
+    /// Scroll to the bottom (show live output)
+    pub fn scroll_to_bottom(&mut self) {
+        self.term.scroll_display(alacritty_terminal::grid::Scroll::Bottom);
+    }
 }
 
 /// A terminal connected to a PTY running a shell
@@ -319,6 +344,26 @@ impl ShellTerminal {
     /// Get the selection as text, if any
     pub fn selection_to_string(&self) -> Option<String> {
         self.terminal.selection_to_string()
+    }
+
+    /// Scroll the terminal viewport
+    pub fn scroll(&mut self, scroll: crate::Scroll) {
+        self.terminal.scroll(scroll);
+    }
+
+    /// Get the current display offset (how far scrolled into history)
+    pub fn display_offset(&self) -> usize {
+        self.terminal.display_offset()
+    }
+
+    /// Check if the terminal is scrolled back (not showing live output)
+    pub fn is_scrolled_back(&self) -> bool {
+        self.terminal.is_scrolled_back()
+    }
+
+    /// Scroll to the bottom (show live output)
+    pub fn scroll_to_bottom(&mut self) {
+        self.terminal.scroll_to_bottom();
     }
 }
 

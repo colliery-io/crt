@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use config::Config;
-use crt_core::{ShellTerminal, Size};
+use crt_core::{ShellTerminal, Size, Scroll};
 use crt_renderer::{GlyphCache, GridRenderer, EffectPipeline, TextRenderTarget, TabBar};
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
@@ -31,9 +31,9 @@ use window::WindowState;
 
 use winit::{
     application::ApplicationHandler,
-    event::{ElementState, Modifiers, WindowEvent},
+    event::{ElementState, Modifiers, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    keyboard::Key,
+    keyboard::{Key, NamedKey},
     window::{Window, WindowId},
 };
 
@@ -404,6 +404,32 @@ impl ApplicationHandler for App {
                 #[cfg(not(target_os = "macos"))]
                 let mod_pressed = self.modifiers.state().control_key();
 
+                let shift_pressed = self.modifiers.state().shift_key();
+
+                // Handle scroll shortcuts (Shift+PageUp/PageDown/Home/End)
+                if shift_pressed && !mod_pressed {
+                    let scroll_action = match &event.logical_key {
+                        Key::Named(NamedKey::PageUp) => Some(Scroll::PageUp),
+                        Key::Named(NamedKey::PageDown) => Some(Scroll::PageDown),
+                        Key::Named(NamedKey::Home) => Some(Scroll::Top),
+                        Key::Named(NamedKey::End) => Some(Scroll::Bottom),
+                        _ => None,
+                    };
+
+                    if let Some(scroll) = scroll_action {
+                        let tab_id = state.gpu.tab_bar.active_tab_id();
+                        if let Some(tab_id) = tab_id {
+                            if let Some(shell) = state.shells.get_mut(&tab_id) {
+                                shell.scroll(scroll);
+                                state.dirty = true;
+                                state.content_hashes.insert(tab_id, 0);
+                                state.window.request_redraw();
+                            }
+                        }
+                        return;
+                    }
+                }
+
                 // Handle tab editing first
                 if let TabEditResult::Handled = handle_tab_editing(state, &event.logical_key, mod_pressed) {
                     return;
@@ -520,6 +546,28 @@ impl ApplicationHandler for App {
                     }
                     ElementState::Released => {
                         handle_terminal_mouse_release(state);
+                    }
+                }
+            }
+
+            WindowEvent::MouseWheel { delta, .. } => {
+                // Scroll terminal viewport
+                let tab_id = state.gpu.tab_bar.active_tab_id();
+                if let Some(tab_id) = tab_id {
+                    if let Some(shell) = state.shells.get_mut(&tab_id) {
+                        let lines = match delta {
+                            MouseScrollDelta::LineDelta(_, y) => y as i32,
+                            MouseScrollDelta::PixelDelta(pos) => {
+                                let line_height = state.gpu.glyph_cache.line_height();
+                                (pos.y / line_height as f64) as i32
+                            }
+                        };
+                        if lines != 0 {
+                            shell.scroll(Scroll::Delta(lines));
+                            state.dirty = true;
+                            state.content_hashes.insert(tab_id, 0);
+                            state.window.request_redraw();
+                        }
                     }
                 }
             }
