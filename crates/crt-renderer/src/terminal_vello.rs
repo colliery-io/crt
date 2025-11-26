@@ -341,6 +341,48 @@ impl TerminalVelloRenderer {
             &rect,
         );
     }
+
+    /// Add an underline decoration for a cell
+    pub fn add_underline(&mut self, x: f32, y: f32, cell_width: f32, cell_height: f32, color: [f32; 4]) {
+        // Position underline near the bottom of the cell, 2 pixels thick
+        let underline_y = y + cell_height - 3.0;
+        let rect = kurbo::Rect::new(
+            x as f64,
+            underline_y as f64,
+            (x + cell_width) as f64,
+            (underline_y + 1.5) as f64,
+        );
+        let brush = peniko::Brush::Solid(color_from_f32(color[0], color[1], color[2], color[3]));
+
+        self.scene.fill(
+            peniko::Fill::NonZero,
+            kurbo::Affine::IDENTITY,
+            &brush,
+            None,
+            &rect,
+        );
+    }
+
+    /// Add a strikethrough decoration for a cell
+    pub fn add_strikethrough(&mut self, x: f32, y: f32, cell_width: f32, cell_height: f32, color: [f32; 4]) {
+        // Position strikethrough at middle of cell, 1.5 pixels thick
+        let strike_y = y + cell_height * 0.45;
+        let rect = kurbo::Rect::new(
+            x as f64,
+            strike_y as f64,
+            (x + cell_width) as f64,
+            (strike_y + 1.5) as f64,
+        );
+        let brush = peniko::Brush::Solid(color_from_f32(color[0], color[1], color[2], color[3]));
+
+        self.scene.fill(
+            peniko::Fill::NonZero,
+            kurbo::Affine::IDENTITY,
+            &brush,
+            None,
+            &rect,
+        );
+    }
 }
 
 /// Helper to create a peniko Color from f32 RGBA components (0.0-1.0)

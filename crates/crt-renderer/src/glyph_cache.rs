@@ -10,11 +10,25 @@ use swash::{
     FontRef,
 };
 
-/// Key for glyph lookup - character + size
+/// Text style flags for glyph rendering
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+pub struct GlyphStyle {
+    pub bold: bool,
+    pub italic: bool,
+}
+
+impl GlyphStyle {
+    pub fn new(bold: bool, italic: bool) -> Self {
+        Self { bold, italic }
+    }
+}
+
+/// Key for glyph lookup - character + size + style
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct GlyphKey {
     pub character: char,
     pub size_tenths: u16,
+    pub style: GlyphStyle,
 }
 
 impl GlyphKey {
@@ -22,6 +36,15 @@ impl GlyphKey {
         Self {
             character,
             size_tenths: (size * 10.0) as u16,
+            style: GlyphStyle::default(),
+        }
+    }
+
+    pub fn with_style(character: char, size: f32, style: GlyphStyle) -> Self {
+        Self {
+            character,
+            size_tenths: (size * 10.0) as u16,
+            style,
         }
     }
 }
@@ -98,10 +121,57 @@ pub struct PositionedGlyph {
     pub uv_max: [f32; 2],
 }
 
+/// Font variant data
+pub struct FontVariants {
+    pub regular: Vec<u8>,
+    pub bold: Option<Vec<u8>>,
+    pub italic: Option<Vec<u8>>,
+    pub bold_italic: Option<Vec<u8>>,
+}
+
+impl FontVariants {
+    pub fn new(regular: Vec<u8>) -> Self {
+        Self {
+            regular,
+            bold: None,
+            italic: None,
+            bold_italic: None,
+        }
+    }
+
+    pub fn with_bold(mut self, data: Vec<u8>) -> Self {
+        self.bold = Some(data);
+        self
+    }
+
+    pub fn with_italic(mut self, data: Vec<u8>) -> Self {
+        self.italic = Some(data);
+        self
+    }
+
+    pub fn with_bold_italic(mut self, data: Vec<u8>) -> Self {
+        self.bold_italic = Some(data);
+        self
+    }
+
+    /// Get font data for the given style, falling back to regular
+    fn get_for_style(&self, style: GlyphStyle) -> &[u8] {
+        match (style.bold, style.italic) {
+            (true, true) => self.bold_italic.as_deref()
+                .or(self.bold.as_deref())
+                .or(self.italic.as_deref())
+                .unwrap_or(&self.regular),
+            (true, false) => self.bold.as_deref().unwrap_or(&self.regular),
+            (false, true) => self.italic.as_deref().unwrap_or(&self.regular),
+            (false, false) => &self.regular,
+        }
+    }
+}
+
 /// Glyph cache with GPU texture atlas
 pub struct GlyphCache {
-    /// Font data
-    font_data: Vec<u8>,
+    /// Font data for all variants
+    fonts: FontVariants,
     /// Swash scale context
     scale_context: ScaleContext,
     /// Font size in pixels
@@ -129,13 +199,32 @@ pub struct GlyphCache {
 }
 
 impl GlyphCache {
+    /// Create a new glyph cache with font variants
+    pub fn with_variants(
+        device: &wgpu::Device,
+        fonts: FontVariants,
+        font_size: f32,
+    ) -> Result<Self, &'static str> {
+        Self::new_internal(device, fonts, font_size)
+    }
+
+    /// Create a new glyph cache with a single font (backwards compatible)
     pub fn new(
         device: &wgpu::Device,
         font_data: &[u8],
         font_size: f32,
     ) -> Result<Self, &'static str> {
-        let font_data = font_data.to_vec();
-        let font = FontRef::from_index(&font_data, 0).ok_or("Failed to load font")?;
+        let fonts = FontVariants::new(font_data.to_vec());
+        Self::new_internal(device, fonts, font_size)
+    }
+
+    fn new_internal(
+        device: &wgpu::Device,
+        fonts: FontVariants,
+        font_size: f32,
+    ) -> Result<Self, &'static str> {
+        // Get font metrics from regular variant
+        let font = FontRef::from_index(&fonts.regular, 0).ok_or("Failed to load font")?;
 
         let atlas_width = 1024;
         let atlas_height = 1024;
@@ -211,7 +300,7 @@ impl GlyphCache {
         };
 
         Ok(Self {
-            font_data,
+            fonts,
             scale_context,
             font_size,
             cached_cell_width,
@@ -228,19 +317,22 @@ impl GlyphCache {
         })
     }
 
-    /// Get or create a cached glyph
+    /// Get or create a cached glyph (regular style)
     pub fn get_or_insert(&mut self, character: char) -> Option<CachedGlyph> {
-        let key = GlyphKey::new(character, self.font_size);
+        self.get_or_insert_styled(character, GlyphStyle::default())
+    }
+
+    /// Get or create a cached glyph with specific style
+    pub fn get_or_insert_styled(&mut self, character: char, style: GlyphStyle) -> Option<CachedGlyph> {
+        let key = GlyphKey::with_style(character, self.font_size, style);
 
         if let Some(&glyph) = self.glyphs.get(&key) {
             return Some(glyph);
         }
 
-        // Get font reference and glyph ID
-        // TODO: Investigate caching FontRef to avoid recreating on each glyph insertion.
-        // Would require handling self-referential struct (FontRef borrows from font_data).
-        // Current approach is likely fine since glyph insertion is infrequent.
-        let font = FontRef::from_index(&self.font_data, 0)?;
+        // Get font data for the requested style (falls back to regular)
+        let font_data = self.fonts.get_for_style(style);
+        let font = FontRef::from_index(font_data, 0)?;
         let glyph_id = font.charmap().map(character);
 
         // Return None for unmapped characters
@@ -320,10 +412,22 @@ impl GlyphCache {
         Some(glyph)
     }
 
-    /// Position a character at a fixed grid cell
+    /// Position a character at a fixed grid cell (regular style)
     /// cell_x, cell_y: grid cell coordinates (in pixels, top-left of cell)
     pub fn position_char(&mut self, character: char, cell_x: f32, cell_y: f32) -> Option<PositionedGlyph> {
-        let glyph = self.get_or_insert(character)?;
+        self.position_char_styled(character, cell_x, cell_y, GlyphStyle::default())
+    }
+
+    /// Position a styled character at a fixed grid cell
+    /// cell_x, cell_y: grid cell coordinates (in pixels, top-left of cell)
+    pub fn position_char_styled(
+        &mut self,
+        character: char,
+        cell_x: f32,
+        cell_y: f32,
+        style: GlyphStyle,
+    ) -> Option<PositionedGlyph> {
+        let glyph = self.get_or_insert_styled(character, style)?;
 
         // Skip zero-size glyphs
         if glyph.width == 0.0 || glyph.height == 0.0 {

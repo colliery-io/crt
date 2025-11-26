@@ -3,7 +3,7 @@
 //! Multi-pass rendering pipeline for terminal content and effects.
 
 use crate::gpu::SharedGpuState;
-use crate::window::WindowState;
+use crate::window::{WindowState, DecorationKind};
 use crt_core::SelectionRange;
 use std::sync::OnceLock;
 
@@ -42,8 +42,8 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
         }
     }
 
-    // Update text buffer and get cursor info
-    let cursor_info = if state.dirty {
+    // Update text buffer and get cursor/decoration info
+    let update_result = if state.dirty {
         state.dirty = false;
         state.update_text_buffer(shared)
     } else {
@@ -91,12 +91,12 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
     }
 
     // Pass 2: Update cursor position if content changed
-    if let Some(cursor) = cursor_info {
+    if let Some(ref result) = update_result {
         state.gpu.terminal_vello.set_cursor(
-            cursor.x,
-            cursor.y,
-            cursor.cell_width,
-            cursor.cell_height,
+            result.cursor.x,
+            result.cursor.y,
+            result.cursor.cell_width,
+            result.cursor.cell_height,
             true, // visible
         );
         // Reset blink when cursor moves (makes cursor visible immediately)
@@ -144,6 +144,32 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
         // Add selection rectangles after prepare (scene was reset)
         if let Some(selection) = selection {
             render_selection(state, &selection);
+        }
+
+        // Add text decorations (underline, strikethrough)
+        if let Some(ref result) = update_result {
+            for decoration in &result.decorations {
+                match decoration.kind {
+                    DecorationKind::Underline => {
+                        state.gpu.terminal_vello.add_underline(
+                            decoration.x,
+                            decoration.y,
+                            decoration.cell_width,
+                            decoration.cell_height,
+                            decoration.color,
+                        );
+                    }
+                    DecorationKind::Strikethrough => {
+                        state.gpu.terminal_vello.add_strikethrough(
+                            decoration.x,
+                            decoration.y,
+                            decoration.cell_width,
+                            decoration.cell_height,
+                            decoration.color,
+                        );
+                    }
+                }
+            }
         }
 
         if let Err(e) = state.gpu.terminal_vello.render_to_texture(&shared.device, &shared.queue) {

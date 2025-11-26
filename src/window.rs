@@ -8,7 +8,8 @@ use std::hash::Hasher;
 use std::sync::Arc;
 use std::time::Instant;
 
-use crt_core::{AnsiColor, ShellTerminal, Size};
+use crt_core::{AnsiColor, CellFlags, ShellTerminal, Size};
+use crt_renderer::GlyphStyle;
 use crt_theme::AnsiPalette;
 use winit::window::Window;
 
@@ -128,11 +129,41 @@ pub struct CursorInfo {
     pub cell_height: f32,
 }
 
+/// Text decoration (underline or strikethrough)
+#[derive(Debug, Clone, Copy)]
+pub struct TextDecoration {
+    /// X position in pixels
+    pub x: f32,
+    /// Y position in pixels
+    pub y: f32,
+    /// Cell width in pixels
+    pub cell_width: f32,
+    /// Cell height in pixels
+    pub cell_height: f32,
+    /// Decoration color
+    pub color: [f32; 4],
+    /// Decoration type
+    pub kind: DecorationKind,
+}
+
+/// Types of text decoration
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecorationKind {
+    Underline,
+    Strikethrough,
+}
+
+/// Result from text buffer update
+pub struct TextBufferUpdateResult {
+    pub cursor: CursorInfo,
+    pub decorations: Vec<TextDecoration>,
+}
+
 impl WindowState {
     /// Update text buffer for this window's active shell
     ///
-    /// Returns cursor position info if content changed, None otherwise
-    pub fn update_text_buffer(&mut self, shared_gpu: &SharedGpuState) -> Option<CursorInfo> {
+    /// Returns cursor position and decorations if content changed, None otherwise
+    pub fn update_text_buffer(&mut self, shared_gpu: &SharedGpuState) -> Option<TextBufferUpdateResult> {
         let active_tab_id = self.gpu.tab_bar.active_tab_id();
         let shell = active_tab_id.and_then(|id| self.shells.get(&id));
 
@@ -183,6 +214,9 @@ impl WindowState {
         let cursor_x = offset_x + padding + (cursor_point.column.0 as f32 * cell_width);
         let cursor_y = offset_y + padding + (cursor_viewport_line as f32 * line_height);
 
+        // Collect decorations (underline, strikethrough)
+        let mut decorations = Vec::new();
+
         // Render cells (text only, no cursor)
         for cell in content.display_iter {
             let col = cell.point.column.0;
@@ -193,28 +227,67 @@ impl WindowState {
             let x = offset_x + padding + (col as f32 * cell_width);
             let y = offset_y + padding + (viewport_line as f32 * line_height);
 
+            // Get foreground color from cell, mapped through theme palette
+            let palette = &self.gpu.effect_pipeline.theme().palette;
+            let default_fg = self.gpu.effect_pipeline.theme().foreground.to_array();
+            let mut color = ansi_color_to_rgba(cell.fg, palette, default_fg);
+
+            // Apply DIM flag by reducing alpha
+            let flags = cell.flags;
+            if flags.contains(CellFlags::DIM) {
+                color[3] *= 0.5;
+            }
+
+            // Collect underline decorations
+            if flags.intersects(CellFlags::UNDERLINE | CellFlags::DOUBLE_UNDERLINE) {
+                decorations.push(TextDecoration {
+                    x,
+                    y,
+                    cell_width,
+                    cell_height: line_height,
+                    color,
+                    kind: DecorationKind::Underline,
+                });
+            }
+
+            // Collect strikethrough decorations
+            if flags.contains(CellFlags::STRIKEOUT) {
+                decorations.push(TextDecoration {
+                    x,
+                    y,
+                    cell_width,
+                    cell_height: line_height,
+                    color,
+                    kind: DecorationKind::Strikethrough,
+                });
+            }
+
             let c = cell.c;
             if c == ' ' {
                 continue;
             }
 
-            // Get foreground color from cell, mapped through theme palette
-            let palette = &self.gpu.effect_pipeline.theme().palette;
-            let default_fg = self.gpu.effect_pipeline.theme().foreground.to_array();
-            let color = ansi_color_to_rgba(cell.fg, palette, default_fg);
+            // Get style from cell flags
+            let style = GlyphStyle::new(
+                flags.contains(CellFlags::BOLD),
+                flags.contains(CellFlags::ITALIC),
+            );
 
-            if let Some(glyph) = self.gpu.glyph_cache.position_char(c, x, y) {
+            if let Some(glyph) = self.gpu.glyph_cache.position_char_styled(c, x, y, style) {
                 self.gpu.grid_renderer.push_glyphs(&[glyph], color);
             }
         }
 
         self.gpu.glyph_cache.flush(&shared_gpu.queue);
 
-        Some(CursorInfo {
-            x: cursor_x,
-            y: cursor_y,
-            cell_width,
-            cell_height: line_height,
+        Some(TextBufferUpdateResult {
+            cursor: CursorInfo {
+                x: cursor_x,
+                y: cursor_y,
+                cell_width,
+                cell_height: line_height,
+            },
+            decorations,
         })
     }
 
