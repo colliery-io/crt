@@ -3,35 +3,32 @@
 //! GPU-accelerated tab bar with theme support, separated into:
 //! - state: Tab data and management (no GPU)
 //! - layout: Positioning and hit testing (no GPU)
-//! - renderer: GPU resources and rendering
+//! - vello_renderer: Shape rendering via vello (backgrounds, borders)
+//!
+//! Text and glow effects are rendered separately via the text pipeline,
+//! triggered by CSS properties like `text-shadow`.
 
 mod state;
 mod layout;
-mod renderer;
 mod vello_renderer;
 
 pub use state::{Tab, EditState, TabBarState};
 pub use layout::{TabRect, TabLayout};
-pub use renderer::TabBarRenderer;
 pub use vello_renderer::VelloTabBarRenderer;
 
 use crt_theme::TabTheme;
 
 /// Tab bar facade - combines state, layout, and rendering
 ///
-/// This is the main API for tab bar management. For more granular control,
-/// use TabBarState, TabLayout, and TabBarRenderer directly.
-///
-/// Supports two render modes:
-/// - Legacy: Vertex-based quad rendering (TabBarRenderer)
-/// - Vello: Scene-based 2D rendering (VelloTabBarRenderer) - preferred
+/// Rendering architecture:
+/// - Vello: Renders all shapes (backgrounds, borders, rounded corners)
+/// - Shader pipeline: Renders text with effects based on CSS properties
+///   (e.g., text-shadow triggers glow shader pass)
 pub struct TabBar {
     state: TabBarState,
     layout: TabLayout,
-    renderer: TabBarRenderer,
     vello_renderer: VelloTabBarRenderer,
     theme: TabTheme,
-    use_vello: bool,
 }
 
 impl TabBar {
@@ -39,16 +36,9 @@ impl TabBar {
         Self {
             state: TabBarState::new(),
             layout: TabLayout::new(),
-            renderer: TabBarRenderer::new(device, format),
             vello_renderer: VelloTabBarRenderer::new(device, format),
             theme: TabTheme::default(),
-            use_vello: true, // Default to vello rendering
         }
-    }
-
-    /// Set whether to use vello for rendering (true) or legacy vertex renderer (false)
-    pub fn set_use_vello(&mut self, use_vello: bool) {
-        self.use_vello = use_vello;
     }
 
     // ---- Theme ----
@@ -310,57 +300,29 @@ impl TabBar {
         }).collect()
     }
 
-    /// Update uniforms and build scene/vertex buffer
-    pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+    /// Prepare the tab bar for rendering (builds vello scene)
+    pub fn prepare(&mut self, device: &wgpu::Device, _queue: &wgpu::Queue) {
         // Recalculate layout if dirty
         if self.layout.is_dirty() {
             self.layout.calculate_rects(&self.state, &self.theme);
         }
 
-        if self.use_vello {
-            // Prepare vello scene
-            self.vello_renderer.prepare(device, &self.state, &self.layout, &self.theme);
-        } else {
-            // Prepare legacy vertex buffer
-            self.renderer.prepare(queue, &self.state, &self.layout, &self.theme);
-        }
+        // Build vello scene for shapes
+        self.vello_renderer.prepare(device, &self.state, &self.layout, &self.theme);
     }
 
-    /// Render vello scene to internal texture (call before render pass)
-    /// Returns Ok(true) if vello is being used, Ok(false) if using legacy
+    /// Render vello scene to internal texture
     pub fn render_vello(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-    ) -> Result<bool, vello::Error> {
-        if self.use_vello {
-            self.vello_renderer.render_to_texture(device, queue)?;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+    ) -> Result<(), vello::Error> {
+        self.vello_renderer.render_to_texture(device, queue)
     }
 
-    /// Get vello texture view for compositing (if using vello)
+    /// Get vello texture view for compositing
     pub fn vello_texture_view(&self) -> Option<&wgpu::TextureView> {
-        if self.use_vello {
-            self.vello_renderer.texture_view()
-        } else {
-            None
-        }
-    }
-
-    /// Render the tab bar using legacy renderer (for render pass)
-    pub fn render<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
-        if !self.use_vello {
-            self.renderer.render(pass);
-        }
-        // When using vello, shapes are composited separately
-    }
-
-    /// Check if using vello rendering
-    pub fn is_using_vello(&self) -> bool {
-        self.use_vello
+        self.vello_renderer.texture_view()
     }
 }
 

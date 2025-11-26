@@ -14,7 +14,4 @@ pub mod builtin {
 
     /// Grid shader - GPU-accelerated text glyph rendering using instanced quads
     pub const GRID: &str = include_str!("grid.wgsl");
-
-    /// Tab bar shader - simple colored quad rendering for tab bar UI
-    pub const TAB_BAR: &str = include_str!("tab_bar.wgsl");
 }

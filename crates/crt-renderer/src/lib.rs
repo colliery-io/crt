@@ -15,7 +15,7 @@ pub mod vello_renderer;
 
 pub use glyph_cache::{GlyphCache, GlyphKey, CachedGlyph, PositionedGlyph};
 pub use grid_renderer::GridRenderer;
-pub use tab_bar::{TabBar, Tab, TabRect, EditState, TabBarState, TabLayout, TabBarRenderer};
+pub use tab_bar::{TabBar, Tab, TabRect, EditState, TabBarState, TabLayout, VelloTabBarRenderer};
 pub use vello_renderer::{VelloContext, UiBuilder};
 
 use bytemuck::cast_slice;

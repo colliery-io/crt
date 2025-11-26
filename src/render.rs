@@ -131,36 +131,17 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
         state.gpu.effect_pipeline.composite.render(&mut pass, bind_group);
     }
 
-    // Pass 4: Render tab bar
+    // Pass 4: Render tab bar shapes via vello
     {
         state.gpu.tab_bar.prepare(&shared.device, &shared.queue);
 
-        // Render vello scene to texture (if using vello)
+        // Render vello scene to texture
         if let Err(e) = state.gpu.tab_bar.render_vello(&shared.device, &shared.queue) {
             log::warn!("Vello tab bar render error: {:?}", e);
         }
 
-        // Render legacy tab bar (if not using vello) or composite vello texture
-        if !state.gpu.tab_bar.is_using_vello() {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Tab Bar Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &frame_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-
-            state.gpu.tab_bar.render(&mut pass);
-        } else if let Some(vello_view) = state.gpu.tab_bar.vello_texture_view() {
-            // Composite vello texture onto frame
+        // Composite vello texture onto frame
+        if let Some(vello_view) = state.gpu.tab_bar.vello_texture_view() {
             composite_vello_texture(
                 &shared.device,
                 &mut encoder,
