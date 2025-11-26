@@ -8,10 +8,84 @@ use std::hash::Hasher;
 use std::sync::Arc;
 use std::time::Instant;
 
-use crt_core::{ShellTerminal, Size};
+use crt_core::{AnsiColor, ShellTerminal, Size};
+use crt_theme::AnsiPalette;
 use winit::window::Window;
 
 use crate::gpu::{SharedGpuState, WindowGpuState};
+
+/// Map alacritty_terminal AnsiColor to RGBA array using theme palette
+fn ansi_color_to_rgba(color: AnsiColor, palette: &AnsiPalette, default_color: [f32; 4]) -> [f32; 4] {
+    use crt_core::AnsiColor::*;
+    use crt_core::NamedColor;
+
+    match color {
+        // Named colors (0-7 normal, 8-15 bright)
+        Named(named) => {
+            let c = match named {
+                NamedColor::Black => palette.black,
+                NamedColor::Red => palette.red,
+                NamedColor::Green => palette.green,
+                NamedColor::Yellow => palette.yellow,
+                NamedColor::Blue => palette.blue,
+                NamedColor::Magenta => palette.magenta,
+                NamedColor::Cyan => palette.cyan,
+                NamedColor::White => palette.white,
+                NamedColor::BrightBlack => palette.bright_black,
+                NamedColor::BrightRed => palette.bright_red,
+                NamedColor::BrightGreen => palette.bright_green,
+                NamedColor::BrightYellow => palette.bright_yellow,
+                NamedColor::BrightBlue => palette.bright_blue,
+                NamedColor::BrightMagenta => palette.bright_magenta,
+                NamedColor::BrightCyan => palette.bright_cyan,
+                NamedColor::BrightWhite => palette.bright_white,
+                // Foreground/Background use default
+                NamedColor::Foreground | NamedColor::Background => return default_color,
+                // Dim variants use regular colors
+                NamedColor::DimBlack => palette.black,
+                NamedColor::DimRed => palette.red,
+                NamedColor::DimGreen => palette.green,
+                NamedColor::DimYellow => palette.yellow,
+                NamedColor::DimBlue => palette.blue,
+                NamedColor::DimMagenta => palette.magenta,
+                NamedColor::DimCyan => palette.cyan,
+                NamedColor::DimWhite => palette.white,
+                // Cursor color
+                NamedColor::Cursor => return default_color,
+                // Bright foreground
+                NamedColor::BrightForeground => palette.bright_white,
+                NamedColor::DimForeground => palette.white,
+            };
+            c.to_array()
+        }
+        // Indexed colors (0-255)
+        Indexed(idx) => {
+            if idx < 16 {
+                // First 16 are the ANSI palette
+                palette.get(idx).to_array()
+            } else if idx < 232 {
+                // 216 color cube (16-231)
+                let idx = idx - 16;
+                let r = (idx / 36) % 6;
+                let g = (idx / 6) % 6;
+                let b = idx % 6;
+                let to_float = |v: u8| if v == 0 { 0.0 } else { (v as f32 * 40.0 + 55.0) / 255.0 };
+                [to_float(r), to_float(g), to_float(b), 1.0]
+            } else {
+                // Grayscale (232-255)
+                let gray = ((idx - 232) as f32 * 10.0 + 8.0) / 255.0;
+                [gray, gray, gray, 1.0]
+            }
+        }
+        // Direct RGB color
+        Spec(rgb) => [
+            rgb.r as f32 / 255.0,
+            rgb.g as f32 / 255.0,
+            rgb.b as f32 / 255.0,
+            1.0,
+        ],
+    }
+}
 
 /// Per-window state containing window handle, GPU state, shells, and interaction state
 pub struct WindowState {
@@ -36,14 +110,29 @@ pub struct WindowState {
     pub last_click_tab: Option<u64>,
 }
 
+/// Cursor position info returned from text buffer update
+#[derive(Debug, Clone, Copy)]
+pub struct CursorInfo {
+    /// X position in pixels
+    pub x: f32,
+    /// Y position in pixels
+    pub y: f32,
+    /// Cell width in pixels
+    pub cell_width: f32,
+    /// Cell height in pixels
+    pub cell_height: f32,
+}
+
 impl WindowState {
     /// Update text buffer for this window's active shell
-    pub fn update_text_buffer(&mut self, shared_gpu: &SharedGpuState) -> bool {
+    ///
+    /// Returns cursor position info if content changed, None otherwise
+    pub fn update_text_buffer(&mut self, shared_gpu: &SharedGpuState) -> Option<CursorInfo> {
         let active_tab_id = self.gpu.tab_bar.active_tab_id();
         let shell = active_tab_id.and_then(|id| self.shells.get(&id));
 
         if shell.is_none() {
-            return false;
+            return None;
         }
         let shell = shell.unwrap();
         let terminal = shell.terminal();
@@ -62,7 +151,7 @@ impl WindowState {
         let tab_id = active_tab_id.unwrap();
         let prev_hash = self.content_hashes.get(&tab_id).copied().unwrap_or(0);
         if content_hash == prev_hash && prev_hash != 0 {
-            return false; // No changes
+            return None; // No changes
         }
         self.content_hashes.insert(tab_id, content_hash);
 
@@ -81,41 +170,41 @@ impl WindowState {
         let cursor = content.cursor;
         let cursor_point = cursor.point;
 
-        // Render cells
+        // Compute cursor position
+        let cursor_x = offset_x + padding + (cursor_point.column.0 as f32 * cell_width);
+        let cursor_y = offset_y + padding + (cursor_point.line.0 as f32 * line_height);
+
+        // Render cells (text only, no cursor)
         for cell in content.display_iter {
             let col = cell.point.column.0;
             let row = cell.point.line.0;
-
-            let is_cursor = cell.point.column == cursor_point.column
-                && cell.point.line == cursor_point.line;
 
             let x = offset_x + padding + (col as f32 * cell_width);
             let y = offset_y + padding + (row as f32 * line_height);
 
             let c = cell.c;
-            if c == ' ' && !is_cursor {
+            if c == ' ' {
                 continue;
             }
 
-            // Default text color (could be extended to support ANSI colors)
-            let color = [0.9, 0.9, 0.9, 1.0];
+            // Get foreground color from cell, mapped through theme palette
+            let palette = &self.gpu.effect_pipeline.theme().palette;
+            let default_fg = self.gpu.effect_pipeline.theme().foreground.to_array();
+            let color = ansi_color_to_rgba(cell.fg, palette, default_fg);
 
             if let Some(glyph) = self.gpu.glyph_cache.position_char(c, x, y) {
                 self.gpu.grid_renderer.push_glyphs(&[glyph], color);
             }
-
-            // Render cursor as a highlighted space
-            if is_cursor {
-                let cursor_color = [0.8, 0.8, 0.2, 0.8];
-                // Use a block character for cursor visualization
-                if let Some(glyph) = self.gpu.glyph_cache.position_char('\u{2588}', x, y) {
-                    self.gpu.grid_renderer.push_glyphs(&[glyph], cursor_color);
-                }
-            }
         }
 
         self.gpu.glyph_cache.flush(&shared_gpu.queue);
-        true
+
+        Some(CursorInfo {
+            x: cursor_x,
+            y: cursor_y,
+            cell_width,
+            cell_height: line_height,
+        })
     }
 
     /// Create a shell for a new tab

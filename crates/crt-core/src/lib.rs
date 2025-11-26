@@ -21,6 +21,7 @@ pub use alacritty_terminal::term::{
 };
 pub use alacritty_terminal::index::{Column, Line, Point};
 pub use alacritty_terminal::vte::ansi::Color as AnsiColor;
+pub use alacritty_terminal::vte::ansi::NamedColor;
 
 use std::sync::{Arc, Mutex};
 

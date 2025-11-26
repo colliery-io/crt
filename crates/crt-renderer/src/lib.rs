@@ -11,12 +11,17 @@ pub mod glyph_cache;
 pub mod grid_renderer;
 pub mod shaders;
 pub mod tab_bar;
+pub mod terminal_vello;
 pub mod vello_renderer;
 
 pub use glyph_cache::{GlyphCache, GlyphKey, CachedGlyph, PositionedGlyph};
 pub use grid_renderer::GridRenderer;
 pub use tab_bar::{TabBar, Tab, TabRect, EditState, TabBarState, TabLayout, VelloTabBarRenderer};
+pub use terminal_vello::{TerminalVelloRenderer, CursorShape};
 pub use vello_renderer::{VelloContext, UiBuilder};
+
+// Re-export vello types needed by consumers
+pub use vello::Scene;
 
 use bytemuck::cast_slice;
 use crt_theme::Theme;

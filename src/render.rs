@@ -3,7 +3,7 @@
 //! Multi-pass rendering pipeline for terminal content and effects.
 
 use crate::gpu::SharedGpuState;
-use crate::window::WindowState;
+use crate::window::{CursorInfo, WindowState};
 use std::sync::OnceLock;
 
 /// Cached blit pipeline for compositing vello textures
@@ -41,12 +41,12 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
         }
     }
 
-    // Update text buffer
-    let text_changed = if state.dirty {
+    // Update text buffer and get cursor info
+    let cursor_info = if state.dirty {
         state.dirty = false;
         state.update_text_buffer(shared)
     } else {
-        false
+        None
     };
 
     // Render
@@ -61,27 +61,6 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
 
     let mut encoder = shared.device.create_command_encoder(&Default::default());
 
-    // Pass 1: Render text to offscreen texture
-    if text_changed {
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Text Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &state.gpu.text_target.view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: wgpu::StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-
-        state.gpu.grid_renderer.render(&shared.queue, &mut pass);
-    }
-
     // Update effect uniforms
     state.gpu.effect_pipeline.update_uniforms(
         &shared.queue,
@@ -89,7 +68,7 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
         state.gpu.config.height as f32,
     );
 
-    // Pass 2: Render background
+    // Pass 1: Render background
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Background Render Pass"),
@@ -110,10 +89,15 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
         state.gpu.effect_pipeline.background.render(&mut pass);
     }
 
-    // Pass 3: Composite text with effects
-    if let Some(bind_group) = &state.gpu.composite_bind_group {
+    // Pass 2: Update grid buffer if content changed (adds cursor glyph)
+    if let Some(cursor) = cursor_info {
+        render_cursor_glyph(state, shared, cursor);
+    }
+
+    // Pass 3: Render terminal text and cursor directly to frame (every frame)
+    {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Composite Render Pass"),
+            label: Some("Terminal Text Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &frame_view,
                 resolve_target: None,
@@ -128,7 +112,7 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
             occlusion_query_set: None,
         });
 
-        state.gpu.effect_pipeline.composite.render(&mut pass, bind_group);
+        state.gpu.grid_renderer.render(&shared.queue, &mut pass);
     }
 
     // Pass 4: Render tab bar shapes via vello
@@ -159,6 +143,24 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
 
     shared.queue.submit(std::iter::once(encoder.finish()));
     frame.present();
+}
+
+/// Render cursor as a simple colored rectangle
+///
+/// Note: Full vello cursor rendering with caching will be implemented in CRT-T-0043.
+/// For now, we use the grid renderer to draw the cursor glyph to avoid
+/// creating expensive GPU resources every frame.
+fn render_cursor_glyph(
+    state: &mut WindowState,
+    shared: &SharedGpuState,
+    cursor: CursorInfo,
+) {
+    // Render cursor as a block character using the existing glyph cache
+    let cursor_color = [0.8, 0.8, 0.2, 0.9];
+    if let Some(glyph) = state.gpu.glyph_cache.position_char('\u{2588}', cursor.x, cursor.y) {
+        state.gpu.grid_renderer.push_glyphs(&[glyph], cursor_color);
+    }
+    state.gpu.glyph_cache.flush(&shared.queue);
 }
 
 /// Render tab title text with glow effect
