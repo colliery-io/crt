@@ -17,7 +17,7 @@ use std::time::Instant;
 
 use config::Config;
 use crt_core::{ShellTerminal, Size, Scroll};
-use crt_renderer::{GlyphCache, GridRenderer, EffectPipeline, TextRenderTarget, TabBar, FontVariants};
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TextRenderTarget, TabBar, FontVariants};
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
 use input::{
@@ -189,6 +189,9 @@ impl App {
         terminal_vello.set_blink_enabled(self.config.cursor.blink);
         terminal_vello.set_blink_interval_ms(self.config.cursor.blink_interval_ms);
 
+        // Rect renderer for cell backgrounds
+        let rect_renderer = RectRenderer::new(&shared.device, format);
+
         let gpu = WindowGpuState {
             surface,
             config: surface_config,
@@ -201,6 +204,7 @@ impl App {
             composite_bind_group,
             tab_bar,
             terminal_vello,
+            rect_renderer,
         };
 
         // Create initial shell
@@ -230,6 +234,7 @@ impl App {
             selection_click_count: 0,
             last_selection_click_time: None,
             last_selection_click_pos: None,
+            cached_render: Default::default(),
         };
 
         self.windows.insert(window_id, window_state);

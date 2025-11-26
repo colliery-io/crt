@@ -106,7 +106,59 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
     // Update cursor blink state
     state.gpu.terminal_vello.update_blink();
 
-    // Pass 3: Render terminal text directly to frame (every frame)
+    // Update cached decorations when content changes
+    if let Some(ref result) = update_result {
+        state.cached_render.decorations = result.decorations.clone();
+        state.cached_render.cursor = Some(result.cursor);
+    }
+
+    // Pass 3: Render cell backgrounds via RectRenderer (before text)
+    // Always render from cached decorations so they persist across frames
+    {
+        let bg_count = state.cached_render.decorations.iter().filter(|d| d.kind == DecorationKind::Background).count();
+        if bg_count > 0 {
+            state.gpu.rect_renderer.clear();
+            state.gpu.rect_renderer.update_screen_size(
+                &shared.queue,
+                state.gpu.config.width as f32,
+                state.gpu.config.height as f32,
+            );
+
+            // Add background rectangles from cached decorations
+            for decoration in &state.cached_render.decorations {
+                if decoration.kind == DecorationKind::Background {
+                    state.gpu.rect_renderer.push_rect(
+                        decoration.x,
+                        decoration.y,
+                        decoration.cell_width,
+                        decoration.cell_height,
+                        decoration.color,
+                    );
+                }
+            }
+
+            // Render backgrounds directly to frame
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Background Rect Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &frame_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            state.gpu.rect_renderer.render(&shared.queue, &mut pass);
+        }
+    }
+
+    // Pass 4: Render terminal text directly to frame
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Terminal Text Render Pass"),
@@ -127,7 +179,7 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
         state.gpu.grid_renderer.render(&shared.queue, &mut pass);
     }
 
-    // Pass 4: Render cursor and selection via vello
+    // Pass 5: Render cursor, selection, underlines, strikethroughs via vello
     {
         // Get selection from active terminal (if any)
         let selection = active_tab_id
@@ -146,28 +198,27 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
             render_selection(state, &selection);
         }
 
-        // Add text decorations (underline, strikethrough)
-        if let Some(ref result) = update_result {
-            for decoration in &result.decorations {
-                match decoration.kind {
-                    DecorationKind::Underline => {
-                        state.gpu.terminal_vello.add_underline(
-                            decoration.x,
-                            decoration.y,
-                            decoration.cell_width,
-                            decoration.cell_height,
-                            decoration.color,
-                        );
-                    }
-                    DecorationKind::Strikethrough => {
-                        state.gpu.terminal_vello.add_strikethrough(
-                            decoration.x,
-                            decoration.y,
-                            decoration.cell_width,
-                            decoration.cell_height,
-                            decoration.color,
-                        );
-                    }
+        // Add underlines and strikethroughs from cached decorations
+        for decoration in &state.cached_render.decorations {
+            match decoration.kind {
+                DecorationKind::Background => {} // Already rendered in Pass 3
+                DecorationKind::Underline => {
+                    state.gpu.terminal_vello.add_underline(
+                        decoration.x,
+                        decoration.y,
+                        decoration.cell_width,
+                        decoration.cell_height,
+                        decoration.color,
+                    );
+                }
+                DecorationKind::Strikethrough => {
+                    state.gpu.terminal_vello.add_strikethrough(
+                        decoration.x,
+                        decoration.y,
+                        decoration.cell_width,
+                        decoration.cell_height,
+                        decoration.color,
+                    );
                 }
             }
         }
@@ -176,7 +227,7 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
             log::warn!("Terminal vello render error: {:?}", e);
         }
 
-        // Composite cursor/selection texture onto frame
+        // Composite cursor/selection/decorations texture onto frame
         if let Some(vello_view) = state.gpu.terminal_vello.texture_view() {
             composite_vello_texture(
                 &shared.device,
@@ -190,7 +241,7 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
         }
     }
 
-    // Pass 5: Render tab bar shapes via vello
+    // Pass 6: Render tab bar shapes via vello
     {
         state.gpu.tab_bar.prepare(&shared.device, &shared.queue);
 
@@ -213,7 +264,7 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
         }
     }
 
-    // Pass 6: Render tab title text with glow
+    // Pass 7: Render tab title text with glow
     render_tab_titles(state, shared, &mut encoder, &frame_view);
 
     shared.queue.submit(std::iter::once(encoder.finish()));

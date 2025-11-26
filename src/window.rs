@@ -114,6 +114,8 @@ pub struct WindowState {
     pub selection_click_count: u8,
     pub last_selection_click_time: Option<Instant>,
     pub last_selection_click_pos: Option<(usize, usize)>,
+    // Cached render state (decorations persist across frames)
+    pub cached_render: CachedRenderState,
 }
 
 /// Cursor position info returned from text buffer update
@@ -129,7 +131,7 @@ pub struct CursorInfo {
     pub cell_height: f32,
 }
 
-/// Text decoration (underline or strikethrough)
+/// Text decoration (underline, strikethrough, or background)
 #[derive(Debug, Clone, Copy)]
 pub struct TextDecoration {
     /// X position in pixels
@@ -149,7 +151,11 @@ pub struct TextDecoration {
 /// Types of text decoration
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecorationKind {
+    /// Cell background color
+    Background,
+    /// Underline decoration
     Underline,
+    /// Strikethrough decoration
     Strikethrough,
 }
 
@@ -157,6 +163,15 @@ pub enum DecorationKind {
 pub struct TextBufferUpdateResult {
     pub cursor: CursorInfo,
     pub decorations: Vec<TextDecoration>,
+}
+
+/// Cached rendering state that persists across frames
+#[derive(Default)]
+pub struct CachedRenderState {
+    /// Cached decorations from last content update
+    pub decorations: Vec<TextDecoration>,
+    /// Cached cursor info
+    pub cursor: Option<CursorInfo>,
 }
 
 impl WindowState {
@@ -214,8 +229,14 @@ impl WindowState {
         let cursor_x = offset_x + padding + (cursor_point.column.0 as f32 * cell_width);
         let cursor_y = offset_y + padding + (cursor_viewport_line as f32 * line_height);
 
-        // Collect decorations (underline, strikethrough)
-        let mut decorations = Vec::new();
+        // Collect decorations (backgrounds, underline, strikethrough)
+        let mut decorations: Vec<TextDecoration> = Vec::new();
+
+        // Get theme colors
+        let palette = &self.gpu.effect_pipeline.theme().palette;
+        let default_fg = self.gpu.effect_pipeline.theme().foreground.to_array();
+        // Use the bottom of the gradient as default background (typically the darker color)
+        let default_bg = self.gpu.effect_pipeline.theme().background.bottom.to_array();
 
         // Render cells (text only, no cursor)
         for cell in content.display_iter {
@@ -227,15 +248,34 @@ impl WindowState {
             let x = offset_x + padding + (col as f32 * cell_width);
             let y = offset_y + padding + (viewport_line as f32 * line_height);
 
-            // Get foreground color from cell, mapped through theme palette
-            let palette = &self.gpu.effect_pipeline.theme().palette;
-            let default_fg = self.gpu.effect_pipeline.theme().foreground.to_array();
-            let mut color = ansi_color_to_rgba(cell.fg, palette, default_fg);
+            let flags = cell.flags;
+
+            // Handle INVERSE flag - swap foreground and background colors
+            let (fg_ansi, bg_ansi) = if flags.contains(CellFlags::INVERSE) {
+                (cell.bg, cell.fg)
+            } else {
+                (cell.fg, cell.bg)
+            };
+
+            // Get foreground color
+            let mut fg_color = ansi_color_to_rgba(fg_ansi, palette, default_fg);
 
             // Apply DIM flag by reducing alpha
-            let flags = cell.flags;
             if flags.contains(CellFlags::DIM) {
-                color[3] *= 0.5;
+                fg_color[3] *= 0.5;
+            }
+
+            // Get background color and add decoration if non-default
+            let bg_color = ansi_color_to_rgba(bg_ansi, palette, default_bg);
+            if bg_color != default_bg {
+                decorations.push(TextDecoration {
+                    x,
+                    y,
+                    cell_width,
+                    cell_height: line_height,
+                    color: bg_color,
+                    kind: DecorationKind::Background,
+                });
             }
 
             // Collect underline decorations
@@ -245,7 +285,7 @@ impl WindowState {
                     y,
                     cell_width,
                     cell_height: line_height,
-                    color,
+                    color: fg_color,
                     kind: DecorationKind::Underline,
                 });
             }
@@ -257,7 +297,7 @@ impl WindowState {
                     y,
                     cell_width,
                     cell_height: line_height,
-                    color,
+                    color: fg_color,
                     kind: DecorationKind::Strikethrough,
                 });
             }
@@ -274,7 +314,7 @@ impl WindowState {
             );
 
             if let Some(glyph) = self.gpu.glyph_cache.position_char_styled(c, x, y, style) {
-                self.gpu.grid_renderer.push_glyphs(&[glyph], color);
+                self.gpu.grid_renderer.push_glyphs(&[glyph], fg_color);
             }
         }
 

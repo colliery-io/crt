@@ -2,7 +2,7 @@
 //!
 //! Shared and per-window GPU resources for wgpu rendering.
 
-use crt_renderer::{GlyphCache, GridRenderer, EffectPipeline, TextRenderTarget, TabBar, TerminalVelloRenderer};
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TextRenderTarget, TabBar, TerminalVelloRenderer};
 
 /// Shared GPU resources across all windows
 pub struct SharedGpuState {
@@ -73,4 +73,7 @@ pub struct WindowGpuState {
 
     // Terminal vello renderer for cursor and selection
     pub terminal_vello: TerminalVelloRenderer,
+
+    // Rect renderer for cell backgrounds
+    pub rect_renderer: RectRenderer,
 }

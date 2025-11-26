@@ -14,4 +14,7 @@ pub mod builtin {
 
     /// Grid shader - GPU-accelerated text glyph rendering using instanced quads
     pub const GRID: &str = include_str!("grid.wgsl");
+
+    /// Rect shader - solid color rectangle rendering using instanced quads
+    pub const RECT: &str = include_str!("rect.wgsl");
 }

@@ -196,6 +196,14 @@ impl TerminalVelloRenderer {
         }
     }
 
+    /// Prepare scene for backgrounds only (no cursor)
+    /// Used for rendering cell backgrounds before text
+    pub fn prepare_backgrounds_only(&mut self, device: &wgpu::Device, width: u32, height: u32) {
+        self.scene.reset();
+        self.ensure_target(device, width, height);
+        // Don't add cursor - this pass is only for backgrounds
+    }
+
     /// Build cursor shape into scene
     fn build_cursor(&mut self) {
         let cursor = &self.cursor_state;
@@ -332,6 +340,25 @@ impl TerminalVelloRenderer {
             self.selection_color[2],
             self.selection_color[3],
         ));
+
+        self.scene.fill(
+            peniko::Fill::NonZero,
+            kurbo::Affine::IDENTITY,
+            &brush,
+            None,
+            &rect,
+        );
+    }
+
+    /// Add a background rectangle for a cell
+    pub fn add_background(&mut self, x: f32, y: f32, cell_width: f32, cell_height: f32, color: [f32; 4]) {
+        let rect = kurbo::Rect::new(
+            x as f64,
+            y as f64,
+            (x + cell_width) as f64,
+            (y + cell_height) as f64,
+        );
+        let brush = peniko::Brush::Solid(color_from_f32(color[0], color[1], color[2], color[3]));
 
         self.scene.fill(
             peniko::Fill::NonZero,
