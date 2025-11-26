@@ -231,27 +231,14 @@ pub fn handle_resize(
     let scale_factor = state.scale_factor;
     let cell_width = state.gpu.glyph_cache.cell_width();
     let line_height = state.gpu.glyph_cache.line_height();
-    let is_horizontal = state.gpu.tab_bar.is_horizontal();
-    let tab_bar_size = if is_horizontal {
-        state.gpu.tab_bar.height()
-    } else {
-        state.gpu.tab_bar.width()
-    };
+    let tab_bar_height = state.gpu.tab_bar.height();
 
     let padding_physical = 20.0 * scale_factor;
-    let tab_bar_physical = tab_bar_size * scale_factor;
+    let tab_bar_physical = tab_bar_height * scale_factor;
 
-    let (content_width, content_height) = if is_horizontal {
-        (
-            (new_width as f32 - padding_physical).max(60.0),
-            (new_height as f32 - padding_physical - tab_bar_physical).max(40.0),
-        )
-    } else {
-        (
-            (new_width as f32 - padding_physical - tab_bar_physical).max(60.0),
-            (new_height as f32 - padding_physical).max(40.0),
-        )
-    };
+    // Tab bar is always at top, so subtract its height from content area
+    let content_width = (new_width as f32 - padding_physical).max(60.0);
+    let content_height = (new_height as f32 - padding_physical - tab_bar_physical).max(40.0);
 
     let new_cols = ((content_width / cell_width) as usize).max(10);
     let new_rows = ((content_height / line_height) as usize).max(4);

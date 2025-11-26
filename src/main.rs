@@ -17,7 +17,7 @@ use std::time::Instant;
 
 use config::Config;
 use crt_core::{ShellTerminal, Size};
-use crt_renderer::{GlyphCache, GridRenderer, EffectPipeline, TextRenderTarget, TabBar, TabPosition};
+use crt_renderer::{GlyphCache, GridRenderer, EffectPipeline, TextRenderTarget, TabBar};
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
 use input::{TabEditResult, handle_tab_editing, handle_shell_input, handle_tab_click, handle_resize};
@@ -160,16 +160,10 @@ impl App {
         effect_pipeline.set_theme(theme.clone());
         let composite_bind_group = Some(effect_pipeline.create_bind_group(&shared.device, &text_target.view));
 
-        // Tab bar
+        // Tab bar (always at top)
         let mut tab_bar = TabBar::new(&shared.device, format);
         tab_bar.set_scale_factor(scale_factor);
         tab_bar.set_theme(theme.tabs);
-        tab_bar.set_position(match self.config.window.tab_position {
-            config::TabPosition::Top => TabPosition::Top,
-            config::TabPosition::Bottom => TabPosition::Bottom,
-            config::TabPosition::Left => TabPosition::Left,
-            config::TabPosition::Right => TabPosition::Right,
-        });
         tab_bar.resize(size.width as f32, size.height as f32);
 
         let gpu = WindowGpuState {

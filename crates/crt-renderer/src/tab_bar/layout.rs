@@ -1,19 +1,10 @@
 //! Tab bar layout calculations
 //!
 //! Handles positioning, sizing, and hit testing - no GPU dependencies.
+//! Tab bar is always positioned at the top of the window.
 
 use crt_theme::TabTheme;
 use super::state::TabBarState;
-
-/// Tab bar position on the screen
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TabPosition {
-    #[default]
-    Top,
-    Bottom,
-    Left,
-    Right,
-}
 
 /// Rectangle for a tab (for hit testing and rendering)
 #[derive(Debug, Clone, Copy, Default)]
@@ -39,11 +30,10 @@ impl TabRect {
 }
 
 /// Tab bar layout - manages dimensions and positioning
+/// Tab bar is always at the top of the window.
 pub struct TabLayout {
-    pub(crate) position: TabPosition,
     pub(crate) tab_rects: Vec<TabRect>,
     pub(crate) bar_height: f32,
-    pub(crate) bar_width: f32,
     pub(crate) screen_width: f32,
     pub(crate) screen_height: f32,
     pub(crate) scale_factor: f32,
@@ -59,10 +49,8 @@ impl Default for TabLayout {
 impl TabLayout {
     pub fn new() -> Self {
         Self {
-            position: TabPosition::Top,
             tab_rects: Vec::new(),
             bar_height: 36.0,
-            bar_width: 180.0,
             screen_width: 800.0,
             screen_height: 600.0,
             scale_factor: 1.0,
@@ -81,49 +69,15 @@ impl TabLayout {
         self.scale_factor
     }
 
-    /// Set tab bar position
-    pub fn set_position(&mut self, position: TabPosition) {
-        self.position = position;
-        self.dirty = true;
-    }
-
-    /// Get current tab bar position
-    pub fn position(&self) -> TabPosition {
-        self.position
-    }
-
-    /// Check if tab bar is horizontal (top/bottom)
-    pub fn is_horizontal(&self) -> bool {
-        matches!(self.position, TabPosition::Top | TabPosition::Bottom)
-    }
-
-    /// Get current tab bar height (in logical pixels) - for top/bottom positioning
+    /// Get current tab bar height (in logical pixels)
     pub fn height(&self) -> f32 {
         self.bar_height
     }
 
-    /// Get current tab bar width (in logical pixels) - for left/right positioning
-    pub fn width(&self) -> f32 {
-        self.bar_width
-    }
-
-    /// Get the dimension that affects content layout (height for top/bottom, width for left/right)
-    pub fn size(&self) -> f32 {
-        if self.is_horizontal() {
-            self.bar_height
-        } else {
-            self.bar_width
-        }
-    }
-
-    /// Get the content offset (x, y) in logical pixels based on tab bar position
+    /// Get the content offset (x, y) in logical pixels
+    /// Content starts below the tab bar
     pub fn content_offset(&self) -> (f32, f32) {
-        match self.position {
-            TabPosition::Top => (0.0, self.bar_height),
-            TabPosition::Bottom => (0.0, 0.0),
-            TabPosition::Left => (self.bar_width, 0.0),
-            TabPosition::Right => (0.0, 0.0),
-        }
+        (0.0, self.bar_height)
     }
 
     /// Update screen size (in physical pixels)
@@ -176,6 +130,7 @@ impl TabLayout {
     }
 
     /// Calculate tab rectangles based on current state and theme
+    /// Tab bar is always at the top
     pub fn calculate_rects(&mut self, state: &TabBarState, theme: &TabTheme) {
         self.tab_rects.clear();
 
@@ -183,108 +138,34 @@ impl TabLayout {
         let padding = theme.bar.padding * s;
         let tab_padding_x = theme.tab.padding_x * s;
         let bar_height = self.bar_height * s;
-        let bar_width = self.bar_width * s;
         let tab_gap = 4.0 * s;
         let tab_count = state.tab_count();
 
-        match self.position {
-            TabPosition::Top => {
-                let tab_height = bar_height - padding * 2.0;
-                let available_width = self.screen_width - padding * 2.0;
-                let total_gap = tab_gap * (tab_count.saturating_sub(1)) as f32;
-                let min_width = theme.tab.min_width * s;
-                let max_width = theme.tab.max_width * s;
-                let width_per_tab = ((available_width - total_gap) / tab_count as f32)
-                    .clamp(min_width, max_width);
+        if tab_count == 0 {
+            self.dirty = false;
+            return;
+        }
 
-                let mut x = padding;
-                for _ in 0..tab_count {
-                    let close_width = theme.close.size * s;
-                    self.tab_rects.push(TabRect {
-                        x,
-                        y: padding,
-                        width: width_per_tab,
-                        height: tab_height,
-                        close_x: x + width_per_tab - close_width - tab_padding_x,
-                        close_width,
-                    });
-                    x += width_per_tab + tab_gap;
-                }
-            }
+        let tab_height = bar_height - padding * 2.0;
+        let available_width = self.screen_width - padding * 2.0;
+        let total_gap = tab_gap * (tab_count.saturating_sub(1)) as f32;
+        let min_width = theme.tab.min_width * s;
+        let max_width = theme.tab.max_width * s;
+        let width_per_tab = ((available_width - total_gap) / tab_count as f32)
+            .clamp(min_width, max_width);
 
-            TabPosition::Bottom => {
-                let tab_height = bar_height - padding * 2.0;
-                let bar_y = self.screen_height - bar_height;
-                let available_width = self.screen_width - padding * 2.0;
-                let total_gap = tab_gap * (tab_count.saturating_sub(1)) as f32;
-                let min_width = theme.tab.min_width * s;
-                let max_width = theme.tab.max_width * s;
-                let width_per_tab = ((available_width - total_gap) / tab_count as f32)
-                    .clamp(min_width, max_width);
-
-                let mut x = padding;
-                for _ in 0..tab_count {
-                    let close_width = theme.close.size * s;
-                    self.tab_rects.push(TabRect {
-                        x,
-                        y: bar_y + padding,
-                        width: width_per_tab,
-                        height: tab_height,
-                        close_x: x + width_per_tab - close_width - tab_padding_x,
-                        close_width,
-                    });
-                    x += width_per_tab + tab_gap;
-                }
-            }
-
-            TabPosition::Left => {
-                let tab_width = bar_width - padding * 2.0;
-                let available_height = self.screen_height - padding * 2.0;
-                let total_gap = tab_gap * (tab_count.saturating_sub(1)) as f32;
-                let min_height = 24.0 * s;
-                let max_height = 32.0 * s;
-                let height_per_tab = ((available_height - total_gap) / tab_count as f32)
-                    .clamp(min_height, max_height);
-
-                let mut y = padding;
-                for _ in 0..tab_count {
-                    let close_width = theme.close.size * s;
-                    self.tab_rects.push(TabRect {
-                        x: padding,
-                        y,
-                        width: tab_width,
-                        height: height_per_tab,
-                        close_x: padding + tab_width - close_width - tab_padding_x,
-                        close_width,
-                    });
-                    y += height_per_tab + tab_gap;
-                }
-            }
-
-            TabPosition::Right => {
-                let tab_width = bar_width - padding * 2.0;
-                let bar_x = self.screen_width - bar_width;
-                let available_height = self.screen_height - padding * 2.0;
-                let total_gap = tab_gap * (tab_count.saturating_sub(1)) as f32;
-                let min_height = 24.0 * s;
-                let max_height = 32.0 * s;
-                let height_per_tab = ((available_height - total_gap) / tab_count as f32)
-                    .clamp(min_height, max_height);
-
-                let mut y = padding;
-                for _ in 0..tab_count {
-                    let close_width = theme.close.size * s;
-                    self.tab_rects.push(TabRect {
-                        x: bar_x + padding,
-                        y,
-                        width: tab_width,
-                        height: height_per_tab,
-                        close_x: bar_x + padding + tab_width - close_width - tab_padding_x,
-                        close_width,
-                    });
-                    y += height_per_tab + tab_gap;
-                }
-            }
+        let mut x = padding;
+        for _ in 0..tab_count {
+            let close_width = theme.close.size * s;
+            self.tab_rects.push(TabRect {
+                x,
+                y: padding,
+                width: width_per_tab,
+                height: tab_height,
+                close_x: x + width_per_tab - close_width - tab_padding_x,
+                close_width,
+            });
+            x += width_per_tab + tab_gap;
         }
 
         self.dirty = false;

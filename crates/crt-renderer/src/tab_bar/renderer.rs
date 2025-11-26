@@ -1,6 +1,7 @@
 //! Tab bar GPU rendering
 //!
 //! Handles all wgpu resources and rendering operations.
+//! Tab bar is always rendered at the top of the window.
 
 use crate::shaders::builtin;
 use crt_theme::{TabTheme, Color};
@@ -8,7 +9,7 @@ use wgpu::util::DeviceExt;
 use bytemuck::{Pod, Zeroable};
 
 use super::state::TabBarState;
-use super::layout::{TabLayout, TabPosition};
+use super::layout::TabLayout;
 
 /// Vertex for tab bar quads
 #[repr(C)]
@@ -172,7 +173,7 @@ impl TabBarRenderer {
         }
     }
 
-    /// Build vertices for the tab bar
+    /// Build vertices for the tab bar (always at top)
     fn build_vertices(
         &self,
         state: &TabBarState,
@@ -188,112 +189,36 @@ impl TabBarRenderer {
 
         let s = layout.scale_factor();
         let bar_height = layout.height() * s;
-        let bar_width = layout.width() * s;
         let border_width = s;
-        let (screen_width, screen_height) = layout.screen_size();
+        let (screen_width, _screen_height) = layout.screen_size();
 
         let tab_rects = layout.tab_rects();
         let active_tab = state.active_tab_index();
 
-        match layout.position() {
-            TabPosition::Top => {
-                // Tab bar background
-                add_quad(&mut vertices, 0.0, 0.0, screen_width, bar_height, bar_bg);
-                // Bottom border
-                add_quad(&mut vertices, 0.0, bar_height - s, screen_width, s, border_color);
+        // Tab bar background (full width, at top)
+        add_quad(&mut vertices, 0.0, 0.0, screen_width, bar_height, bar_bg);
 
-                // Draw tabs
-                for (i, rect) in tab_rects.iter().enumerate() {
-                    let is_active = i == active_tab;
-                    let bg_color = if is_active { active_bg } else { tab_bg };
+        // Bottom border
+        add_quad(&mut vertices, 0.0, bar_height - s, screen_width, s, border_color);
 
-                    add_quad(&mut vertices, rect.x, rect.y, rect.width, rect.height, bg_color);
-                    add_quad(&mut vertices, rect.x, rect.y, rect.width, border_width, border_color);
-                    add_quad(&mut vertices, rect.x, rect.y + rect.height - border_width, rect.width, border_width, border_color);
-                    add_quad(&mut vertices, rect.x, rect.y, border_width, rect.height, border_color);
-                    add_quad(&mut vertices, rect.x + rect.width - border_width, rect.y, border_width, rect.height, border_color);
+        // Draw individual tabs
+        for (i, rect) in tab_rects.iter().enumerate() {
+            let is_active = i == active_tab;
+            let bg_color = if is_active { active_bg } else { tab_bg };
 
-                    if is_active {
-                        let accent = color_to_array(&theme.active.accent);
-                        add_quad(&mut vertices, rect.x, rect.y + rect.height - 2.0 * s, rect.width, 2.0 * s, accent);
-                    }
-                }
-            }
+            // Tab background
+            add_quad(&mut vertices, rect.x, rect.y, rect.width, rect.height, bg_color);
 
-            TabPosition::Bottom => {
-                let bar_y = screen_height - bar_height;
+            // Tab borders
+            add_quad(&mut vertices, rect.x, rect.y, rect.width, border_width, border_color);
+            add_quad(&mut vertices, rect.x, rect.y + rect.height - border_width, rect.width, border_width, border_color);
+            add_quad(&mut vertices, rect.x, rect.y, border_width, rect.height, border_color);
+            add_quad(&mut vertices, rect.x + rect.width - border_width, rect.y, border_width, rect.height, border_color);
 
-                // Tab bar background
-                add_quad(&mut vertices, 0.0, bar_y, screen_width, bar_height, bar_bg);
-                // Top border
-                add_quad(&mut vertices, 0.0, bar_y, screen_width, s, border_color);
-
-                // Draw tabs
-                for (i, rect) in tab_rects.iter().enumerate() {
-                    let is_active = i == active_tab;
-                    let bg_color = if is_active { active_bg } else { tab_bg };
-
-                    add_quad(&mut vertices, rect.x, rect.y, rect.width, rect.height, bg_color);
-                    add_quad(&mut vertices, rect.x, rect.y, rect.width, border_width, border_color);
-                    add_quad(&mut vertices, rect.x, rect.y + rect.height - border_width, rect.width, border_width, border_color);
-                    add_quad(&mut vertices, rect.x, rect.y, border_width, rect.height, border_color);
-                    add_quad(&mut vertices, rect.x + rect.width - border_width, rect.y, border_width, rect.height, border_color);
-
-                    if is_active {
-                        let accent = color_to_array(&theme.active.accent);
-                        add_quad(&mut vertices, rect.x, rect.y, rect.width, 2.0 * s, accent);
-                    }
-                }
-            }
-
-            TabPosition::Left => {
-                // Tab bar background
-                add_quad(&mut vertices, 0.0, 0.0, bar_width, screen_height, bar_bg);
-                // Right border
-                add_quad(&mut vertices, bar_width - s, 0.0, s, screen_height, border_color);
-
-                // Draw tabs
-                for (i, rect) in tab_rects.iter().enumerate() {
-                    let is_active = i == active_tab;
-                    let bg_color = if is_active { active_bg } else { tab_bg };
-
-                    add_quad(&mut vertices, rect.x, rect.y, rect.width, rect.height, bg_color);
-                    add_quad(&mut vertices, rect.x, rect.y, rect.width, border_width, border_color);
-                    add_quad(&mut vertices, rect.x, rect.y + rect.height - border_width, rect.width, border_width, border_color);
-                    add_quad(&mut vertices, rect.x, rect.y, border_width, rect.height, border_color);
-                    add_quad(&mut vertices, rect.x + rect.width - border_width, rect.y, border_width, rect.height, border_color);
-
-                    if is_active {
-                        let accent = color_to_array(&theme.active.accent);
-                        add_quad(&mut vertices, rect.x + rect.width - 2.0 * s, rect.y, 2.0 * s, rect.height, accent);
-                    }
-                }
-            }
-
-            TabPosition::Right => {
-                let bar_x = screen_width - bar_width;
-
-                // Tab bar background
-                add_quad(&mut vertices, bar_x, 0.0, bar_width, screen_height, bar_bg);
-                // Left border
-                add_quad(&mut vertices, bar_x, 0.0, s, screen_height, border_color);
-
-                // Draw tabs
-                for (i, rect) in tab_rects.iter().enumerate() {
-                    let is_active = i == active_tab;
-                    let bg_color = if is_active { active_bg } else { tab_bg };
-
-                    add_quad(&mut vertices, rect.x, rect.y, rect.width, rect.height, bg_color);
-                    add_quad(&mut vertices, rect.x, rect.y, rect.width, border_width, border_color);
-                    add_quad(&mut vertices, rect.x, rect.y + rect.height - border_width, rect.width, border_width, border_color);
-                    add_quad(&mut vertices, rect.x, rect.y, border_width, rect.height, border_color);
-                    add_quad(&mut vertices, rect.x + rect.width - border_width, rect.y, border_width, rect.height, border_color);
-
-                    if is_active {
-                        let accent = color_to_array(&theme.active.accent);
-                        add_quad(&mut vertices, rect.x, rect.y, 2.0 * s, rect.height, accent);
-                    }
-                }
+            // Active tab accent (bottom highlight)
+            if is_active {
+                let accent = color_to_array(&theme.active.accent);
+                add_quad(&mut vertices, rect.x, rect.y + rect.height - 2.0 * s, rect.width, 2.0 * s, accent);
             }
         }
 

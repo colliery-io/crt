@@ -10,7 +10,7 @@ mod layout;
 mod renderer;
 
 pub use state::{Tab, EditState, TabBarState};
-pub use layout::{TabPosition, TabRect, TabLayout};
+pub use layout::{TabRect, TabLayout};
 pub use renderer::TabBarRenderer;
 
 use crt_theme::TabTheme;
@@ -52,37 +52,13 @@ impl TabBar {
         self.layout.set_scale_factor(scale_factor);
     }
 
-    /// Set tab bar position
-    pub fn set_position(&mut self, position: TabPosition) {
-        self.layout.set_position(position);
-    }
-
-    /// Get current tab bar position
-    pub fn position(&self) -> TabPosition {
-        self.layout.position()
-    }
-
-    /// Check if tab bar is horizontal (top/bottom)
-    pub fn is_horizontal(&self) -> bool {
-        self.layout.is_horizontal()
-    }
-
     /// Get current tab bar height (in logical pixels)
     pub fn height(&self) -> f32 {
         self.layout.height()
     }
 
-    /// Get current tab bar width (in logical pixels)
-    pub fn width(&self) -> f32 {
-        self.layout.width()
-    }
-
-    /// Get the dimension that affects content layout
-    pub fn size(&self) -> f32 {
-        self.layout.size()
-    }
-
     /// Get the content offset (x, y) in logical pixels
+    /// Content starts below the tab bar
     pub fn content_offset(&self) -> (f32, f32) {
         self.layout.content_offset()
     }
