@@ -6,5 +6,5 @@ edition = "2024"
 [dependencies]
 log.workspace = true
 bytemuck.workspace = true
-cssparser.workspace = true
+lightningcss.workspace = true
 thiserror = "2.0"

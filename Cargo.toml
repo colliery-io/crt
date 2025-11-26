@@ -24,6 +24,7 @@ winit = "0.30"
 
 # Theme parsing
 cssparser = "0.34"
+lightningcss = "1.0.0-alpha.68"
 
 # Configuration
 toml = "0.8"
