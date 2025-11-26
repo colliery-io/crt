@@ -51,39 +51,41 @@ Additionally, ANSI colors are not yet implemented - all terminal text renders in
 
 ## Architecture
 
-### Overview
+### Overview (Vello-First)
 
-Introduce a pluggable render pipeline where components are built from composable passes:
+With vello as the primary shape renderer, the architecture simplifies:
+
+- **Vello**: All UI shapes (cursor, selection, tab bar, cell backgrounds)
+- **Glyph pipeline**: Terminal text, tab titles (ANSI-colored)
+- **Glow shader**: Applied based on CSS `text-shadow` property
 
 ```
-RenderPass trait
-├── RawColorPass     - renders glyphs/quads with solid colors
-├── GlowPass         - applies blur/glow effect to a texture
-├── BackgroundPass   - gradient + grid animation
-└── CompositePass    - blends multiple layers together
+Rendering Layers
+├── Background shader    - gradient + grid animation
+├── Vello scene         - cursor, selection, tab bar shapes
+├── Glyph pipeline      - terminal text, tab titles
+└── Glow shader         - applied when text-shadow present
 ```
 
-### Component Pipelines
+### Component Rendering
 
-Each renderable component declares which passes it uses:
-
-| Component      | Pipeline                              |
-|----------------|---------------------------------------|
-| Background     | BackgroundPass → screen               |
-| Terminal text  | RawColorPass → screen (no effects)    |
-| Cursor         | RawColorPass → GlowPass → screen      |
-| Selection      | RawColorPass → screen (no effects)    |
-| Tab bar        | RawColorPass → screen                 |
-| Tab titles     | RawColorPass → GlowPass → screen      |
+| Component      | Renderer | Glow Effect                    |
+|----------------|----------|--------------------------------|
+| Background     | Shader   | No                             |
+| Terminal text  | Glyphs   | No (crisp for readability)     |
+| Cursor         | Vello    | Yes (via CSS text-shadow)      |
+| Selection      | Vello    | No                             |
+| Tab bar        | Vello    | No                             |
+| Tab titles     | Glyphs   | Yes (via CSS text-shadow)      |
 
 ### Render Order
 
-1. BackgroundPass (gradient + grid)
-2. Terminal text direct to screen (raw ANSI colors)
-3. Selection overlay (raw color)
-4. Cursor through GlowPass
-5. Tab bar quads (raw color)
-6. Tab titles through GlowPass
+1. Background shader (gradient + grid)
+2. Vello scene → texture (cursor, selection, cell backgrounds)
+3. Terminal text direct to screen (raw ANSI colors)
+4. Composite vello texture (cursor gets glow if text-shadow)
+5. Tab bar vello shapes (already implemented)
+6. Tab titles with glow
 
 ### CSS Color Variables
 
@@ -187,23 +189,18 @@ pub trait RenderPass {
 - Wire palette through to window.rs text rendering
 - Update hardcoded `[0.9, 0.9, 0.9, 1.0]` to use palette
 
-### Phase 2: Pluggable Render Pipeline Architecture
-- Define `RenderPass` trait
-- Refactor BackgroundPipeline → BackgroundPass
-- Extract GlowPass from composite logic
-- Create pipeline builder pattern
-
-### Phase 3: Split Terminal Text from Effects
+### Phase 2: Split Terminal Text from Effects (Vello-First)
+- Create `TerminalVelloRenderer` for cursor/selection shapes
 - Route terminal text directly to screen (bypass glow)
-- Keep cursor rendering through glow pipeline
-- Verify tab titles still render with glow
+- Cursor shape rendered via vello
+- Glow applied to cursor when CSS `text-shadow` present
 
-### Phase 4: Cursor Styling
-- Parse `--cursor-color` and `--cursor-shape`
-- Implement block/underline/bar cursor shapes
-- Render cursor through effect pipeline
+### Phase 3: Cursor Styling
+- Parse `.cursor` CSS with color, shape, text-shadow
+- Implement block/underline/bar cursor shapes via vello
+- Render cursor through vello + optional glow shader
 
-### Phase 5: Selection Support
-- Parse `--selection-background`
+### Phase 4: Selection Support
+- Parse `.selection` CSS with background color
 - Hook into alacritty_terminal selection state
-- Render selection as raw color overlay
+- Render selection rectangles via vello (no glow)
