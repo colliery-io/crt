@@ -2,6 +2,7 @@
 //!
 //! GPU-accelerated tab bar with theme support.
 
+use crate::shaders::builtin;
 use crt_theme::{TabTheme, Color};
 use wgpu::util::DeviceExt;
 use bytemuck::{Pod, Zeroable};
@@ -115,41 +116,6 @@ struct TabUniforms {
     _pad: [f32; 2],
 }
 
-const TAB_BAR_SHADER: &str = r#"
-struct Uniforms {
-    screen_size: vec2<f32>,
-    _pad: vec2<f32>,
-}
-
-@group(0) @binding(0) var<uniform> uniforms: Uniforms;
-
-struct VertexInput {
-    @location(0) position: vec2<f32>,
-    @location(1) color: vec4<f32>,
-}
-
-struct VertexOutput {
-    @builtin(position) position: vec4<f32>,
-    @location(0) color: vec4<f32>,
-}
-
-@vertex
-fn vs_main(in: VertexInput) -> VertexOutput {
-    var out: VertexOutput;
-    // Convert pixel coords to NDC (-1 to 1)
-    let ndc_x = (in.position.x / uniforms.screen_size.x) * 2.0 - 1.0;
-    let ndc_y = 1.0 - (in.position.y / uniforms.screen_size.y) * 2.0;
-    out.position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
-    out.color = in.color;
-    return out;
-}
-
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return in.color;
-}
-"#;
-
 // Maximum vertices for tab bar (enough for many tabs)
 const MAX_VERTICES: usize = 1024;
 
@@ -157,7 +123,7 @@ impl TabBar {
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Tab Bar Shader"),
-            source: wgpu::ShaderSource::Wgsl(TAB_BAR_SHADER.into()),
+            source: wgpu::ShaderSource::Wgsl(builtin::TAB_BAR.into()),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
