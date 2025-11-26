@@ -7,6 +7,7 @@ edition = "2024"
 crt-theme = { path = "../crt-theme" }
 
 wgpu.workspace = true
+vello.workspace = true
 swash.workspace = true
 bytemuck.workspace = true
 log.workspace = true

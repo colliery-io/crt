@@ -11,10 +11,12 @@ pub mod glyph_cache;
 pub mod grid_renderer;
 pub mod shaders;
 pub mod tab_bar;
+pub mod vello_renderer;
 
 pub use glyph_cache::{GlyphCache, GlyphKey, CachedGlyph, PositionedGlyph};
 pub use grid_renderer::GridRenderer;
 pub use tab_bar::{TabBar, Tab, TabRect, TabPosition, EditState, TabBarState, TabLayout, TabBarRenderer};
+pub use vello_renderer::{VelloContext, UiBuilder};
 
 use bytemuck::cast_slice;
 use crt_theme::Theme;
