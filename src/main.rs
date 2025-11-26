@@ -6,7 +6,9 @@
 
 mod config;
 mod gpu;
+mod input;
 mod menu;
+mod render;
 mod window;
 
 use std::collections::HashMap;
@@ -18,14 +20,16 @@ use crt_core::{ShellTerminal, Size};
 use crt_renderer::{GlyphCache, GridRenderer, EffectPipeline, TextRenderTarget, TabBar, TabPosition};
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
+use input::{TabEditResult, handle_tab_editing, handle_shell_input, handle_tab_click, handle_resize};
 use menu::MenuAction;
+use render::render_frame;
 use window::WindowState;
 
 use winit::{
     application::ApplicationHandler,
     event::{ElementState, Modifiers, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    keyboard::{Key, NamedKey},
+    keyboard::Key,
     window::{Window, WindowId},
 };
 
@@ -47,18 +51,12 @@ const FONT_SCALE_STEP: f32 = 0.1;
 const FONT_DATA: &[u8] = include_bytes!("../assets/fonts/MesloLGS-NF-Regular.ttf");
 
 struct App {
-    // Multiple windows keyed by winit WindowId
     windows: HashMap<WindowId, WindowState>,
-    // Shared GPU resources (device, queue, etc.)
     shared_gpu: Option<SharedGpuState>,
-    // Track which window is focused (for menu action routing)
     focused_window: Option<WindowId>,
-    // Shared state across all windows
     config: Config,
     modifiers: Modifiers,
-    // Flag to request new window creation (used by menu actions)
     pending_new_window: bool,
-    // macOS menu bar - must keep Menu alive for the duration of the app
     #[cfg(target_os = "macos")]
     menu: Option<Menu>,
     #[cfg(target_os = "macos")]
@@ -67,13 +65,11 @@ struct App {
 
 impl App {
     fn new() -> Self {
-        let config = Config::load();
-
         Self {
             windows: HashMap::new(),
             shared_gpu: None,
             focused_window: None,
-            config,
+            config: Config::load(),
             modifiers: Modifiers::default(),
             pending_new_window: false,
             #[cfg(target_os = "macos")]
@@ -83,21 +79,17 @@ impl App {
         }
     }
 
-    /// Initialize shared GPU resources (called once)
     fn init_shared_gpu(&mut self) {
-        if self.shared_gpu.is_some() {
-            return;
+        if self.shared_gpu.is_none() {
+            self.shared_gpu = Some(SharedGpuState::new());
         }
-        self.shared_gpu = Some(SharedGpuState::new());
     }
 
-    /// Create a new window and add it to the windows map
     fn create_window(&mut self, event_loop: &ActiveEventLoop) -> WindowId {
-        // Ensure shared GPU is initialized
         self.init_shared_gpu();
         let shared = self.shared_gpu.as_ref().unwrap();
 
-        // Initial window size
+        // Calculate initial window size
         let font_size = self.config.font.size;
         let line_height = font_size * self.config.font.line_height;
         let approx_cell_width = font_size * 0.6;
@@ -107,31 +99,23 @@ impl App {
         let width = (cols as f32 * approx_cell_width) as u32 + 20;
         let height = (rows as f32 * line_height) as u32 + 20 + tab_bar_height;
 
-        // Build window attributes
+        // Build window
         let mut window_attrs = Window::default_attributes()
             .with_title(&self.config.window.title)
             .with_inner_size(winit::dpi::LogicalSize::new(width, height));
 
-        // On macOS, give each window a unique tabbing identifier to prevent
-        // automatic window tabbing (where new windows appear as tabs in the same frame)
         #[cfg(target_os = "macos")]
         {
-            // Generate unique tabbing identifier based on window count
             let unique_id = format!("crt-window-{}", self.windows.len());
             window_attrs = window_attrs.with_tabbing_identifier(&unique_id);
         }
 
-        let window = Arc::new(
-            event_loop
-                .create_window(window_attrs)
-                .expect("Failed to create window"),
-        );
-
+        let window = Arc::new(event_loop.create_window(window_attrs).expect("Failed to create window"));
         let window_id = window.id();
         let size = window.inner_size();
         let scale_factor = window.scale_factor() as f32;
 
-        // Create surface for this window
+        // Create GPU resources
         let surface = shared.instance.create_surface(window.clone()).unwrap();
         let caps = surface.get_capabilities(&shared.adapter);
         let format = caps.formats[0];
@@ -148,7 +132,7 @@ impl App {
         };
         surface.configure(&shared.device, &surface_config);
 
-        // Initialize glyph cache with scaled font size
+        // Initialize glyph caches
         let scaled_font_size = self.config.font.size * scale_factor;
         let mut glyph_cache = GlyphCache::new(&shared.device, FONT_DATA, scaled_font_size)
             .expect("Failed to create glyph cache");
@@ -159,7 +143,6 @@ impl App {
         grid_renderer.set_glyph_cache(&shared.device, &glyph_cache);
         grid_renderer.update_screen_size(&shared.queue, size.width as f32, size.height as f32);
 
-        // Tab title glyph cache (fixed size)
         let tab_font_size = 12.0 * scale_factor;
         let mut tab_glyph_cache = GlyphCache::new(&shared.device, FONT_DATA, tab_font_size)
             .expect("Failed to create tab glyph cache");
@@ -170,28 +153,11 @@ impl App {
         tab_title_renderer.set_glyph_cache(&shared.device, &tab_glyph_cache);
         tab_title_renderer.update_screen_size(&shared.queue, size.width as f32, size.height as f32);
 
-        // Text render target
+        // Text render target and effects
         let text_target = TextRenderTarget::new(&shared.device, size.width, size.height, format);
-
-        // Load theme
-        let theme = match self.config.theme_css() {
-            Some(css) => match Theme::from_css(&css) {
-                Ok(t) => t,
-                Err(e) => {
-                    log::warn!("Failed to parse theme '{}': {:?}, using default", self.config.theme.name, e);
-                    Theme::default()
-                }
-            },
-            None => {
-                log::warn!("Theme '{}' not found, using default", self.config.theme.name);
-                Theme::default()
-            }
-        };
-
-        // Effect pipeline
+        let theme = self.load_theme();
         let mut effect_pipeline = EffectPipeline::new(&shared.device, format);
         effect_pipeline.set_theme(theme.clone());
-
         let composite_bind_group = Some(effect_pipeline.create_bind_group(&shared.device, &text_target.view));
 
         // Tab bar
@@ -206,7 +172,6 @@ impl App {
         });
         tab_bar.resize(size.width as f32, size.height as f32);
 
-        // Create GPU state for this window
         let gpu = WindowGpuState {
             surface,
             config: surface_config,
@@ -223,15 +188,10 @@ impl App {
         // Create initial shell
         let mut shells = HashMap::new();
         let mut content_hashes = HashMap::new();
-        match ShellTerminal::new(Size::new(cols, rows)) {
-            Ok(shell) => {
-                log::info!("Shell spawned for initial tab in new window");
-                shells.insert(0, shell);
-                content_hashes.insert(0, 0);
-            }
-            Err(e) => {
-                log::error!("Failed to spawn shell: {}", e);
-            }
+        if let Ok(shell) = ShellTerminal::new(Size::new(cols, rows)) {
+            log::info!("Shell spawned for initial tab");
+            shells.insert(0, shell);
+            content_hashes.insert(0, 0);
         }
 
         let window_state = WindowState {
@@ -252,28 +212,36 @@ impl App {
 
         self.windows.insert(window_id, window_state);
         self.focused_window = Some(window_id);
-
-        log::info!("Created new window {:?}, total windows: {}", window_id, self.windows.len());
+        log::info!("Created window {:?}, total: {}", window_id, self.windows.len());
         window_id
     }
 
-    /// Get the focused window state (for menu actions)
+    fn load_theme(&self) -> Theme {
+        match self.config.theme_css() {
+            Some(css) => Theme::from_css(&css).unwrap_or_else(|e| {
+                log::warn!("Failed to parse theme: {:?}", e);
+                Theme::default()
+            }),
+            None => {
+                log::warn!("Theme not found, using default");
+                Theme::default()
+            }
+        }
+    }
+
     fn focused_window_mut(&mut self) -> Option<&mut WindowState> {
         self.focused_window.and_then(|id| self.windows.get_mut(&id))
     }
 
-    /// Close a specific window
     fn close_window(&mut self, window_id: WindowId) {
-        if let Some(_state) = self.windows.remove(&window_id) {
-            log::info!("Closed window {:?}, remaining windows: {}", window_id, self.windows.len());
-            // Clear focused window if it was the one we closed
+        if self.windows.remove(&window_id).is_some() {
+            log::info!("Closed window {:?}, remaining: {}", window_id, self.windows.len());
             if self.focused_window == Some(window_id) {
                 self.focused_window = self.windows.keys().next().copied();
             }
         }
     }
 
-    /// Handle menu actions (macOS menu bar)
     #[cfg(target_os = "macos")]
     fn handle_menu_action(&mut self, action: MenuAction, event_loop: &ActiveEventLoop) {
         match action {
@@ -288,86 +256,38 @@ impl App {
                 }
             }
             MenuAction::NewWindow => {
-                log::info!("New Window requested");
                 self.pending_new_window = true;
             }
             MenuAction::CloseTab => {
-                let should_close_window = if let Some(state) = self.focused_window_mut() {
+                let should_close = if let Some(state) = self.focused_window_mut() {
                     if state.gpu.tab_bar.tab_count() > 1 {
                         if let Some(id) = state.gpu.tab_bar.active_tab_id() {
                             state.gpu.tab_bar.close_tab(id);
-                            state.shells.remove(&id);
-                            state.content_hashes.remove(&id);
+                            state.remove_shell_for_tab(id);
                             state.dirty = true;
                             state.window.request_redraw();
                         }
                         false
-                    } else {
-                        true // Close window when last tab
-                    }
-                } else {
-                    false
-                };
-                if should_close_window {
-                    if let Some(id) = self.focused_window {
-                        self.close_window(id);
-                    }
+                    } else { true }
+                } else { false };
+                if should_close {
+                    if let Some(id) = self.focused_window { self.close_window(id); }
                 }
             }
             MenuAction::CloseWindow => {
-                if let Some(id) = self.focused_window {
-                    self.close_window(id);
-                }
+                if let Some(id) = self.focused_window { self.close_window(id); }
             }
-            MenuAction::Quit => {
-                log::info!("Quit requested from menu");
-                event_loop.exit();
-            }
-            MenuAction::Copy => {
-                log::info!("Copy requested (not yet implemented)");
-            }
-            MenuAction::Paste => {
-                log::info!("Paste requested (not yet implemented)");
-            }
-            MenuAction::SelectAll => {
-                log::info!("Select All requested (not yet implemented)");
-            }
-            MenuAction::Find => {
-                log::info!("Find requested (not yet implemented)");
-            }
-            MenuAction::ClearScrollback => {
-                log::info!("Clear Scrollback requested (not yet implemented)");
-            }
+            MenuAction::Quit => event_loop.exit(),
             MenuAction::ToggleFullScreen => {
                 if let Some(state) = self.focused_window_mut() {
-                    let is_fullscreen = state.window.fullscreen().is_some();
-                    if is_fullscreen {
-                        state.window.set_fullscreen(None);
-                    } else {
-                        state.window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
-                    }
+                    let fs = state.window.fullscreen().is_some();
+                    state.window.set_fullscreen(if fs { None } else {
+                        Some(winit::window::Fullscreen::Borderless(None))
+                    });
                 }
             }
-            MenuAction::IncreaseFontSize => {
-                if let Some(state) = self.focused_window_mut() {
-                    let new_scale = (state.font_scale + FONT_SCALE_STEP).min(MAX_FONT_SCALE);
-                    if (new_scale - state.font_scale).abs() > 0.001 {
-                        state.font_scale = new_scale;
-                        state.dirty = true;
-                        state.window.request_redraw();
-                    }
-                }
-            }
-            MenuAction::DecreaseFontSize => {
-                if let Some(state) = self.focused_window_mut() {
-                    let new_scale = (state.font_scale - FONT_SCALE_STEP).max(MIN_FONT_SCALE);
-                    if (new_scale - state.font_scale).abs() > 0.001 {
-                        state.font_scale = new_scale;
-                        state.dirty = true;
-                        state.window.request_redraw();
-                    }
-                }
-            }
+            MenuAction::IncreaseFontSize => self.adjust_font_scale(FONT_SCALE_STEP),
+            MenuAction::DecreaseFontSize => self.adjust_font_scale(-FONT_SCALE_STEP),
             MenuAction::ResetFontSize => {
                 if let Some(state) = self.focused_window_mut() {
                     if (state.font_scale - 1.0).abs() > 0.001 {
@@ -382,35 +302,45 @@ impl App {
                     state.window.set_minimized(true);
                 }
             }
-            MenuAction::NextTab => {
-                if let Some(state) = self.focused_window_mut() {
-                    state.gpu.tab_bar.next_tab();
-                    state.force_active_tab_redraw();
-                    state.window.request_redraw();
-                }
-            }
-            MenuAction::PrevTab => {
-                if let Some(state) = self.focused_window_mut() {
-                    state.gpu.tab_bar.prev_tab();
-                    state.force_active_tab_redraw();
-                    state.window.request_redraw();
-                }
-            }
-            MenuAction::SelectTab1 => self.select_tab_by_index(0),
-            MenuAction::SelectTab2 => self.select_tab_by_index(1),
-            MenuAction::SelectTab3 => self.select_tab_by_index(2),
-            MenuAction::SelectTab4 => self.select_tab_by_index(3),
-            MenuAction::SelectTab5 => self.select_tab_by_index(4),
-            MenuAction::SelectTab6 => self.select_tab_by_index(5),
-            MenuAction::SelectTab7 => self.select_tab_by_index(6),
-            MenuAction::SelectTab8 => self.select_tab_by_index(7),
-            MenuAction::SelectTab9 => self.select_tab_by_index(8),
+            MenuAction::NextTab => self.navigate_tab(true),
+            MenuAction::PrevTab => self.navigate_tab(false),
+            MenuAction::SelectTab1 => self.select_tab_index(0),
+            MenuAction::SelectTab2 => self.select_tab_index(1),
+            MenuAction::SelectTab3 => self.select_tab_index(2),
+            MenuAction::SelectTab4 => self.select_tab_index(3),
+            MenuAction::SelectTab5 => self.select_tab_index(4),
+            MenuAction::SelectTab6 => self.select_tab_index(5),
+            MenuAction::SelectTab7 => self.select_tab_index(6),
+            MenuAction::SelectTab8 => self.select_tab_index(7),
+            MenuAction::SelectTab9 => self.select_tab_index(8),
+            _ => log::info!("{:?} not yet implemented", action),
         }
     }
 
-    /// Select tab by index in focused window
     #[cfg(target_os = "macos")]
-    fn select_tab_by_index(&mut self, index: usize) {
+    fn adjust_font_scale(&mut self, delta: f32) {
+        if let Some(state) = self.focused_window_mut() {
+            let new_scale = (state.font_scale + delta).clamp(MIN_FONT_SCALE, MAX_FONT_SCALE);
+            if (new_scale - state.font_scale).abs() > 0.001 {
+                state.font_scale = new_scale;
+                state.dirty = true;
+                state.window.request_redraw();
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn navigate_tab(&mut self, next: bool) {
+        if let Some(state) = self.focused_window_mut() {
+            if next { state.gpu.tab_bar.next_tab(); }
+            else { state.gpu.tab_bar.prev_tab(); }
+            state.force_active_tab_redraw();
+            state.window.request_redraw();
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn select_tab_index(&mut self, index: usize) {
         if let Some(state) = self.focused_window_mut() {
             state.gpu.tab_bar.select_tab_index(index);
             state.force_active_tab_redraw();
@@ -421,139 +351,59 @@ impl App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        // Only create first window if none exist
-        if !self.windows.is_empty() {
-            return;
+        if self.windows.is_empty() {
+            self.create_window(event_loop);
+
+            #[cfg(target_os = "macos")]
+            if self.menu.is_none() {
+                let (menu, ids) = build_menu_bar();
+                menu.init_for_nsapp();
+                self.menu = Some(menu);
+                self.menu_ids = Some(ids);
+            }
         }
-
-        // Create the first window
-        self.create_window(event_loop);
-
-        // Initialize macOS menu bar (once per app)
-        #[cfg(target_os = "macos")]
-        if self.menu.is_none() {
-            let (menu, ids) = build_menu_bar();
-            menu.init_for_nsapp();
-            self.menu = Some(menu);
-            self.menu_ids = Some(ids);
-            log::info!("macOS menu bar initialized");
-        }
-
-        log::info!("CRT Terminal initialized with {} window(s)", self.windows.len());
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
-        // Route event to the specific window
-        let Some(state) = self.windows.get_mut(&id) else {
-            return; // Window not found (already closed)
-        };
+        let Some(state) = self.windows.get_mut(&id) else { return };
 
         match event {
             WindowEvent::CloseRequested => {
-                log::info!("Window {:?} close requested", id);
                 self.windows.remove(&id);
                 if self.focused_window == Some(id) {
                     self.focused_window = self.windows.keys().next().copied();
                 }
-                log::info!("Remaining windows: {}", self.windows.len());
             }
 
             WindowEvent::Focused(focused) => {
-                if focused {
-                    self.focused_window = Some(id);
-                    log::debug!("Window {:?} focused", id);
-                }
+                if focused { self.focused_window = Some(id); }
             }
 
-            WindowEvent::ModifiersChanged(new_modifiers) => {
-                self.modifiers = new_modifiers;
-            }
+            WindowEvent::ModifiersChanged(m) => { self.modifiers = m; }
 
-            WindowEvent::KeyboardInput { event, .. } => {
-                if event.state != ElementState::Pressed {
-                    return;
-                }
-
-                // Re-borrow state after modifiers update
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 let Some(state) = self.windows.get_mut(&id) else { return };
 
-                // Use Cmd on macOS, Ctrl on other platforms
                 #[cfg(target_os = "macos")]
                 let mod_pressed = self.modifiers.state().super_key();
                 #[cfg(not(target_os = "macos"))]
                 let mod_pressed = self.modifiers.state().control_key();
 
-                // Check if we're editing a tab title - route input there first
-                let is_editing = state.gpu.tab_bar.is_editing();
-                if is_editing && !mod_pressed {
-                    let mut handled = true;
-                    let mut need_redraw = true;
-
-                    match &event.logical_key {
-                        Key::Named(NamedKey::Enter) => {
-                            state.gpu.tab_bar.confirm_editing();
-                        }
-                        Key::Named(NamedKey::Escape) => {
-                            state.gpu.tab_bar.cancel_editing();
-                        }
-                        Key::Named(NamedKey::Backspace) => {
-                            state.gpu.tab_bar.edit_backspace();
-                        }
-                        Key::Named(NamedKey::Delete) => {
-                            state.gpu.tab_bar.edit_delete();
-                        }
-                        Key::Named(NamedKey::ArrowLeft) => {
-                            state.gpu.tab_bar.edit_cursor_left();
-                        }
-                        Key::Named(NamedKey::ArrowRight) => {
-                            state.gpu.tab_bar.edit_cursor_right();
-                        }
-                        Key::Named(NamedKey::Home) => {
-                            state.gpu.tab_bar.edit_cursor_home();
-                        }
-                        Key::Named(NamedKey::End) => {
-                            state.gpu.tab_bar.edit_cursor_end();
-                        }
-                        Key::Named(NamedKey::Space) => {
-                            state.gpu.tab_bar.edit_insert_char(' ');
-                        }
-                        Key::Character(c) => {
-                            for ch in c.chars() {
-                                if !ch.is_control() {
-                                    state.gpu.tab_bar.edit_insert_char(ch);
-                                }
-                            }
-                        }
-                        _ => {
-                            handled = false;
-                            need_redraw = false;
-                        }
-                    }
-
-                    if need_redraw {
-                        state.dirty = true;
-                        state.window.request_redraw();
-                    }
-
-                    if handled {
-                        return;
-                    }
+                // Handle tab editing first
+                if let TabEditResult::Handled = handle_tab_editing(state, &event.logical_key, mod_pressed) {
+                    return;
                 }
 
+                // Handle keyboard shortcuts
                 if mod_pressed {
-                    // If editing a tab title, confirm it before processing shortcuts
                     if state.gpu.tab_bar.is_editing() {
                         state.gpu.tab_bar.confirm_editing();
                         state.dirty = true;
                     }
 
                     match &event.logical_key {
-                        Key::Character(c) if c.as_str() == "q" => {
-                            event_loop.exit();
-                            return;
-                        }
+                        Key::Character(c) if c.as_str() == "q" => { event_loop.exit(); return; }
                         Key::Character(c) if c.as_str() == "w" => {
-                            // Close current tab (or close window if last tab)
                             if state.gpu.tab_bar.tab_count() > 1 {
                                 if let Some(tab_id) = state.gpu.tab_bar.active_tab_id() {
                                     state.gpu.tab_bar.close_tab(tab_id);
@@ -563,7 +413,6 @@ impl ApplicationHandler for App {
                                     return;
                                 }
                             }
-                            // Close window when last tab is closed
                             self.windows.remove(&id);
                             if self.focused_window == Some(id) {
                                 self.focused_window = self.windows.keys().next().copied();
@@ -571,12 +420,10 @@ impl ApplicationHandler for App {
                             return;
                         }
                         Key::Character(c) if c.as_str() == "n" => {
-                            log::info!("New window requested via Cmd+N");
                             self.pending_new_window = true;
                             return;
                         }
                         Key::Character(c) if c.as_str() == "t" => {
-                            // New tab
                             let tab_num = state.gpu.tab_bar.tab_count() + 1;
                             let tab_id = state.gpu.tab_bar.add_tab(format!("Terminal {}", tab_num));
                             state.gpu.tab_bar.select_tab_index(state.gpu.tab_bar.tab_count() - 1);
@@ -611,133 +458,13 @@ impl ApplicationHandler for App {
                     }
                 }
 
-                // Send input to active shell
-                let tab_id = state.gpu.tab_bar.active_tab_id();
-                if let Some(tab_id) = tab_id {
-                    if let Some(shell) = state.shells.get(&tab_id) {
-                        let mut input_sent = false;
-                        match &event.logical_key {
-                            Key::Named(NamedKey::Escape) => {
-                                shell.send_input(b"\x1b");
-                                input_sent = true;
-                            }
-                            Key::Named(NamedKey::Enter) => {
-                                shell.send_input(b"\r");
-                                input_sent = true;
-                            }
-                            Key::Named(NamedKey::Backspace) => {
-                                shell.send_input(b"\x7f");
-                                input_sent = true;
-                            }
-                            Key::Named(NamedKey::Tab) => {
-                                shell.send_input(b"\t");
-                                input_sent = true;
-                            }
-                            Key::Named(NamedKey::ArrowUp) => {
-                                shell.send_input(b"\x1b[A");
-                                input_sent = true;
-                            }
-                            Key::Named(NamedKey::ArrowDown) => {
-                                shell.send_input(b"\x1b[B");
-                                input_sent = true;
-                            }
-                            Key::Named(NamedKey::ArrowRight) => {
-                                shell.send_input(b"\x1b[C");
-                                input_sent = true;
-                            }
-                            Key::Named(NamedKey::ArrowLeft) => {
-                                shell.send_input(b"\x1b[D");
-                                input_sent = true;
-                            }
-                            Key::Named(NamedKey::Space) => {
-                                shell.send_input(b" ");
-                                input_sent = true;
-                            }
-                            Key::Character(c) => {
-                                if !mod_pressed {
-                                    shell.send_input(c.as_bytes());
-                                    input_sent = true;
-                                }
-                            }
-                            _ => {}
-                        }
-                        if input_sent {
-                            state.dirty = true;
-                            state.window.request_redraw();
-                        }
-                    }
-                }
+                // Send to shell
+                handle_shell_input(state, &event.logical_key, mod_pressed);
             }
 
-            WindowEvent::Resized(new_size) => {
-                if new_size.width < 100 || new_size.height < 80 {
-                    return;
-                }
-
-                let scale_factor = state.scale_factor;
-                let cell_width = state.gpu.glyph_cache.cell_width();
-                let line_height = state.gpu.glyph_cache.line_height();
-                let is_horizontal = state.gpu.tab_bar.is_horizontal();
-                let tab_bar_size = if is_horizontal {
-                    state.gpu.tab_bar.height()
-                } else {
-                    state.gpu.tab_bar.width()
-                };
-
-                let padding_physical = 20.0 * scale_factor;
-                let tab_bar_physical = tab_bar_size * scale_factor;
-
-                let (content_width, content_height) = if is_horizontal {
-                    (
-                        (new_size.width as f32 - padding_physical).max(60.0),
-                        (new_size.height as f32 - padding_physical - tab_bar_physical).max(40.0),
-                    )
-                } else {
-                    (
-                        (new_size.width as f32 - padding_physical - tab_bar_physical).max(60.0),
-                        (new_size.height as f32 - padding_physical).max(40.0),
-                    )
-                };
-
-                let new_cols = ((content_width / cell_width) as usize).max(10);
-                let new_rows = ((content_height / line_height) as usize).max(4);
-
-                state.cols = new_cols;
-                state.rows = new_rows;
-
-                // Resize all shells in this window
-                for shell in state.shells.values_mut() {
-                    shell.resize(Size::new(new_cols, new_rows));
-                }
-
-                // Update GPU resources
+            WindowEvent::Resized(size) => {
                 let shared = self.shared_gpu.as_ref().unwrap();
-                state.gpu.config.width = new_size.width;
-                state.gpu.config.height = new_size.height;
-                state.gpu.surface.configure(&shared.device, &state.gpu.config);
-
-                state.gpu.grid_renderer.update_screen_size(
-                    &shared.queue,
-                    new_size.width as f32,
-                    new_size.height as f32,
-                );
-                state.gpu.tab_title_renderer.update_screen_size(
-                    &shared.queue,
-                    new_size.width as f32,
-                    new_size.height as f32,
-                );
-
-                state.gpu.tab_bar.resize(new_size.width as f32, new_size.height as f32);
-                state.gpu.text_target.resize(&shared.device, new_size.width, new_size.height, state.gpu.config.format);
-                state.gpu.composite_bind_group = Some(
-                    state.gpu.effect_pipeline.create_bind_group(&shared.device, &state.gpu.text_target.view)
-                );
-
-                state.dirty = true;
-                for hash in state.content_hashes.values_mut() {
-                    *hash = 0;
-                }
-                state.window.request_redraw();
+                handle_resize(state, shared, size.width, size.height);
             }
 
             WindowEvent::CursorMoved { position, .. } => {
@@ -746,296 +473,19 @@ impl ApplicationHandler for App {
 
             WindowEvent::MouseInput { state: ElementState::Pressed, button: winit::event::MouseButton::Left, .. } => {
                 let (x, y) = state.cursor_position;
-                let now = Instant::now();
-                let double_click_threshold = std::time::Duration::from_millis(400);
-
-                let mut tab_closed = None;
-                let mut tab_switched = false;
-                let mut started_editing = false;
-
-                if state.gpu.tab_bar.is_editing() {
-                    if let Some(editing_id) = state.gpu.tab_bar.editing_tab_id() {
-                        if let Some((tab_id, _)) = state.gpu.tab_bar.hit_test(x, y) {
-                            if tab_id != editing_id {
-                                state.gpu.tab_bar.confirm_editing();
-                                state.gpu.tab_bar.select_tab(tab_id);
-                                tab_switched = true;
-                            }
-                        } else {
-                            state.gpu.tab_bar.confirm_editing();
-                        }
-                    }
-                } else {
-                    if let Some((tab_id, is_close)) = state.gpu.tab_bar.hit_test(x, y) {
-                        if is_close {
-                            if state.gpu.tab_bar.tab_count() > 1 {
-                                state.gpu.tab_bar.close_tab(tab_id);
-                                tab_closed = Some(tab_id);
-                                tab_switched = true;
-                            }
-                        } else {
-                            let is_double_click = state.last_click_time
-                                .map(|t| now.duration_since(t) < double_click_threshold)
-                                .unwrap_or(false)
-                                && state.last_click_tab == Some(tab_id);
-
-                            if is_double_click {
-                                state.gpu.tab_bar.start_editing(tab_id);
-                                started_editing = true;
-                                state.last_click_time = None;
-                                state.last_click_tab = None;
-                            } else {
-                                state.gpu.tab_bar.select_tab(tab_id);
-                                tab_switched = true;
-                                state.last_click_time = Some(now);
-                                state.last_click_tab = Some(tab_id);
-                            }
-                        }
-                    } else {
-                        state.last_click_time = None;
-                        state.last_click_tab = None;
-                    }
-                }
-
-                if let Some(tab_id) = tab_closed {
-                    state.remove_shell_for_tab(tab_id);
-                }
-
-                if tab_switched || started_editing {
-                    state.force_active_tab_redraw();
-                    state.window.request_redraw();
-                }
+                handle_tab_click(state, x, y, Instant::now());
             }
 
             WindowEvent::RedrawRequested => {
-                state.frame_count = state.frame_count.saturating_add(1);
-
-                // Process PTY output from active shell
-                let active_tab_id = state.gpu.tab_bar.active_tab_id();
-                if let Some(tab_id) = active_tab_id {
-                    if let Some(shell) = state.shells.get_mut(&tab_id) {
-                        if shell.process_pty_output() {
-                            state.dirty = true;
-                        }
-
-                        if let Some(title) = shell.check_title_change() {
-                            state.gpu.tab_bar.set_tab_title(tab_id, title);
-                        }
-                    }
-                }
-
-                // Force re-renders during first 60 frames
-                if state.frame_count < 60 {
-                    state.dirty = true;
-                    if let Some(tab_id) = active_tab_id {
-                        state.content_hashes.insert(tab_id, 0);
-                    }
-                }
-
-                // Update text buffer
                 let shared = self.shared_gpu.as_ref().unwrap();
-                let text_changed = if state.dirty {
-                    state.dirty = false;
-                    state.update_text_buffer(shared)
-                } else {
-                    false
-                };
-
-                // Render
-                let frame = match state.gpu.surface.get_current_texture() {
-                    Ok(f) => f,
-                    Err(e) => {
-                        log::warn!("Failed to get surface texture: {:?}", e);
-                        return;
-                    }
-                };
-                let frame_view = frame.texture.create_view(&Default::default());
-
-                let mut encoder = shared.device.create_command_encoder(&Default::default());
-
-                // Pass 1: Render text to offscreen texture
-                if text_changed {
-                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("Text Render Pass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &state.gpu.text_target.view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                    });
-
-                    state.gpu.grid_renderer.render(&shared.queue, &mut pass);
-                }
-
-                // Update effect uniforms
-                state.gpu.effect_pipeline.update_uniforms(
-                    &shared.queue,
-                    state.gpu.config.width as f32,
-                    state.gpu.config.height as f32,
-                );
-
-                // Pass 2: Render background
-                {
-                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("Background Render Pass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &frame_view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                    });
-
-                    state.gpu.effect_pipeline.background.render(&mut pass);
-                }
-
-                // Pass 3: Composite text with effects
-                if let Some(bind_group) = &state.gpu.composite_bind_group {
-                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("Composite Render Pass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &frame_view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                    });
-
-                    state.gpu.effect_pipeline.composite.render(&mut pass, bind_group);
-                }
-
-                // Pass 4: Render tab bar
-                {
-                    state.gpu.tab_bar.prepare(&shared.queue);
-
-                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("Tab Bar Render Pass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &frame_view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                    });
-
-                    state.gpu.tab_bar.render(&mut pass);
-                }
-
-                // Pass 5: Render tab title text with glow
-                {
-                    let tab_labels = state.gpu.tab_bar.get_tab_labels();
-                    if !tab_labels.is_empty() {
-                        state.gpu.tab_title_renderer.clear();
-
-                        let active_color = state.gpu.tab_bar.active_tab_color();
-                        let inactive_color = state.gpu.tab_bar.inactive_tab_color();
-                        let active_shadow = state.gpu.tab_bar.active_tab_text_shadow();
-
-                        // First pass: render glow layers for active tabs
-                        if let Some((radius, glow_color)) = active_shadow {
-                            let offsets = [
-                                (-1.5, -1.5), (1.5, -1.5), (-1.5, 1.5), (1.5, 1.5),
-                                (-2.0, 0.0), (2.0, 0.0), (0.0, -2.0), (0.0, 2.0),
-                                (-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0),
-                            ];
-
-                            let glow_alpha = (glow_color[3] * (radius / 20.0).min(1.0)).min(0.6);
-                            let glow_render_color = [glow_color[0], glow_color[1], glow_color[2], glow_alpha];
-
-                            for (x, y, title, is_active, _is_editing) in &tab_labels {
-                                if *is_active {
-                                    for (ox, oy) in &offsets {
-                                        let mut glyphs = Vec::new();
-                                        let mut char_x = *x + ox;
-                                        for c in title.chars() {
-                                            if let Some(glyph) = state.gpu.tab_glyph_cache.position_char(c, char_x, *y + oy) {
-                                                glyphs.push(glyph);
-                                            }
-                                            char_x += state.gpu.tab_glyph_cache.cell_width();
-                                        }
-                                        state.gpu.tab_title_renderer.push_glyphs(&glyphs, glow_render_color);
-                                    }
-                                }
-                            }
-                        }
-
-                        // Second pass: render actual text on top
-                        for (x, y, title, is_active, is_editing) in tab_labels {
-                            let mut glyphs = Vec::new();
-                            let mut char_x = x;
-                            for c in title.chars() {
-                                if let Some(glyph) = state.gpu.tab_glyph_cache.position_char(c, char_x, y) {
-                                    glyphs.push(glyph);
-                                }
-                                char_x += state.gpu.tab_glyph_cache.cell_width();
-                            }
-
-                            let text_color = if is_editing {
-                                [
-                                    (active_color[0] * 1.2).min(1.0),
-                                    (active_color[1] * 1.2).min(1.0),
-                                    (active_color[2] * 1.2).min(1.0),
-                                    active_color[3],
-                                ]
-                            } else if is_active {
-                                active_color
-                            } else {
-                                inactive_color
-                            };
-                            state.gpu.tab_title_renderer.push_glyphs(&glyphs, text_color);
-                        }
-
-                        state.gpu.tab_glyph_cache.flush(&shared.queue);
-
-                        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            label: Some("Tab Title Render Pass"),
-                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view: &frame_view,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Load,
-                                    store: wgpu::StoreOp::Store,
-                                },
-                            })],
-                            depth_stencil_attachment: None,
-                            timestamp_writes: None,
-                            occlusion_query_set: None,
-                        });
-
-                        state.gpu.tab_title_renderer.render(&shared.queue, &mut pass);
-                    }
-                }
-
-                shared.queue.submit(std::iter::once(encoder.finish()));
-                frame.present();
+                render_frame(state, shared);
             }
+
             _ => {}
         }
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // Handle menu events on macOS
         #[cfg(target_os = "macos")]
         if let Some(ids) = &self.menu_ids {
             if let Ok(event) = MenuEvent::receiver().try_recv() {
@@ -1045,14 +495,11 @@ impl ApplicationHandler for App {
             }
         }
 
-        // Handle pending new window request
         if self.pending_new_window {
             self.pending_new_window = false;
-            log::info!("Creating new window from pending request");
             self.create_window(event_loop);
         }
 
-        // Request redraw for all windows (continuous animation)
         for state in self.windows.values() {
             state.window.request_redraw();
         }
@@ -1060,16 +507,10 @@ impl ApplicationHandler for App {
 }
 
 fn main() {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("warn,crt=info"),
-    )
-    .init();
-
-    log::info!("CRT Terminal with Effects - swash renderer + effect pipeline");
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn,crt=info")).init();
+    log::info!("CRT Terminal - swash renderer + effect pipeline");
 
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
-
-    let mut app = App::new();
-    event_loop.run_app(&mut app).unwrap();
+    event_loop.run_app(&mut App::new()).unwrap();
 }
