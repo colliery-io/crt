@@ -4,12 +4,9 @@
 //! - Terminal grid state (via alacritty_terminal)
 //! - ANSI escape sequence parsing (via vte)
 //! - PTY process management (via portable-pty)
-//! - Configuration management
 
-pub mod config;
 pub mod pty;
 
-pub use config::{Config, FontConfig, KeyAction, Keybinding, ShellConfig, TabPositionConfig, WindowConfig};
 pub use pty::Pty;
 
 // Re-export alacritty_terminal types needed for rendering

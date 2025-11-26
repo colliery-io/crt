@@ -61,8 +61,6 @@ bytemuck = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
 naga = { workspace = true }
-glyphon = { workspace = true }
-fontdue = { workspace = true }
 crt-core = { path = "crates/crt-core" }
 crt-renderer = { path = "crates/crt-renderer" }
 crt-theme = { path = "crates/crt-theme" }
@@ -72,31 +70,3 @@ muda = { workspace = true }
 dirs = { workspace = true }
 toml = { workspace = true }
 serde = { workspace = true }
-
-[[example]]
-name = "prototype_a"
-path = "examples/prototype_a.rs"
-
-[[example]]
-name = "prototype_b"
-path = "examples/prototype_b.rs"
-
-[[example]]
-name = "text_glow"
-path = "examples/text_glow.rs"
-
-[[example]]
-name = "synthwave"
-path = "examples/synthwave.rs"
-
-[[example]]
-name = "font_rendering"
-path = "examples/font_rendering.rs"
-
-[[example]]
-name = "terminal"
-path = "examples/terminal.rs"
-
-[[example]]
-name = "terminal_effects"
-path = "examples/terminal_effects.rs"

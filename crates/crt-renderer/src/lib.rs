@@ -7,12 +7,10 @@
 //! This separation allows smooth 60fps animation while only re-rendering
 //! text when it actually changes.
 
-pub mod font;
 pub mod glyph_cache;
 pub mod grid_renderer;
 pub mod tab_bar;
 
-pub use font::{TerminalFontAttrs, attrs_from_config};
 pub use glyph_cache::{GlyphCache, GlyphKey, CachedGlyph, PositionedGlyph};
 pub use grid_renderer::GridRenderer;
 pub use tab_bar::{TabBar, Tab, TabRect, TabPosition};
@@ -194,32 +192,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 "#;
 
-/// Simple blend shader - just samples a pre-composited texture
-/// Very cheap (1 texture sample per pixel) - runs every frame
-const BLEND_SHADER: &str = r#"
-@group(0) @binding(0) var composite_texture: texture_2d<f32>;
-@group(0) @binding(1) var composite_sampler: sampler;
-
-struct VertexOutput {
-    @builtin(position) position: vec4<f32>,
-    @location(0) uv: vec2<f32>,
-}
-
-@vertex
-fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
-    var out: VertexOutput;
-    let x = f32(i32(vertex_index & 1u)) * 4.0 - 1.0;
-    let y = f32(i32(vertex_index >> 1u)) * 4.0 - 1.0;
-    out.position = vec4<f32>(x, y, 0.0, 1.0);
-    out.uv = vec2<f32>((x + 1.0) * 0.5, (1.0 - y) * 0.5);
-    return out;
-}
-
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(composite_texture, composite_sampler, in.uv);
-}
-"#;
 
 /// Background pipeline - renders gradient + animated grid
 pub struct BackgroundPipeline {
@@ -497,125 +469,10 @@ impl CompositePipeline {
     }
 }
 
-/// Blend pipeline - simple alpha blend of cached composite texture
-/// Very fast (1 texture sample per pixel) - runs every frame
-pub struct BlendPipeline {
-    pipeline: wgpu::RenderPipeline,
-    bind_group_layout: wgpu::BindGroupLayout,
-    sampler: wgpu::Sampler,
-}
-
-impl BlendPipeline {
-    pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Blend Shader"),
-            source: wgpu::ShaderSource::Wgsl(BLEND_SHADER.into()),
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Blend Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Blend Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Blend Pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
-
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Blend Sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
-
-        Self {
-            pipeline,
-            bind_group_layout,
-            sampler,
-        }
-    }
-
-    pub fn create_bind_group(
-        &self,
-        device: &wgpu::Device,
-        composite_texture_view: &wgpu::TextureView,
-    ) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Blend Bind Group"),
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(composite_texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        })
-    }
-
-    pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>, bind_group: &'a wgpu::BindGroup) {
-        render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, bind_group, &[]);
-        render_pass.draw(0..4, 0..1);
-    }
-}
-
 // Keep the old EffectPipeline for backwards compatibility during transition
 pub struct EffectPipeline {
     pub background: BackgroundPipeline,
     pub composite: CompositePipeline,
-    pub blend: BlendPipeline,
 }
 
 impl EffectPipeline {
@@ -623,7 +480,6 @@ impl EffectPipeline {
         Self {
             background: BackgroundPipeline::new(device, target_format),
             composite: CompositePipeline::new(device, target_format),
-            blend: BlendPipeline::new(device, target_format),
         }
     }
 
