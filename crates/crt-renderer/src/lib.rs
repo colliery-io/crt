@@ -14,7 +14,7 @@ pub mod tab_bar;
 
 pub use glyph_cache::{GlyphCache, GlyphKey, CachedGlyph, PositionedGlyph};
 pub use grid_renderer::GridRenderer;
-pub use tab_bar::{TabBar, Tab, TabRect, TabPosition};
+pub use tab_bar::{TabBar, Tab, TabRect, TabPosition, EditState, TabBarState, TabLayout, TabBarRenderer};
 
 use bytemuck::cast_slice;
 use crt_theme::Theme;
