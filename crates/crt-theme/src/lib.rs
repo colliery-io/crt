@@ -2,7 +2,10 @@
 //!
 //! Provides theme structures that map to shader uniforms for terminal rendering.
 
+pub mod parser;
+
 use bytemuck::{Pod, Zeroable};
+use std::path::Path;
 
 /// RGBA color with f32 components (0.0 - 1.0)
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -241,6 +244,126 @@ impl Default for HighlightStyle {
     }
 }
 
+/// Tab bar styling
+#[derive(Debug, Clone, Copy)]
+pub struct TabBarStyle {
+    /// Tab bar background color
+    pub background: Color,
+    /// Border color between tabs and terminal content
+    pub border_color: Color,
+    /// Tab bar height in pixels
+    pub height: f32,
+    /// Padding around tabs
+    pub padding: f32,
+}
+
+impl Default for TabBarStyle {
+    fn default() -> Self {
+        Self {
+            background: Color::from_hex(0x1a1a2e),
+            border_color: Color::from_hex(0x2a2a3e),
+            height: 36.0,
+            padding: 4.0,
+        }
+    }
+}
+
+/// Individual tab styling
+#[derive(Debug, Clone, Copy)]
+pub struct TabStyle {
+    /// Tab background color
+    pub background: Color,
+    /// Tab text color
+    pub foreground: Color,
+    /// Tab border radius
+    pub border_radius: f32,
+    /// Tab padding (horizontal)
+    pub padding_x: f32,
+    /// Tab padding (vertical)
+    pub padding_y: f32,
+    /// Minimum tab width
+    pub min_width: f32,
+    /// Maximum tab width
+    pub max_width: f32,
+    /// Text glow/shadow effect
+    pub text_shadow: Option<TextShadow>,
+}
+
+impl Default for TabStyle {
+    fn default() -> Self {
+        Self {
+            background: Color::from_hex(0x2a2a3e),
+            foreground: Color::from_hex(0x888899),
+            border_radius: 4.0,
+            padding_x: 12.0,
+            padding_y: 6.0,
+            min_width: 80.0,
+            max_width: 200.0,
+            text_shadow: None,
+        }
+    }
+}
+
+/// Active tab styling (inherits from TabStyle where not specified)
+#[derive(Debug, Clone, Copy)]
+pub struct TabActiveStyle {
+    /// Active tab background color
+    pub background: Color,
+    /// Active tab text color
+    pub foreground: Color,
+    /// Accent color (underline or highlight)
+    pub accent: Color,
+    /// Text glow/shadow effect for active tab
+    pub text_shadow: Option<TextShadow>,
+}
+
+impl Default for TabActiveStyle {
+    fn default() -> Self {
+        Self {
+            background: Color::from_hex(0x3a3a4e),
+            foreground: Color::from_hex(0xf8f8f2),
+            accent: Color::from_hex(0x00ffff),
+            text_shadow: None,
+        }
+    }
+}
+
+/// Tab close button styling
+#[derive(Debug, Clone, Copy)]
+pub struct TabCloseStyle {
+    /// Close button background (normal)
+    pub background: Color,
+    /// Close button icon color (normal)
+    pub foreground: Color,
+    /// Close button background (hover)
+    pub hover_background: Color,
+    /// Close button icon color (hover)
+    pub hover_foreground: Color,
+    /// Close button size
+    pub size: f32,
+}
+
+impl Default for TabCloseStyle {
+    fn default() -> Self {
+        Self {
+            background: Color::rgba(0.0, 0.0, 0.0, 0.0),
+            foreground: Color::from_hex(0x666677),
+            hover_background: Color::from_hex(0xff5555),
+            hover_foreground: Color::from_hex(0xffffff),
+            size: 16.0,
+        }
+    }
+}
+
+/// Complete tab theme
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TabTheme {
+    pub bar: TabBarStyle,
+    pub tab: TabStyle,
+    pub active: TabActiveStyle,
+    pub close: TabCloseStyle,
+}
+
 /// Complete terminal theme
 #[derive(Debug, Clone)]
 pub struct Theme {
@@ -260,6 +383,9 @@ pub struct Theme {
     // Effects
     pub text_shadow: Option<TextShadow>,
     pub grid: Option<GridEffect>,
+
+    // Tab styling
+    pub tabs: TabTheme,
 }
 
 impl Default for Theme {
@@ -293,6 +419,7 @@ impl Theme {
             cursor_color: Color::from_hex(0x00ffff),
             text_shadow: Some(TextShadow::default()),
             grid: Some(GridEffect::default()),
+            tabs: TabTheme::default(),
         }
     }
 
@@ -311,7 +438,19 @@ impl Theme {
             cursor_color: Color::from_hex(0xffffff),
             text_shadow: None,
             grid: None,
+            tabs: TabTheme::default(),
         }
+    }
+
+    /// Load theme from CSS string
+    pub fn from_css(css: &str) -> Result<Self, parser::ThemeParseError> {
+        parser::parse_theme(css)
+    }
+
+    /// Load theme from CSS file
+    pub fn from_css_file(path: impl AsRef<Path>) -> Result<Self, Box<dyn std::error::Error>> {
+        let css = std::fs::read_to_string(path)?;
+        Ok(parser::parse_theme(&css)?)
     }
 
     /// Convert theme to GPU-ready uniforms

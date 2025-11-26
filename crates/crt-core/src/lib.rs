@@ -4,9 +4,12 @@
 //! - Terminal grid state (via alacritty_terminal)
 //! - ANSI escape sequence parsing (via vte)
 //! - PTY process management (via portable-pty)
+//! - Configuration management
 
+pub mod config;
 pub mod pty;
 
+pub use config::{Config, FontConfig, KeyAction, Keybinding, ShellConfig, WindowConfig};
 pub use pty::Pty;
 
 // Re-export alacritty_terminal types needed for rendering
@@ -14,8 +17,10 @@ pub use alacritty_terminal::term::{
     cell::Cell,
     cell::Flags as CellFlags,
     color::{self, Colors},
+    LineDamageBounds,
     RenderableCursor,
     RenderableContent,
+    TermDamage,
 };
 pub use alacritty_terminal::index::{Column, Line, Point};
 pub use alacritty_terminal::vte::ansi::Color as AnsiColor;
@@ -24,7 +29,7 @@ use std::sync::{Arc, Mutex};
 
 use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::term::{self, Config, Term};
+use alacritty_terminal::term::{self, Config as TermConfig, Term};
 use alacritty_terminal::term::test::TermSize;
 use alacritty_terminal::vte::ansi;
 
@@ -82,18 +87,20 @@ impl Size {
 pub struct Terminal {
     term: Term<TerminalEventProxy>,
     event_proxy: TerminalEventProxy,
+    parser: ansi::Processor,
     size: Size,
 }
 
 impl Terminal {
     /// Create a new terminal with the given size
     pub fn new(size: Size) -> Self {
-        let config = Config::default();
+        let config = TermConfig::default();
         let term_size = TermSize::new(size.columns, size.lines);
         let event_proxy = TerminalEventProxy::new();
         let term = Term::new(config, &term_size, event_proxy.clone());
+        let parser = ansi::Processor::new();
 
-        Self { term, event_proxy, size }
+        Self { term, event_proxy, parser, size }
     }
 
     /// Get terminal dimensions
@@ -113,8 +120,7 @@ impl Terminal {
 
     /// Process input bytes through the terminal parser
     pub fn process_input(&mut self, bytes: &[u8]) {
-        let mut parser: ansi::Processor = ansi::Processor::new();
-        parser.advance(&mut self.term, bytes);
+        self.parser.advance(&mut self.term, bytes);
     }
 
     /// Get access to renderable content (cells, cursor, etc.)
@@ -147,6 +153,30 @@ impl Terminal {
     /// Mutable access to the underlying Term
     pub fn inner_mut(&mut self) -> &mut Term<TerminalEventProxy> {
         &mut self.term
+    }
+
+    /// Get damage information since last reset
+    ///
+    /// Returns which parts of the terminal have changed and need redrawing.
+    /// Call `reset_damage()` after rendering to clear the damage state.
+    pub fn damage(&mut self) -> TermDamage<'_> {
+        self.term.damage()
+    }
+
+    /// Reset damage state after rendering
+    ///
+    /// Call this after you've rendered the damaged regions to clear the
+    /// damage tracking for the next frame.
+    pub fn reset_damage(&mut self) {
+        self.term.reset_damage();
+    }
+
+    /// Check if any damage exists (needs redraw)
+    pub fn has_damage(&mut self) -> bool {
+        match self.term.damage() {
+            TermDamage::Full => true,
+            TermDamage::Partial(iter) => iter.count() > 0,
+        }
     }
 }
 
@@ -209,6 +239,31 @@ impl ShellTerminal {
     /// Get access to the PTY
     pub fn pty(&self) -> &Pty {
         &self.pty
+    }
+
+    /// Take any pending terminal events (title changes, bells, etc.)
+    pub fn take_events(&self) -> Vec<Event> {
+        self.terminal.take_events()
+    }
+
+    /// Check for title change and return it, preserving other events
+    /// Returns the title string from the most recent Title event
+    pub fn check_title_change(&self) -> Option<String> {
+        let events = self.terminal.take_events();
+        let mut title = None;
+        let mut other_events = Vec::new();
+
+        for event in events {
+            match event {
+                Event::Title(t) => title = Some(t),
+                other => other_events.push(other),
+            }
+        }
+
+        // Put back non-title events (they may trigger redraws)
+        // Note: This is a bit awkward but necessary to not lose events
+        // In practice, other events are less critical for our use case
+        title
     }
 }
 

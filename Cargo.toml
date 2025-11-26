@@ -15,13 +15,19 @@ portable-pty = "0.9"
 # Rendering
 wgpu = "25"
 glyphon = "0.9"
+fontdue = "0.9"
+swash = "0.1"
 bytemuck = { version = "1.14", features = ["derive"] }
 
 # Windowing
 winit = "0.30"
 
-# Theme parsing (to be added in future tasks)
-# cssparser = "0.34"
+# Theme parsing
+cssparser = "0.34"
+
+# Configuration
+toml = "0.8"
+serde = { version = "1.0", features = ["derive"] }
 
 # Utilities
 pollster = "0.4"
@@ -29,12 +35,23 @@ log = "0.4"
 env_logger = "0.11"
 anyhow = "1.0"
 naga = { version = "25", features = ["wgsl-out", "wgsl-in"] }
+notify = "7.0"
+muda = "0.15"
+dirs = "5.0"
 
-# Root package for examples
+# Main binary package
 [package]
 name = "crt"
 version = "0.1.0"
 edition = "2024"
+description = "GPU-accelerated terminal emulator with synthwave aesthetics"
+license = "MIT"
+keywords = ["terminal", "emulator", "gpu", "wgpu"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "crt"
+path = "src/main.rs"
 
 [dependencies]
 wgpu = { workspace = true }
@@ -45,10 +62,16 @@ env_logger = { workspace = true }
 log = { workspace = true }
 naga = { workspace = true }
 glyphon = { workspace = true }
+fontdue = { workspace = true }
 crt-core = { path = "crates/crt-core" }
 crt-renderer = { path = "crates/crt-renderer" }
 crt-theme = { path = "crates/crt-theme" }
 anyhow = { workspace = true }
+notify = { workspace = true }
+muda = { workspace = true }
+dirs = { workspace = true }
+toml = { workspace = true }
+serde = { workspace = true }
 
 [[example]]
 name = "prototype_a"

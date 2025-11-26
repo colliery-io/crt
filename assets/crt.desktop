@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=CRT Terminal
+Comment=GPU-accelerated terminal with synthwave effects
+Exec=crt
+Icon=utilities-terminal
+Type=Application
+Categories=System;TerminalEmulator;
+Keywords=terminal;shell;console;command;prompt;
+StartupNotify=true
+Terminal=false

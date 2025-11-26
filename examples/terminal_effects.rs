@@ -5,19 +5,31 @@
 //! - Perspective grid
 //! - Text glow
 //! - Themed colors
+//!
+//! Usage:
+//!   cargo run --example terminal_effects [theme.css]
+//!
+//! If no theme file is provided, defaults to themes/synthwave.css
+//!
+//! Hot-reload: Edit the CSS file while the terminal is running to see changes live!
 
+use std::path::PathBuf;
+use std::sync::mpsc::channel;
 use std::sync::Arc;
 
 use crt_core::{ShellTerminal, Size};
 use crt_renderer::{EffectPipeline, TextRenderTarget};
+use crt_theme::Theme;
 use glyphon::{
     Attrs, Buffer, Cache, Color, Family, FontSystem, Metrics, Resolution, Shaping, SwashCache,
     TextArea, TextBounds, TextRenderer, Viewport,
 };
+use muda::{accelerator::{Accelerator, Code, Modifiers as MenuModifiers}, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu};
+use notify::{Event as NotifyEvent, RecommendedWatcher, RecursiveMode, Watcher};
 use wgpu::MultisampleState;
 use winit::{
     application::ApplicationHandler,
-    event::{ElementState, WindowEvent},
+    event::{ElementState, Modifiers, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{Key, NamedKey},
     window::{Window, WindowId},
@@ -38,6 +50,8 @@ struct GpuState {
     // Text rendering (to offscreen target)
     font_system: FontSystem,
     swash_cache: SwashCache,
+    #[allow(dead_code)]
+    cache: Cache, // Kept for potential atlas recreation on resize
     viewport: Viewport,
     text_atlas: glyphon::TextAtlas,
     text_renderer: TextRenderer,
@@ -50,20 +64,194 @@ struct GpuState {
     effect_pipeline: EffectPipeline,
 }
 
+// Menu item IDs
+const MENU_CLEAR: &str = "clear";
+const MENU_RELOAD_THEME: &str = "reload_theme";
+
 struct App {
     window: Option<Arc<Window>>,
     gpu: Option<GpuState>,
     shell: Option<ShellTerminal>,
+    theme: Theme,
+    theme_path: PathBuf,
+    theme_watcher: Option<RecommendedWatcher>,
+    theme_rx: Option<std::sync::mpsc::Receiver<Result<NotifyEvent, notify::Error>>>,
+    modifiers: Modifiers,
     dirty: bool,
 }
 
 impl App {
-    fn new() -> Self {
+    fn new(theme: Theme, theme_path: PathBuf) -> Self {
         Self {
             window: None,
             gpu: None,
             shell: None,
+            theme,
+            theme_path,
+            theme_watcher: None,
+            theme_rx: None,
+            modifiers: Modifiers::default(),
             dirty: true,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn setup_menu(&mut self) {
+        // Create menu bar
+        let menu_bar = Menu::new();
+
+        // App menu (macOS standard)
+        let app_menu = Submenu::new("CRT Terminal", true);
+        app_menu.append(&PredefinedMenuItem::about(None, None)).ok();
+        app_menu.append(&PredefinedMenuItem::separator()).ok();
+        app_menu.append(&PredefinedMenuItem::services(None)).ok();
+        app_menu.append(&PredefinedMenuItem::separator()).ok();
+        app_menu.append(&PredefinedMenuItem::hide(None)).ok();
+        app_menu.append(&PredefinedMenuItem::hide_others(None)).ok();
+        app_menu.append(&PredefinedMenuItem::show_all(None)).ok();
+        app_menu.append(&PredefinedMenuItem::separator()).ok();
+        app_menu.append(&PredefinedMenuItem::quit(None)).ok();
+        menu_bar.append(&app_menu).ok();
+
+        // Edit menu
+        let edit_menu = Submenu::new("Edit", true);
+        edit_menu.append(&PredefinedMenuItem::undo(None)).ok();
+        edit_menu.append(&PredefinedMenuItem::redo(None)).ok();
+        edit_menu.append(&PredefinedMenuItem::separator()).ok();
+        edit_menu.append(&PredefinedMenuItem::cut(None)).ok();
+        edit_menu.append(&PredefinedMenuItem::copy(None)).ok();
+        edit_menu.append(&PredefinedMenuItem::paste(None)).ok();
+        edit_menu.append(&PredefinedMenuItem::select_all(None)).ok();
+        edit_menu.append(&PredefinedMenuItem::separator()).ok();
+        edit_menu.append(&MenuItem::with_id(
+            MenuId::new(MENU_CLEAR),
+            "Clear",
+            true,
+            Some(Accelerator::new(Some(MenuModifiers::SUPER), Code::KeyK)),
+        )).ok();
+        menu_bar.append(&edit_menu).ok();
+
+        // View menu
+        let view_menu = Submenu::new("View", true);
+        view_menu.append(&MenuItem::with_id(
+            MenuId::new(MENU_RELOAD_THEME),
+            "Reload Theme",
+            true,
+            Some(Accelerator::new(Some(MenuModifiers::SUPER.union(MenuModifiers::SHIFT)), Code::KeyR)),
+        )).ok();
+        view_menu.append(&PredefinedMenuItem::separator()).ok();
+        view_menu.append(&PredefinedMenuItem::fullscreen(None)).ok();
+        menu_bar.append(&view_menu).ok();
+
+        // Window menu
+        let window_menu = Submenu::new("Window", true);
+        window_menu.append(&PredefinedMenuItem::minimize(None)).ok();
+        window_menu.append(&PredefinedMenuItem::maximize(None)).ok();
+        window_menu.append(&PredefinedMenuItem::separator()).ok();
+        window_menu.append(&PredefinedMenuItem::close_window(None)).ok();
+        menu_bar.append(&window_menu).ok();
+
+        // Initialize menu bar for macOS
+        menu_bar.init_for_nsapp();
+
+        log::info!("macOS menu bar initialized");
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn setup_menu(&mut self) {
+        // Menu bar not implemented for other platforms yet
+        log::info!("Menu bar not available on this platform");
+    }
+
+    fn handle_menu_events(&mut self, event_loop: &ActiveEventLoop) {
+        let rx = MenuEvent::receiver();
+
+        while let Ok(event) = rx.try_recv() {
+            let id = event.id().0.as_str();
+            match id {
+                MENU_CLEAR => {
+                    // Send clear screen escape sequence
+                    if let Some(shell) = &self.shell {
+                        shell.send_input(b"\x1b[2J\x1b[H");
+                        self.dirty = true;
+                    }
+                }
+                MENU_RELOAD_THEME => {
+                    // Force theme reload
+                    match Theme::from_css_file(&self.theme_path) {
+                        Ok(new_theme) => {
+                            self.theme = new_theme;
+                            if let Some(gpu) = &mut self.gpu {
+                                gpu.effect_pipeline.set_theme(self.theme.clone());
+                            }
+                            log::info!("Theme reloaded from menu");
+                        }
+                        Err(e) => {
+                            log::error!("Failed to reload theme: {}", e);
+                        }
+                    }
+                }
+                _ => {
+                    // Handle predefined menu items (quit, etc.)
+                    if id.contains("quit") {
+                        event_loop.exit();
+                    }
+                }
+            }
+        }
+    }
+
+    fn setup_file_watcher(&mut self) {
+        let (tx, rx) = channel();
+        let watcher = notify::recommended_watcher(tx);
+
+        match watcher {
+            Ok(mut w) => {
+                if let Err(e) = w.watch(&self.theme_path, RecursiveMode::NonRecursive) {
+                    log::warn!("Failed to watch theme file: {}", e);
+                } else {
+                    log::info!("Watching theme file for changes: {:?}", self.theme_path);
+                    self.theme_watcher = Some(w);
+                    self.theme_rx = Some(rx);
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to create file watcher: {}", e);
+            }
+        }
+    }
+
+    fn check_theme_reload(&mut self) {
+        let Some(rx) = &self.theme_rx else { return };
+
+        // Drain all pending events
+        let mut should_reload = false;
+        while let Ok(event) = rx.try_recv() {
+            if let Ok(event) = event {
+                // Check for modify or create events
+                if matches!(
+                    event.kind,
+                    notify::EventKind::Modify(_) | notify::EventKind::Create(_)
+                ) {
+                    should_reload = true;
+                }
+            }
+        }
+
+        if should_reload {
+            log::info!("Theme file changed, reloading...");
+            match Theme::from_css_file(&self.theme_path) {
+                Ok(new_theme) => {
+                    self.theme = new_theme;
+                    if let Some(gpu) = &mut self.gpu {
+                        gpu.effect_pipeline.set_theme(self.theme.clone());
+                    }
+                    log::info!("Theme reloaded successfully");
+                }
+                Err(e) => {
+                    log::error!("Failed to reload theme: {}", e);
+                }
+            }
         }
     }
 
@@ -144,12 +332,20 @@ impl ApplicationHandler for App {
         let caps = surface.get_capabilities(&adapter);
         let format = caps.formats[0];
 
+        // Use AutoNoVsync for faster frame presentation during resize
+        // Fall back to Fifo if not supported
+        let present_mode = if caps.present_modes.contains(&wgpu::PresentMode::AutoNoVsync) {
+            wgpu::PresentMode::AutoNoVsync
+        } else {
+            wgpu::PresentMode::Fifo
+        };
+
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
             width: size.width,
             height: size.height,
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode,
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
@@ -180,8 +376,9 @@ impl ApplicationHandler for App {
         // Create offscreen text render target
         let text_target = TextRenderTarget::new(&device, size.width, size.height, format);
 
-        // Create effect pipeline with synthwave theme
-        let effect_pipeline = EffectPipeline::new(&device, format);
+        // Create effect pipeline and apply loaded theme
+        let mut effect_pipeline = EffectPipeline::new(&device, format);
+        effect_pipeline.set_theme(self.theme.clone());
 
         self.gpu = Some(GpuState {
             device,
@@ -191,6 +388,7 @@ impl ApplicationHandler for App {
             format,
             font_system,
             swash_cache,
+            cache,
             viewport,
             text_atlas,
             text_renderer,
@@ -212,6 +410,10 @@ impl ApplicationHandler for App {
 
         self.window = Some(window);
 
+        // Set up file watcher for hot-reload
+        self.setup_file_watcher();
+        self.setup_menu();
+
         log::info!("Terminal with effects initialized: {}x{}", COLS, ROWS);
     }
 
@@ -219,9 +421,39 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
 
+            WindowEvent::ModifiersChanged(new_modifiers) => {
+                self.modifiers = new_modifiers;
+            }
+
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state != ElementState::Pressed {
                     return;
+                }
+
+                // Check for Cmd/Super modifier (macOS shortcuts)
+                let super_pressed = self.modifiers.state().super_key();
+
+                // Handle system shortcuts first
+                if super_pressed {
+                    match &event.logical_key {
+                        Key::Character(c) if c.as_str() == "q" => {
+                            event_loop.exit();
+                            return;
+                        }
+                        Key::Character(c) if c.as_str() == "w" => {
+                            event_loop.exit();
+                            return;
+                        }
+                        Key::Character(c) if c.as_str() == "k" => {
+                            // Clear screen (Cmd+K)
+                            if let Some(shell) = &self.shell {
+                                shell.send_input(b"\x1b[2J\x1b[H");
+                                self.dirty = true;
+                            }
+                            return;
+                        }
+                        _ => {}
+                    }
                 }
 
                 if let Some(shell) = &self.shell {
@@ -262,8 +494,11 @@ impl ApplicationHandler for App {
                             self.dirty = true;
                         }
                         Key::Character(c) => {
-                            shell.send_input(c.as_bytes());
-                            self.dirty = true;
+                            // Don't send to shell if super key is pressed
+                            if !super_pressed {
+                                shell.send_input(c.as_bytes());
+                                self.dirty = true;
+                            }
                         }
                         _ => {}
                     }
@@ -274,13 +509,18 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::Resized(new_size) => {
-                if new_size.width == 0 || new_size.height == 0 {
+                // Require minimum window size to avoid artifacts
+                let min_width = 100;
+                let min_height = 80;
+                if new_size.width < min_width || new_size.height < min_height {
                     return;
                 }
 
                 // Calculate new terminal size based on window size
-                let new_cols = ((new_size.width as f32 - 40.0) / (FONT_SIZE * 0.6)) as usize;
-                let new_rows = ((new_size.height as f32 - 40.0) / LINE_HEIGHT) as usize;
+                let content_width = (new_size.width as f32 - 40.0).max(60.0);
+                let content_height = (new_size.height as f32 - 40.0).max(40.0);
+                let new_cols = (content_width / (FONT_SIZE * 0.6)) as usize;
+                let new_rows = (content_height / LINE_HEIGHT) as usize;
                 let new_cols = new_cols.max(10);
                 let new_rows = new_rows.max(4);
 
@@ -294,10 +534,19 @@ impl ApplicationHandler for App {
                     gpu.config.height = new_size.height;
                     gpu.surface.configure(&gpu.device, &gpu.config);
 
+                    // Update viewport immediately on resize
+                    gpu.viewport.update(
+                        &gpu.queue,
+                        Resolution {
+                            width: new_size.width,
+                            height: new_size.height,
+                        },
+                    );
+
                     gpu.text_buffer.set_size(
                         &mut gpu.font_system,
-                        Some(new_size.width as f32 - 40.0),
-                        Some(new_size.height as f32 - 40.0),
+                        Some(content_width),
+                        Some(content_height),
                     );
 
                     // Resize text render target
@@ -316,6 +565,12 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::RedrawRequested => {
+                // Check for theme hot-reload
+                self.check_theme_reload();
+
+                // Handle menu events
+                self.handle_menu_events(event_loop);
+
                 // Process PTY output
                 if let Some(shell) = &mut self.shell {
                     if shell.process_pty_output() {
@@ -323,6 +578,7 @@ impl ApplicationHandler for App {
                     }
                 }
 
+                // Always update text buffer when dirty
                 if self.dirty {
                     self.update_text_buffer();
                     self.dirty = false;
@@ -338,7 +594,12 @@ impl ApplicationHandler for App {
                         },
                     );
 
-                    // Pass 1: Render text to offscreen target
+                    let frame = gpu.surface.get_current_texture().unwrap();
+                    let frame_view = frame.texture.create_view(&Default::default());
+
+                    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+
+                    // Pass 1: Render text to offscreen texture
                     gpu.text_renderer
                         .prepare(
                             &gpu.device,
@@ -357,19 +618,13 @@ impl ApplicationHandler for App {
                                     right: gpu.config.width as i32,
                                     bottom: gpu.config.height as i32,
                                 },
-                                default_color: Color::rgb(200, 200, 200),
+                                default_color: Color::rgb(255, 255, 255),
                                 custom_glyphs: &[],
                             }],
                             &mut gpu.swash_cache,
                         )
                         .unwrap();
 
-                    let frame = gpu.surface.get_current_texture().unwrap();
-                    let frame_view = frame.texture.create_view(&Default::default());
-
-                    let mut encoder = gpu.device.create_command_encoder(&Default::default());
-
-                    // Pass 1: Render text to offscreen texture
                     {
                         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                             label: Some("Text Render Pass"),
@@ -393,14 +648,12 @@ impl ApplicationHandler for App {
 
                     // Pass 2: Apply effects and render to screen
                     {
-                        // Update effect uniforms
                         gpu.effect_pipeline.update_uniforms(
                             &gpu.queue,
                             gpu.config.width as f32,
                             gpu.config.height as f32,
                         );
 
-                        // Create bind group with text texture
                         let bind_group = gpu.effect_pipeline.create_bind_group(
                             &gpu.device,
                             &gpu.text_target.view,
@@ -448,12 +701,33 @@ impl ApplicationHandler for App {
 fn main() {
     env_logger::init();
 
+    // Get theme file from command line or use default
+    let args: Vec<String> = std::env::args().collect();
+    let theme_path = if args.len() > 1 {
+        PathBuf::from(&args[1])
+    } else {
+        PathBuf::from("themes/synthwave.css")
+    };
+
+    // Load theme
+    let theme = match Theme::from_css_file(&theme_path) {
+        Ok(t) => {
+            log::info!("Loaded theme from: {:?}", theme_path);
+            t
+        }
+        Err(e) => {
+            log::warn!("Failed to load theme from {:?}: {}. Using default.", theme_path, e);
+            Theme::synthwave()
+        }
+    };
+
     log::info!("CRT Terminal - Synthwave Edition");
     log::info!("Press ESC to exit");
+    log::info!("Hot-reload enabled: edit {:?} to update theme live", theme_path);
 
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::wait_duration(std::time::Duration::from_millis(16)));
 
-    let mut app = App::new();
+    let mut app = App::new(theme, theme_path);
     event_loop.run_app(&mut app).unwrap();
 }

@@ -9,5 +9,7 @@ crt-theme = { path = "../crt-theme" }
 
 wgpu.workspace = true
 glyphon.workspace = true
+fontdue.workspace = true
+swash.workspace = true
 bytemuck.workspace = true
 log.workspace = true
