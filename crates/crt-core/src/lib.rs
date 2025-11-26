@@ -9,7 +9,7 @@
 pub mod config;
 pub mod pty;
 
-pub use config::{Config, FontConfig, KeyAction, Keybinding, ShellConfig, WindowConfig};
+pub use config::{Config, FontConfig, KeyAction, Keybinding, ShellConfig, TabPositionConfig, WindowConfig};
 pub use pty::Pty;
 
 // Re-export alacritty_terminal types needed for rendering

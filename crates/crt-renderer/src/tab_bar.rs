@@ -6,6 +6,16 @@ use crt_theme::{TabTheme, Color};
 use wgpu::util::DeviceExt;
 use bytemuck::{Pod, Zeroable};
 
+/// Tab bar position on the screen
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TabPosition {
+    #[default]
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
 /// A single tab in the tab bar
 #[derive(Debug, Clone)]
 pub struct Tab {
@@ -44,6 +54,7 @@ pub struct TabBar {
     active_tab: usize,
     next_id: u64,
     theme: TabTheme,
+    position: TabPosition,
 
     // Rendering state
     pipeline: wgpu::RenderPipeline,
@@ -54,6 +65,7 @@ pub struct TabBar {
     // Computed layout
     tab_rects: Vec<TabRect>,
     bar_height: f32,
+    bar_width: f32, // For left/right positioning
     screen_width: f32,
     screen_height: f32,
     scale_factor: f32,
@@ -249,12 +261,14 @@ impl TabBar {
             active_tab: 0,
             next_id: 1,
             theme: TabTheme::default(),
+            position: TabPosition::Top,
             pipeline,
             vertex_buffer,
             uniform_buffer,
             bind_group,
             tab_rects: Vec::new(),
             bar_height: 36.0,
+            bar_width: 180.0, // Default width for left/right positioning
             screen_width: 800.0,
             screen_height: 600.0,
             scale_factor: 1.0,
@@ -277,9 +291,50 @@ impl TabBar {
         self.dirty = true;
     }
 
-    /// Get current tab bar height (in logical pixels)
+    /// Set tab bar position
+    pub fn set_position(&mut self, position: TabPosition) {
+        self.position = position;
+        self.dirty = true;
+    }
+
+    /// Get current tab bar position
+    pub fn position(&self) -> TabPosition {
+        self.position
+    }
+
+    /// Check if tab bar is horizontal (top/bottom)
+    pub fn is_horizontal(&self) -> bool {
+        matches!(self.position, TabPosition::Top | TabPosition::Bottom)
+    }
+
+    /// Get current tab bar height (in logical pixels) - for top/bottom positioning
     pub fn height(&self) -> f32 {
         self.bar_height
+    }
+
+    /// Get current tab bar width (in logical pixels) - for left/right positioning
+    pub fn width(&self) -> f32 {
+        self.bar_width
+    }
+
+    /// Get the dimension that affects content layout (height for top/bottom, width for left/right)
+    pub fn size(&self) -> f32 {
+        if self.is_horizontal() {
+            self.bar_height
+        } else {
+            self.bar_width
+        }
+    }
+
+    /// Get the content offset (x, y) in logical pixels based on tab bar position
+    /// This tells where the terminal content should start rendering
+    pub fn content_offset(&self) -> (f32, f32) {
+        match self.position {
+            TabPosition::Top => (0.0, self.bar_height),
+            TabPosition::Bottom => (0.0, 0.0),
+            TabPosition::Left => (self.bar_width, 0.0),
+            TabPosition::Right => (0.0, 0.0),
+        }
     }
 
     /// Update screen size (in physical pixels)
@@ -391,66 +446,200 @@ impl TabBar {
         let padding = self.theme.bar.padding * s;
         let tab_padding_x = self.theme.tab.padding_x * s;
         let bar_height = self.bar_height * s;
-        let tab_height = bar_height - padding * 2.0;
+        let bar_width = self.bar_width * s;
         let tab_gap = 4.0 * s;
-
-        // Tab bar background
-        add_quad(&mut vertices, 0.0, 0.0, self.screen_width, bar_height, bar_bg);
-
-        // Bottom border
-        add_quad(&mut vertices, 0.0, bar_height - s, self.screen_width, s, border_color);
-
-        // Calculate tab widths
-        let available_width = self.screen_width - padding * 2.0;
-        let tab_count = self.tabs.len();
-        let total_gap = tab_gap * (tab_count.saturating_sub(1)) as f32;
-        let min_width = self.theme.tab.min_width * s;
-        let max_width = self.theme.tab.max_width * s;
-        let width_per_tab = ((available_width - total_gap) / tab_count as f32)
-            .clamp(min_width, max_width);
-
-        // Render each tab
-        let mut x = padding;
         let border_width = s; // 1 logical pixel border
-        for (i, _tab) in self.tabs.iter().enumerate() {
-            let is_active = i == self.active_tab;
-            let bg_color = if is_active { active_bg } else { tab_bg };
 
-            let tab_x = x;
-            let tab_y = padding;
-            let tab_width = width_per_tab;
+        match self.position {
+            TabPosition::Top => {
+                let tab_height = bar_height - padding * 2.0;
 
-            // Tab background
-            add_quad(&mut vertices, tab_x, tab_y, tab_width, tab_height, bg_color);
+                // Tab bar background
+                add_quad(&mut vertices, 0.0, 0.0, self.screen_width, bar_height, bar_bg);
+                // Bottom border
+                add_quad(&mut vertices, 0.0, bar_height - s, self.screen_width, s, border_color);
 
-            // Tab border (draw as 4 thin quads)
-            // Top border
-            add_quad(&mut vertices, tab_x, tab_y, tab_width, border_width, border_color);
-            // Bottom border
-            add_quad(&mut vertices, tab_x, tab_y + tab_height - border_width, tab_width, border_width, border_color);
-            // Left border
-            add_quad(&mut vertices, tab_x, tab_y, border_width, tab_height, border_color);
-            // Right border
-            add_quad(&mut vertices, tab_x + tab_width - border_width, tab_y, border_width, tab_height, border_color);
+                // Calculate tab widths
+                let available_width = self.screen_width - padding * 2.0;
+                let tab_count = self.tabs.len();
+                let total_gap = tab_gap * (tab_count.saturating_sub(1)) as f32;
+                let min_width = self.theme.tab.min_width * s;
+                let max_width = self.theme.tab.max_width * s;
+                let width_per_tab = ((available_width - total_gap) / tab_count as f32)
+                    .clamp(min_width, max_width);
 
-            // Active tab indicator (accent line at bottom, overlays border)
-            if is_active {
-                let accent = color_to_array(&self.theme.active.accent);
-                add_quad(&mut vertices, tab_x, tab_y + tab_height - 2.0 * s, tab_width, 2.0 * s, accent);
+                let mut x = padding;
+                for (i, _tab) in self.tabs.iter().enumerate() {
+                    let is_active = i == self.active_tab;
+                    let bg_color = if is_active { active_bg } else { tab_bg };
+
+                    let tab_x = x;
+                    let tab_y = padding;
+                    let tab_width = width_per_tab;
+
+                    add_quad(&mut vertices, tab_x, tab_y, tab_width, tab_height, bg_color);
+                    add_quad(&mut vertices, tab_x, tab_y, tab_width, border_width, border_color);
+                    add_quad(&mut vertices, tab_x, tab_y + tab_height - border_width, tab_width, border_width, border_color);
+                    add_quad(&mut vertices, tab_x, tab_y, border_width, tab_height, border_color);
+                    add_quad(&mut vertices, tab_x + tab_width - border_width, tab_y, border_width, tab_height, border_color);
+
+                    if is_active {
+                        let accent = color_to_array(&self.theme.active.accent);
+                        add_quad(&mut vertices, tab_x, tab_y + tab_height - 2.0 * s, tab_width, 2.0 * s, accent);
+                    }
+
+                    let close_width = self.theme.close.size * s;
+                    self.tab_rects.push(TabRect {
+                        x: tab_x, y: tab_y, width: tab_width, height: tab_height,
+                        close_x: tab_x + tab_width - close_width - tab_padding_x, close_width,
+                    });
+
+                    x += tab_width + tab_gap;
+                }
             }
 
-            // Store rect for hit testing (in physical pixels)
-            let close_width = self.theme.close.size * s;
-            self.tab_rects.push(TabRect {
-                x: tab_x,
-                y: tab_y,
-                width: tab_width,
-                height: tab_height,
-                close_x: tab_x + tab_width - close_width - tab_padding_x,
-                close_width,
-            });
+            TabPosition::Bottom => {
+                let tab_height = bar_height - padding * 2.0;
+                let bar_y = self.screen_height - bar_height;
 
-            x += tab_width + tab_gap;
+                // Tab bar background
+                add_quad(&mut vertices, 0.0, bar_y, self.screen_width, bar_height, bar_bg);
+                // Top border
+                add_quad(&mut vertices, 0.0, bar_y, self.screen_width, s, border_color);
+
+                // Calculate tab widths
+                let available_width = self.screen_width - padding * 2.0;
+                let tab_count = self.tabs.len();
+                let total_gap = tab_gap * (tab_count.saturating_sub(1)) as f32;
+                let min_width = self.theme.tab.min_width * s;
+                let max_width = self.theme.tab.max_width * s;
+                let width_per_tab = ((available_width - total_gap) / tab_count as f32)
+                    .clamp(min_width, max_width);
+
+                let mut x = padding;
+                for (i, _tab) in self.tabs.iter().enumerate() {
+                    let is_active = i == self.active_tab;
+                    let bg_color = if is_active { active_bg } else { tab_bg };
+
+                    let tab_x = x;
+                    let tab_y = bar_y + padding;
+                    let tab_width = width_per_tab;
+
+                    add_quad(&mut vertices, tab_x, tab_y, tab_width, tab_height, bg_color);
+                    add_quad(&mut vertices, tab_x, tab_y, tab_width, border_width, border_color);
+                    add_quad(&mut vertices, tab_x, tab_y + tab_height - border_width, tab_width, border_width, border_color);
+                    add_quad(&mut vertices, tab_x, tab_y, border_width, tab_height, border_color);
+                    add_quad(&mut vertices, tab_x + tab_width - border_width, tab_y, border_width, tab_height, border_color);
+
+                    if is_active {
+                        let accent = color_to_array(&self.theme.active.accent);
+                        add_quad(&mut vertices, tab_x, tab_y, tab_width, 2.0 * s, accent);
+                    }
+
+                    let close_width = self.theme.close.size * s;
+                    self.tab_rects.push(TabRect {
+                        x: tab_x, y: tab_y, width: tab_width, height: tab_height,
+                        close_x: tab_x + tab_width - close_width - tab_padding_x, close_width,
+                    });
+
+                    x += tab_width + tab_gap;
+                }
+            }
+
+            TabPosition::Left => {
+                let tab_width = bar_width - padding * 2.0;
+
+                // Tab bar background
+                add_quad(&mut vertices, 0.0, 0.0, bar_width, self.screen_height, bar_bg);
+                // Right border
+                add_quad(&mut vertices, bar_width - s, 0.0, s, self.screen_height, border_color);
+
+                // Calculate tab heights for vertical tabs
+                let available_height = self.screen_height - padding * 2.0;
+                let tab_count = self.tabs.len();
+                let total_gap = tab_gap * (tab_count.saturating_sub(1)) as f32;
+                let min_height = 24.0 * s;
+                let max_height = 32.0 * s;
+                let height_per_tab = ((available_height - total_gap) / tab_count as f32)
+                    .clamp(min_height, max_height);
+
+                let mut y = padding;
+                for (i, _tab) in self.tabs.iter().enumerate() {
+                    let is_active = i == self.active_tab;
+                    let bg_color = if is_active { active_bg } else { tab_bg };
+
+                    let tab_x = padding;
+                    let tab_y = y;
+                    let tab_height = height_per_tab;
+
+                    add_quad(&mut vertices, tab_x, tab_y, tab_width, tab_height, bg_color);
+                    add_quad(&mut vertices, tab_x, tab_y, tab_width, border_width, border_color);
+                    add_quad(&mut vertices, tab_x, tab_y + tab_height - border_width, tab_width, border_width, border_color);
+                    add_quad(&mut vertices, tab_x, tab_y, border_width, tab_height, border_color);
+                    add_quad(&mut vertices, tab_x + tab_width - border_width, tab_y, border_width, tab_height, border_color);
+
+                    if is_active {
+                        let accent = color_to_array(&self.theme.active.accent);
+                        add_quad(&mut vertices, tab_x + tab_width - 2.0 * s, tab_y, 2.0 * s, tab_height, accent);
+                    }
+
+                    let close_width = self.theme.close.size * s;
+                    self.tab_rects.push(TabRect {
+                        x: tab_x, y: tab_y, width: tab_width, height: tab_height,
+                        close_x: tab_x + tab_width - close_width - tab_padding_x, close_width,
+                    });
+
+                    y += tab_height + tab_gap;
+                }
+            }
+
+            TabPosition::Right => {
+                let tab_width = bar_width - padding * 2.0;
+                let bar_x = self.screen_width - bar_width;
+
+                // Tab bar background
+                add_quad(&mut vertices, bar_x, 0.0, bar_width, self.screen_height, bar_bg);
+                // Left border
+                add_quad(&mut vertices, bar_x, 0.0, s, self.screen_height, border_color);
+
+                // Calculate tab heights for vertical tabs
+                let available_height = self.screen_height - padding * 2.0;
+                let tab_count = self.tabs.len();
+                let total_gap = tab_gap * (tab_count.saturating_sub(1)) as f32;
+                let min_height = 24.0 * s;
+                let max_height = 32.0 * s;
+                let height_per_tab = ((available_height - total_gap) / tab_count as f32)
+                    .clamp(min_height, max_height);
+
+                let mut y = padding;
+                for (i, _tab) in self.tabs.iter().enumerate() {
+                    let is_active = i == self.active_tab;
+                    let bg_color = if is_active { active_bg } else { tab_bg };
+
+                    let tab_x = bar_x + padding;
+                    let tab_y = y;
+                    let tab_height = height_per_tab;
+
+                    add_quad(&mut vertices, tab_x, tab_y, tab_width, tab_height, bg_color);
+                    add_quad(&mut vertices, tab_x, tab_y, tab_width, border_width, border_color);
+                    add_quad(&mut vertices, tab_x, tab_y + tab_height - border_width, tab_width, border_width, border_color);
+                    add_quad(&mut vertices, tab_x, tab_y, border_width, tab_height, border_color);
+                    add_quad(&mut vertices, tab_x + tab_width - border_width, tab_y, border_width, tab_height, border_color);
+
+                    if is_active {
+                        let accent = color_to_array(&self.theme.active.accent);
+                        add_quad(&mut vertices, tab_x, tab_y, 2.0 * s, tab_height, accent);
+                    }
+
+                    let close_width = self.theme.close.size * s;
+                    self.tab_rects.push(TabRect {
+                        x: tab_x, y: tab_y, width: tab_width, height: tab_height,
+                        close_x: tab_x + tab_width - close_width - tab_padding_x, close_width,
+                    });
+
+                    y += tab_height + tab_gap;
+                }
+            }
         }
 
         vertices
@@ -492,15 +681,13 @@ impl TabBar {
     /// When a tab is being edited, returns the edit text with cursor indicator
     pub fn get_tab_labels(&self) -> Vec<(f32, f32, String, bool, bool)> {
         let s = self.scale_factor;
-        let padding = self.theme.bar.padding * s;
         let tab_padding_x = self.theme.tab.padding_x * s;
-        let bar_height = self.bar_height * s;
-        let tab_height = bar_height - padding * 2.0;
+        let font_height = 14.0 * s;
 
         self.tab_rects.iter().zip(self.tabs.iter()).enumerate().map(|(i, (rect, tab))| {
             let text_x = rect.x + tab_padding_x;
-            // Center text vertically in tab (adjust for font baseline)
-            let text_y = padding + (tab_height - 14.0 * s) / 2.0;
+            // Center text vertically in tab rectangle (works for all positions)
+            let text_y = rect.y + (rect.height - font_height) / 2.0;
             let is_active = i == self.active_tab;
 
             // Check if this tab is being edited

@@ -5,6 +5,17 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Tab bar position
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TabPosition {
+    #[default]
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
 /// Shell configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -61,6 +72,8 @@ pub struct WindowConfig {
     pub title: String,
     /// Start in fullscreen mode
     pub fullscreen: bool,
+    /// Tab bar position
+    pub tab_position: TabPosition,
 }
 
 impl Default for WindowConfig {
@@ -70,6 +83,7 @@ impl Default for WindowConfig {
             rows: 24,
             title: "CRT Terminal".to_string(),
             fullscreen: false,
+            tab_position: TabPosition::default(),
         }
     }
 }
@@ -576,6 +590,8 @@ rows = 24
 title = "CRT Terminal"
 # Start in fullscreen
 fullscreen = false
+# Tab bar position (top, bottom, left, right)
+tab_position = "top"
 
 [theme]
 # Theme name - looks for ~/.config/crt/themes/{name}.css

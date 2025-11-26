@@ -15,7 +15,7 @@ pub mod tab_bar;
 pub use font::{TerminalFontAttrs, attrs_from_config};
 pub use glyph_cache::{GlyphCache, GlyphKey, CachedGlyph, PositionedGlyph};
 pub use grid_renderer::GridRenderer;
-pub use tab_bar::{TabBar, Tab, TabRect};
+pub use tab_bar::{TabBar, Tab, TabRect, TabPosition};
 
 // Effect pipelines are already declared as pub structs below
 

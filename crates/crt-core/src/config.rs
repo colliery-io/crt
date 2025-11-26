@@ -7,6 +7,17 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Tab bar position
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TabPositionConfig {
+    #[default]
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
 /// Shell configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -81,6 +92,8 @@ pub struct WindowConfig {
     pub decorations: bool,
     /// Window opacity (0.0 - 1.0)
     pub opacity: f32,
+    /// Tab bar position (top, bottom, left, right)
+    pub tab_position: TabPositionConfig,
 }
 
 impl Default for WindowConfig {
@@ -91,6 +104,7 @@ impl Default for WindowConfig {
             title: "CRT Terminal".to_string(),
             decorations: true,
             opacity: 1.0,
+            tab_position: TabPositionConfig::default(),
         }
     }
 }
@@ -296,6 +310,8 @@ title = "CRT Terminal"
 decorations = true
 # Window opacity (0.0 - 1.0)
 opacity = 1.0
+# Tab bar position (top, bottom, left, right)
+tab_position = "top"
 
 # Theme CSS file (relative to config dir or absolute)
 # theme = "themes/synthwave.css"
