@@ -2,9 +2,17 @@
 //!
 //! Keyboard and mouse input processing for terminal and tab bar.
 
+use std::time::{Duration, Instant};
+
+use crt_core::{Column, Line, Point, SelectionType};
 use winit::keyboard::{Key, NamedKey};
 
 use crate::window::WindowState;
+
+/// Threshold for multi-click detection
+const MULTI_CLICK_THRESHOLD: Duration = Duration::from_millis(400);
+/// Maximum distance (in cells) for multi-click to register
+const MULTI_CLICK_DISTANCE: usize = 1;
 
 /// Result of handling tab editing input
 pub enum TabEditResult {
@@ -278,4 +286,140 @@ pub fn handle_resize(
         *hash = 0;
     }
     state.window.request_redraw();
+}
+
+/// Convert screen coordinates to terminal cell (column, line)
+/// Returns None if the position is outside the terminal area
+pub fn screen_to_cell(state: &WindowState, x: f32, y: f32) -> Option<(usize, usize)> {
+    let (offset_x, offset_y) = state.gpu.tab_bar.content_offset();
+    let padding = 10.0 * state.scale_factor;
+    let cell_width = state.gpu.glyph_cache.cell_width();
+    let line_height = state.gpu.glyph_cache.line_height();
+
+    // Check if in terminal area
+    let content_x = x - offset_x - padding;
+    let content_y = y - offset_y - padding;
+
+    if content_x < 0.0 || content_y < 0.0 {
+        return None;
+    }
+
+    let col = (content_x / cell_width) as usize;
+    let line = (content_y / line_height) as usize;
+
+    // Clamp to terminal bounds
+    let col = col.min(state.cols.saturating_sub(1));
+    let line = line.min(state.rows.saturating_sub(1));
+
+    Some((col, line))
+}
+
+/// Handle mouse press for terminal selection
+/// Returns true if the press was handled (was in terminal area)
+pub fn handle_terminal_mouse_press(state: &mut WindowState, x: f32, y: f32, now: Instant) -> bool {
+    // Check if click is in tab bar area first
+    let tab_bar_height = state.gpu.tab_bar.height() * state.scale_factor;
+    if y < tab_bar_height {
+        return false; // Let tab bar handle it
+    }
+
+    let Some((col, line)) = screen_to_cell(state, x, y) else {
+        return false;
+    };
+
+    // Determine click count for multi-click selection
+    let click_count = if let (Some(last_time), Some((last_col, last_line))) =
+        (state.last_selection_click_time, state.last_selection_click_pos)
+    {
+        let time_ok = now.duration_since(last_time) < MULTI_CLICK_THRESHOLD;
+        let pos_ok = col.abs_diff(last_col) <= MULTI_CLICK_DISTANCE
+                  && line.abs_diff(last_line) <= MULTI_CLICK_DISTANCE;
+
+        if time_ok && pos_ok {
+            (state.selection_click_count % 3) + 1
+        } else {
+            1
+        }
+    } else {
+        1
+    };
+
+    state.selection_click_count = click_count;
+    state.last_selection_click_time = Some(now);
+    state.last_selection_click_pos = Some((col, line));
+    state.mouse_pressed = true;
+
+    // Get the active shell
+    let tab_id = state.gpu.tab_bar.active_tab_id();
+    let Some(tab_id) = tab_id else { return false };
+    let Some(shell) = state.shells.get_mut(&tab_id) else { return false };
+
+    let point = Point::new(Line(line as i32), Column(col));
+
+    // Selection type based on click count
+    let selection_type = match click_count {
+        1 => SelectionType::Simple,
+        2 => SelectionType::Semantic, // Word selection
+        3 => SelectionType::Lines,    // Line selection
+        _ => SelectionType::Simple,
+    };
+
+    shell.start_selection(point, selection_type);
+
+    // For semantic and lines selection, also set the end point immediately
+    // to show the full word/line
+    if click_count > 1 {
+        shell.update_selection(point);
+    }
+
+    state.dirty = true;
+    state.window.request_redraw();
+    true
+}
+
+/// Handle mouse move for terminal selection (dragging)
+pub fn handle_terminal_mouse_move(state: &mut WindowState, x: f32, y: f32) {
+    if !state.mouse_pressed {
+        return;
+    }
+
+    let Some((col, line)) = screen_to_cell(state, x, y) else {
+        return;
+    };
+
+    let tab_id = state.gpu.tab_bar.active_tab_id();
+    let Some(tab_id) = tab_id else { return };
+    let Some(shell) = state.shells.get_mut(&tab_id) else { return };
+
+    let point = Point::new(Line(line as i32), Column(col));
+    shell.update_selection(point);
+
+    state.dirty = true;
+    state.window.request_redraw();
+}
+
+/// Handle mouse release for terminal selection
+pub fn handle_terminal_mouse_release(state: &mut WindowState) {
+    state.mouse_pressed = false;
+    // Selection remains - user can copy with Cmd+C or similar
+}
+
+/// Clear terminal selection (e.g., when user types or presses Escape)
+pub fn clear_terminal_selection(state: &mut WindowState) {
+    let tab_id = state.gpu.tab_bar.active_tab_id();
+    let Some(tab_id) = tab_id else { return };
+    let Some(shell) = state.shells.get_mut(&tab_id) else { return };
+
+    if shell.has_selection() {
+        shell.clear_selection();
+        state.dirty = true;
+        state.window.request_redraw();
+    }
+}
+
+/// Get selected text from terminal (for copy)
+pub fn get_terminal_selection_text(state: &WindowState) -> Option<String> {
+    let tab_id = state.gpu.tab_bar.active_tab_id()?;
+    let shell = state.shells.get(&tab_id)?;
+    shell.selection_to_string()
 }

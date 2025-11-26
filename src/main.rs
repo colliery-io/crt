@@ -20,7 +20,11 @@ use crt_core::{ShellTerminal, Size};
 use crt_renderer::{GlyphCache, GridRenderer, EffectPipeline, TextRenderTarget, TabBar};
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
-use input::{TabEditResult, handle_tab_editing, handle_shell_input, handle_tab_click, handle_resize};
+use input::{
+    TabEditResult, handle_tab_editing, handle_shell_input, handle_tab_click, handle_resize,
+    handle_terminal_mouse_press, handle_terminal_mouse_move, handle_terminal_mouse_release,
+    clear_terminal_selection, get_terminal_selection_text,
+};
 use menu::MenuAction;
 use render::render_frame;
 use window::WindowState;
@@ -215,6 +219,10 @@ impl App {
             cursor_position: (0.0, 0.0),
             last_click_time: None,
             last_click_tab: None,
+            mouse_pressed: false,
+            selection_click_count: 0,
+            last_selection_click_time: None,
+            last_selection_click_pos: None,
         };
 
         self.windows.insert(window_id, window_state);
@@ -409,6 +417,25 @@ impl ApplicationHandler for App {
                     }
 
                     match &event.logical_key {
+                        Key::Character(c) if c.as_str() == "c" => {
+                            // Copy selection to clipboard
+                            if let Some(text) = get_terminal_selection_text(state) {
+                                #[cfg(target_os = "macos")]
+                                {
+                                    use std::process::{Command, Stdio};
+                                    if let Ok(mut child) = Command::new("pbcopy")
+                                        .stdin(Stdio::piped())
+                                        .spawn()
+                                    {
+                                        if let Some(stdin) = child.stdin.as_mut() {
+                                            use std::io::Write;
+                                            let _ = stdin.write_all(text.as_bytes());
+                                        }
+                                    }
+                                }
+                                return;
+                            }
+                        }
                         Key::Character(c) if c.as_str() == "q" => { event_loop.exit(); return; }
                         Key::Character(c) if c.as_str() == "w" => {
                             if state.gpu.tab_bar.tab_count() > 1 {
@@ -465,8 +492,10 @@ impl ApplicationHandler for App {
                     }
                 }
 
-                // Send to shell
-                handle_shell_input(state, &event.logical_key, mod_pressed);
+                // Send to shell (clears selection on input)
+                if handle_shell_input(state, &event.logical_key, mod_pressed) {
+                    clear_terminal_selection(state);
+                }
             }
 
             WindowEvent::Resized(size) => {
@@ -476,11 +505,23 @@ impl ApplicationHandler for App {
 
             WindowEvent::CursorMoved { position, .. } => {
                 state.cursor_position = (position.x as f32, position.y as f32);
+                // Update selection if dragging
+                handle_terminal_mouse_move(state, position.x as f32, position.y as f32);
             }
 
-            WindowEvent::MouseInput { state: ElementState::Pressed, button: winit::event::MouseButton::Left, .. } => {
+            WindowEvent::MouseInput { state: button_state, button: winit::event::MouseButton::Left, .. } => {
                 let (x, y) = state.cursor_position;
-                handle_tab_click(state, x, y, Instant::now());
+                match button_state {
+                    ElementState::Pressed => {
+                        // Try terminal selection first, then tab bar
+                        if !handle_terminal_mouse_press(state, x, y, Instant::now()) {
+                            handle_tab_click(state, x, y, Instant::now());
+                        }
+                    }
+                    ElementState::Released => {
+                        handle_terminal_mouse_release(state);
+                    }
+                }
             }
 
             WindowEvent::RedrawRequested => {

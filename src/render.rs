@@ -4,6 +4,7 @@
 
 use crate::gpu::SharedGpuState;
 use crate::window::WindowState;
+use crt_core::SelectionRange;
 use std::sync::OnceLock;
 
 /// Cached blit pipeline for compositing vello textures
@@ -126,25 +127,36 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
         state.gpu.grid_renderer.render(&shared.queue, &mut pass);
     }
 
-    // Pass 4: Render cursor via vello (always prepare if cursor exists, blink handled internally)
-    if state.gpu.terminal_vello.has_cursor() {
+    // Pass 4: Render cursor and selection via vello
+    {
+        // Get selection from active terminal (if any)
+        let selection = active_tab_id
+            .and_then(|id| state.shells.get(&id))
+            .and_then(|shell| shell.terminal().renderable_content().selection);
+
+        // Prepare vello scene (resets scene, builds cursor)
         state.gpu.terminal_vello.prepare(
             &shared.device,
             state.gpu.config.width,
             state.gpu.config.height,
         );
 
+        // Add selection rectangles after prepare (scene was reset)
+        if let Some(selection) = selection {
+            render_selection(state, &selection);
+        }
+
         if let Err(e) = state.gpu.terminal_vello.render_to_texture(&shared.device, &shared.queue) {
             log::warn!("Terminal vello render error: {:?}", e);
         }
 
-        // Composite cursor texture onto frame
-        if let Some(cursor_view) = state.gpu.terminal_vello.texture_view() {
+        // Composite cursor/selection texture onto frame
+        if let Some(vello_view) = state.gpu.terminal_vello.texture_view() {
             composite_vello_texture(
                 &shared.device,
                 &mut encoder,
                 &frame_view,
-                cursor_view,
+                vello_view,
                 state.gpu.config.width,
                 state.gpu.config.height,
                 state.gpu.config.height as f32,
@@ -180,6 +192,56 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
 
     shared.queue.submit(std::iter::once(encoder.finish()));
     frame.present();
+}
+
+/// Render selection rectangles via vello
+fn render_selection(state: &mut WindowState, selection: &SelectionRange) {
+    let cell_width = state.gpu.glyph_cache.cell_width();
+    let line_height = state.gpu.glyph_cache.line_height();
+    let (offset_x, offset_y) = state.gpu.tab_bar.content_offset();
+    let padding = 10.0 * state.scale_factor;
+
+    let start_line = selection.start.line.0;
+    let end_line = selection.end.line.0;
+    let start_col = selection.start.column.0;
+    let end_col = selection.end.column.0;
+
+    if selection.is_block {
+        // Block selection: rectangle from start to end
+        let min_col = start_col.min(end_col);
+        let max_col = start_col.max(end_col);
+
+        for line in start_line..=end_line {
+            let y = offset_y + padding + (line as f32 * line_height);
+            let x = offset_x + padding + (min_col as f32 * cell_width);
+            let num_cells = max_col - min_col + 1;
+            state.gpu.terminal_vello.add_selection_row(x, y, num_cells, cell_width, line_height);
+        }
+    } else {
+        // Normal selection: spans from start point to end point
+        for line in start_line..=end_line {
+            let y = offset_y + padding + (line as f32 * line_height);
+
+            let (line_start_col, line_end_col) = if start_line == end_line {
+                // Single line selection
+                (start_col, end_col)
+            } else if line == start_line {
+                // First line: from start column to end of line
+                // We use a large number for "end of line" - will be clipped by terminal width
+                (start_col, 999)
+            } else if line == end_line {
+                // Last line: from start of line to end column
+                (0, end_col)
+            } else {
+                // Middle line: full line
+                (0, 999)
+            };
+
+            let x = offset_x + padding + (line_start_col as f32 * cell_width);
+            let num_cells = (line_end_col - line_start_col + 1).min(500); // Cap to reasonable number
+            state.gpu.terminal_vello.add_selection_row(x, y, num_cells, cell_width, line_height);
+        }
+    }
 }
 
 /// Render tab title text with glow effect

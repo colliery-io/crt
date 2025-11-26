@@ -108,6 +108,11 @@ pub struct WindowState {
     pub cursor_position: (f32, f32),
     pub last_click_time: Option<Instant>,
     pub last_click_tab: Option<u64>,
+    // Terminal selection state
+    pub mouse_pressed: bool,
+    pub selection_click_count: u8,
+    pub last_selection_click_time: Option<Instant>,
+    pub last_selection_click_pos: Option<(usize, usize)>,
 }
 
 /// Cursor position info returned from text buffer update

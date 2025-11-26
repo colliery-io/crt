@@ -22,6 +22,8 @@ pub use alacritty_terminal::term::{
 pub use alacritty_terminal::index::{Column, Line, Point};
 pub use alacritty_terminal::vte::ansi::Color as AnsiColor;
 pub use alacritty_terminal::vte::ansi::NamedColor;
+pub use alacritty_terminal::selection::{Selection, SelectionRange, SelectionType};
+pub use alacritty_terminal::index::Side;
 
 use std::sync::{Arc, Mutex};
 
@@ -176,6 +178,36 @@ impl Terminal {
             TermDamage::Partial(iter) => iter.count() > 0,
         }
     }
+
+    /// Start a new selection at the given point
+    pub fn start_selection(&mut self, point: Point, selection_type: SelectionType) {
+        use alacritty_terminal::selection::Selection;
+        use alacritty_terminal::index::Side;
+        self.term.selection = Some(Selection::new(selection_type, point, Side::Left));
+    }
+
+    /// Update the selection end point
+    pub fn update_selection(&mut self, point: Point) {
+        use alacritty_terminal::index::Side;
+        if let Some(selection) = self.term.selection.as_mut() {
+            selection.update(point, Side::Right);
+        }
+    }
+
+    /// Clear the current selection
+    pub fn clear_selection(&mut self) {
+        self.term.selection = None;
+    }
+
+    /// Check if a selection exists
+    pub fn has_selection(&self) -> bool {
+        self.term.selection.is_some()
+    }
+
+    /// Get the selection as text, if any
+    pub fn selection_to_string(&self) -> Option<String> {
+        self.term.selection_to_string()
+    }
 }
 
 /// A terminal connected to a PTY running a shell
@@ -262,6 +294,31 @@ impl ShellTerminal {
         // Note: This is a bit awkward but necessary to not lose events
         // In practice, other events are less critical for our use case
         title
+    }
+
+    /// Start a new selection at the given point
+    pub fn start_selection(&mut self, point: Point, selection_type: SelectionType) {
+        self.terminal.start_selection(point, selection_type);
+    }
+
+    /// Update the selection end point
+    pub fn update_selection(&mut self, point: Point) {
+        self.terminal.update_selection(point);
+    }
+
+    /// Clear the current selection
+    pub fn clear_selection(&mut self) {
+        self.terminal.clear_selection();
+    }
+
+    /// Check if a selection exists
+    pub fn has_selection(&self) -> bool {
+        self.terminal.has_selection()
+    }
+
+    /// Get the selection as text, if any
+    pub fn selection_to_string(&self) -> Option<String> {
+        self.terminal.selection_to_string()
     }
 }
 
