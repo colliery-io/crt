@@ -104,6 +104,38 @@ impl Default for ThemeConfig {
     }
 }
 
+/// Cursor shape style
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CursorStyle {
+    #[default]
+    Block,
+    Bar,
+    Underline,
+}
+
+/// Cursor configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CursorConfig {
+    /// Cursor shape style
+    pub style: CursorStyle,
+    /// Whether cursor blinks
+    pub blink: bool,
+    /// Blink interval in milliseconds
+    pub blink_interval_ms: u64,
+}
+
+impl Default for CursorConfig {
+    fn default() -> Self {
+        Self {
+            style: CursorStyle::default(),
+            blink: true,
+            blink_interval_ms: 530,
+        }
+    }
+}
+
 /// Keybinding action
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -266,6 +298,7 @@ pub struct Config {
     pub font: FontConfig,
     pub window: WindowConfig,
     pub theme: ThemeConfig,
+    pub cursor: CursorConfig,
     pub keybindings: KeybindingsConfig,
 }
 

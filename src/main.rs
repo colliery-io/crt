@@ -166,6 +166,18 @@ impl App {
         tab_bar.set_theme(theme.tabs);
         tab_bar.resize(size.width as f32, size.height as f32);
 
+        // Terminal vello renderer for cursor and selection
+        let mut terminal_vello = crt_renderer::TerminalVelloRenderer::new(&shared.device);
+        // Apply cursor config
+        let cursor_shape = match self.config.cursor.style {
+            config::CursorStyle::Block => crt_renderer::CursorShape::Block,
+            config::CursorStyle::Bar => crt_renderer::CursorShape::Bar,
+            config::CursorStyle::Underline => crt_renderer::CursorShape::Underline,
+        };
+        terminal_vello.set_cursor_shape(cursor_shape);
+        terminal_vello.set_blink_enabled(self.config.cursor.blink);
+        terminal_vello.set_blink_interval_ms(self.config.cursor.blink_interval_ms);
+
         let gpu = WindowGpuState {
             surface,
             config: surface_config,
@@ -177,6 +189,7 @@ impl App {
             effect_pipeline,
             composite_bind_group,
             tab_bar,
+            terminal_vello,
         };
 
         // Create initial shell

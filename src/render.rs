@@ -3,7 +3,7 @@
 //! Multi-pass rendering pipeline for terminal content and effects.
 
 use crate::gpu::SharedGpuState;
-use crate::window::{CursorInfo, WindowState};
+use crate::window::WindowState;
 use std::sync::OnceLock;
 
 /// Cached blit pipeline for compositing vello textures
@@ -89,12 +89,23 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
         state.gpu.effect_pipeline.background.render(&mut pass);
     }
 
-    // Pass 2: Update grid buffer if content changed (adds cursor glyph)
+    // Pass 2: Update cursor position if content changed
     if let Some(cursor) = cursor_info {
-        render_cursor_glyph(state, shared, cursor);
+        state.gpu.terminal_vello.set_cursor(
+            cursor.x,
+            cursor.y,
+            cursor.cell_width,
+            cursor.cell_height,
+            true, // visible
+        );
+        // Reset blink when cursor moves (makes cursor visible immediately)
+        state.gpu.terminal_vello.reset_blink();
     }
 
-    // Pass 3: Render terminal text and cursor directly to frame (every frame)
+    // Update cursor blink state
+    state.gpu.terminal_vello.update_blink();
+
+    // Pass 3: Render terminal text directly to frame (every frame)
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Terminal Text Render Pass"),
@@ -115,7 +126,33 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
         state.gpu.grid_renderer.render(&shared.queue, &mut pass);
     }
 
-    // Pass 4: Render tab bar shapes via vello
+    // Pass 4: Render cursor via vello (always prepare if cursor exists, blink handled internally)
+    if state.gpu.terminal_vello.has_cursor() {
+        state.gpu.terminal_vello.prepare(
+            &shared.device,
+            state.gpu.config.width,
+            state.gpu.config.height,
+        );
+
+        if let Err(e) = state.gpu.terminal_vello.render_to_texture(&shared.device, &shared.queue) {
+            log::warn!("Terminal vello render error: {:?}", e);
+        }
+
+        // Composite cursor texture onto frame
+        if let Some(cursor_view) = state.gpu.terminal_vello.texture_view() {
+            composite_vello_texture(
+                &shared.device,
+                &mut encoder,
+                &frame_view,
+                cursor_view,
+                state.gpu.config.width,
+                state.gpu.config.height,
+                state.gpu.config.height as f32,
+            );
+        }
+    }
+
+    // Pass 5: Render tab bar shapes via vello
     {
         state.gpu.tab_bar.prepare(&shared.device, &shared.queue);
 
@@ -138,29 +175,11 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
         }
     }
 
-    // Pass 5: Render tab title text with glow
+    // Pass 6: Render tab title text with glow
     render_tab_titles(state, shared, &mut encoder, &frame_view);
 
     shared.queue.submit(std::iter::once(encoder.finish()));
     frame.present();
-}
-
-/// Render cursor as a simple colored rectangle
-///
-/// Note: Full vello cursor rendering with caching will be implemented in CRT-T-0043.
-/// For now, we use the grid renderer to draw the cursor glyph to avoid
-/// creating expensive GPU resources every frame.
-fn render_cursor_glyph(
-    state: &mut WindowState,
-    shared: &SharedGpuState,
-    cursor: CursorInfo,
-) {
-    // Render cursor as a block character using the existing glyph cache
-    let cursor_color = [0.8, 0.8, 0.2, 0.9];
-    if let Some(glyph) = state.gpu.glyph_cache.position_char('\u{2588}', cursor.x, cursor.y) {
-        state.gpu.grid_renderer.push_glyphs(&[glyph], cursor_color);
-    }
-    state.gpu.glyph_cache.flush(&shared.queue);
 }
 
 /// Render tab title text with glow effect
