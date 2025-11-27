@@ -139,6 +139,11 @@ impl TerminalVelloRenderer {
         self.cursor_color
     }
 
+    /// Get the current cursor shape
+    pub fn cursor_shape(&self) -> CursorShape {
+        self.cursor_shape
+    }
+
     /// Update cursor position and visibility
     pub fn set_cursor(&mut self, x: f32, y: f32, cell_width: f32, cell_height: f32, visible: bool) {
         self.cursor_state = CursorState {

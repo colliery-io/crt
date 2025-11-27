@@ -237,23 +237,25 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         state.gpu.grid_renderer.render(&shared.queue, &mut pass);
     }
 
-    // Pass 5: Render cursor, selection, underlines, strikethroughs via vello
+    // Pass 5: Render cursor, selection, underlines, strikethroughs via RectRenderer
+    // (Direct rendering without intermediate texture saves ~8MB)
     {
         // Get selection from active terminal (if any)
         let selection = active_tab_id
             .and_then(|id| state.shells.get(&id))
             .and_then(|shell| shell.terminal().renderable_content().selection);
 
-        // Prepare vello scene (resets scene, builds cursor)
-        state.gpu.terminal_vello.prepare(
-            &shared.device,
-            state.gpu.config.width,
-            state.gpu.config.height,
+        // Collect all overlay rectangles
+        state.gpu.rect_renderer.clear();
+        state.gpu.rect_renderer.update_screen_size(
+            &shared.queue,
+            state.gpu.config.width as f32,
+            state.gpu.config.height as f32,
         );
 
-        // Add selection rectangles after prepare (scene was reset)
+        // Add selection rectangles
         if let Some(selection) = selection {
-            render_selection(state, &selection);
+            render_selection_rects(state, &selection);
         }
 
         // Add underlines and strikethroughs from cached decorations
@@ -261,41 +263,73 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
             match decoration.kind {
                 DecorationKind::Background => {} // Already rendered in Pass 3
                 DecorationKind::Underline => {
-                    state.gpu.terminal_vello.add_underline(
+                    // Underline: thin rect near bottom of cell
+                    let underline_y = decoration.y + decoration.cell_height - 3.0;
+                    state.gpu.rect_renderer.push_rect(
                         decoration.x,
-                        decoration.y,
+                        underline_y,
                         decoration.cell_width,
-                        decoration.cell_height,
+                        1.5,
                         decoration.color,
                     );
                 }
                 DecorationKind::Strikethrough => {
-                    state.gpu.terminal_vello.add_strikethrough(
+                    // Strikethrough: thin rect at middle of cell
+                    let strike_y = decoration.y + decoration.cell_height * 0.45;
+                    state.gpu.rect_renderer.push_rect(
                         decoration.x,
-                        decoration.y,
+                        strike_y,
                         decoration.cell_width,
-                        decoration.cell_height,
+                        1.5,
                         decoration.color,
                     );
                 }
             }
         }
 
-        if let Err(e) = state.gpu.terminal_vello.render_to_texture(&mut shared.vello_renderer, &shared.device, &shared.queue) {
-            log::warn!("Terminal vello render error: {:?}", e);
+        // Add cursor (if visible after blink check)
+        if state.gpu.terminal_vello.cursor_visible() {
+            if let Some(cursor) = &state.cached_render.cursor {
+                let cursor_color = state.gpu.terminal_vello.cursor_color();
+                let cursor_shape = state.gpu.terminal_vello.cursor_shape();
+
+                let (rect_x, rect_y, rect_w, rect_h) = match cursor_shape {
+                    crt_renderer::CursorShape::Block => {
+                        (cursor.x, cursor.y, cursor.cell_width, cursor.cell_height)
+                    }
+                    crt_renderer::CursorShape::Bar => {
+                        // 2-pixel wide bar on the left
+                        (cursor.x, cursor.y, 2.0, cursor.cell_height)
+                    }
+                    crt_renderer::CursorShape::Underline => {
+                        // 2-pixel tall underline at the bottom
+                        (cursor.x, cursor.y + cursor.cell_height - 2.0, cursor.cell_width, 2.0)
+                    }
+                };
+
+                state.gpu.rect_renderer.push_rect(rect_x, rect_y, rect_w, rect_h, cursor_color);
+            }
         }
 
-        // Composite cursor/selection/decorations texture onto frame
-        if let Some(vello_view) = state.gpu.terminal_vello.texture_view() {
-            composite_vello_texture(
-                &shared.device,
-                &mut encoder,
-                &frame_view,
-                vello_view,
-                state.gpu.config.width,
-                state.gpu.config.height,
-                state.gpu.config.height as f32,
-            );
+        // Render all overlay rects directly to frame
+        if state.gpu.rect_renderer.instance_count() > 0 {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Overlay Rect Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &frame_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            state.gpu.rect_renderer.render(&shared.queue, &mut pass);
         }
     }
 
@@ -345,12 +379,15 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     frame.present();
 }
 
-/// Render selection rectangles via vello
-fn render_selection(state: &mut WindowState, selection: &SelectionRange) {
+/// Render selection rectangles via RectRenderer (direct, no intermediate texture)
+fn render_selection_rects(state: &mut WindowState, selection: &SelectionRange) {
     let cell_width = state.gpu.glyph_cache.cell_width();
     let line_height = state.gpu.glyph_cache.line_height();
     let (offset_x, offset_y) = state.gpu.tab_bar.content_offset();
     let padding = 10.0 * state.scale_factor;
+
+    // Selection highlight color (semi-transparent blue)
+    let selection_color = [0.3, 0.4, 0.6, 0.5];
 
     let start_line = selection.start.line.0;
     let end_line = selection.end.line.0;
@@ -366,7 +403,8 @@ fn render_selection(state: &mut WindowState, selection: &SelectionRange) {
             let y = offset_y + padding + (line as f32 * line_height);
             let x = offset_x + padding + (min_col as f32 * cell_width);
             let num_cells = max_col - min_col + 1;
-            state.gpu.terminal_vello.add_selection_row(x, y, num_cells, cell_width, line_height);
+            let width = num_cells as f32 * cell_width;
+            state.gpu.rect_renderer.push_rect(x, y, width, line_height, selection_color);
         }
     } else {
         // Normal selection: spans from start point to end point
@@ -378,7 +416,6 @@ fn render_selection(state: &mut WindowState, selection: &SelectionRange) {
                 (start_col, end_col)
             } else if line == start_line {
                 // First line: from start column to end of line
-                // We use a large number for "end of line" - will be clipped by terminal width
                 (start_col, 999)
             } else if line == end_line {
                 // Last line: from start of line to end column
@@ -389,8 +426,9 @@ fn render_selection(state: &mut WindowState, selection: &SelectionRange) {
             };
 
             let x = offset_x + padding + (line_start_col as f32 * cell_width);
-            let num_cells = (line_end_col - line_start_col + 1).min(500); // Cap to reasonable number
-            state.gpu.terminal_vello.add_selection_row(x, y, num_cells, cell_width, line_height);
+            let num_cells = (line_end_col - line_start_col + 1).min(500);
+            let width = num_cells as f32 * cell_width;
+            state.gpu.rect_renderer.push_rect(x, y, width, line_height, selection_color);
         }
     }
 }
@@ -502,38 +540,61 @@ fn render_search_bar(
     let bg_color = [0.15, 0.15, 0.2, 0.95]; // Dark semi-transparent background
     let border_color = [0.3, 0.5, 0.7, 0.8]; // Accent border
 
-    // Prepare vello scene with search bar background
-    state.gpu.terminal_vello.prepare(
-        &shared.device,
-        state.gpu.config.width,
-        state.gpu.config.height,
-    );
+    // Calculate search bar dimensions (same as vello version)
+    let s = state.scale_factor;
+    let bar_width = 300.0 * s;
+    let bar_height = 32.0 * s;
+    let margin = 20.0 * s;
+    let padding = 8.0 * s;
+    let border_width = 2.0 * s;
 
-    let (text_x, text_y, _text_width, text_height) = state.gpu.terminal_vello.add_search_bar(
+    let bar_x = state.gpu.config.width as f32 - bar_width - margin;
+    let bar_y = content_offset_y + margin;
+
+    // Render search bar using RectRenderer (direct, no intermediate texture)
+    state.gpu.rect_renderer.clear();
+    state.gpu.rect_renderer.update_screen_size(
+        &shared.queue,
         state.gpu.config.width as f32,
-        content_offset_y,
-        state.scale_factor,
-        bg_color,
-        border_color,
+        state.gpu.config.height as f32,
     );
 
-    // Render vello scene to texture using shared renderer
-    if let Err(e) = state.gpu.terminal_vello.render_to_texture(&mut shared.vello_renderer, &shared.device, &shared.queue) {
-        log::warn!("Search bar vello render error: {:?}", e);
+    // Outer border rect
+    state.gpu.rect_renderer.push_rect(bar_x, bar_y, bar_width, bar_height, border_color);
+    // Inner background rect
+    state.gpu.rect_renderer.push_rect(
+        bar_x + border_width,
+        bar_y + border_width,
+        bar_width - border_width * 2.0,
+        bar_height - border_width * 2.0,
+        bg_color,
+    );
+
+    // Render search bar background directly to frame
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Search Bar Background Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: frame_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        state.gpu.rect_renderer.render(&shared.queue, &mut pass);
     }
 
-    // Composite search bar background onto frame
-    if let Some(vello_view) = state.gpu.terminal_vello.texture_view() {
-        composite_vello_texture(
-            &shared.device,
-            encoder,
-            frame_view,
-            vello_view,
-            state.gpu.config.width,
-            state.gpu.config.height,
-            state.gpu.config.height as f32,
-        );
-    }
+    // Calculate text position
+    let text_x = bar_x + border_width + padding;
+    let text_y = bar_y + border_width + padding;
+    let text_height = bar_height - border_width * 2.0 - padding * 2.0;
 
     // Render search text using tab glyph cache
     state.gpu.tab_title_renderer.clear();

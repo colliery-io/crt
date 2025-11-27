@@ -180,6 +180,11 @@ impl RectRenderer {
         }
     }
 
+    /// Get the number of pending instances
+    pub fn instance_count(&self) -> usize {
+        self.instances.len()
+    }
+
     /// Update screen size uniform
     pub fn update_screen_size(&self, queue: &wgpu::Queue, width: f32, height: f32) {
         let globals = Globals {
@@ -212,9 +217,5 @@ impl RectRenderer {
 
         // Draw 4 vertices per instance (triangle strip quad)
         render_pass.draw(0..4, 0..self.instances.len() as u32);
-    }
-
-    pub fn instance_count(&self) -> usize {
-        self.instances.len()
     }
 }
