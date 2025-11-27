@@ -15,7 +15,8 @@ use lightningcss::printer::PrinterOptions;
 
 use crate::{
     BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
-    Color, GridEffect, LinearGradient, RainEffect, StarDirection, StarfieldEffect, TextShadow, Theme,
+    Color, GridEffect, LinearGradient, ParticleBehavior, ParticleEffect, ParticleShape,
+    RainEffect, StarDirection, StarfieldEffect, TextShadow, Theme,
 };
 
 #[derive(Error, Debug)]
@@ -928,6 +929,55 @@ fn apply_backdrop_properties(
 
     if rain.enabled {
         theme.rain = Some(rain);
+    }
+
+    // Parse particle effect properties
+    let mut particles = theme.particles.unwrap_or(ParticleEffect {
+        enabled: false,
+        ..Default::default()
+    });
+
+    let mut has_particle_props = false;
+
+    if let Some(c) = custom.get("--particles-color") {
+        particles.color = parse_color(c)?;
+        has_particle_props = true;
+    }
+    if let Some(v) = custom.get("--particles-count") {
+        particles.count = v.parse().unwrap_or(50);
+        has_particle_props = true;
+    }
+    if let Some(v) = custom.get("--particles-shape") {
+        if let Some(shape) = ParticleShape::from_str(v.trim()) {
+            particles.shape = shape;
+        }
+    }
+    if let Some(v) = custom.get("--particles-behavior") {
+        if let Some(behavior) = ParticleBehavior::from_str(v.trim()) {
+            particles.behavior = behavior;
+        }
+    }
+    if let Some(v) = custom.get("--particles-size") {
+        particles.size = v.parse().unwrap_or(4.0);
+    }
+    if let Some(v) = custom.get("--particles-speed") {
+        particles.speed = v.parse().unwrap_or(0.5);
+    }
+    if let Some(v) = custom.get("--particles-glow-radius") {
+        particles.glow_radius = v.parse().unwrap_or(0.0);
+    }
+    if let Some(v) = custom.get("--particles-glow-intensity") {
+        particles.glow_intensity = v.parse().unwrap_or(0.0);
+    }
+
+    if let Some(v) = custom.get("--particles-enabled") {
+        particles.enabled = v.trim() == "true";
+    } else if has_particle_props {
+        particles.enabled = true;
+    }
+
+    if particles.enabled {
+        theme.particles = Some(particles);
     }
 
     Ok(())

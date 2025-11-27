@@ -19,7 +19,7 @@ use std::time::Instant;
 
 use config::Config;
 use crt_core::{ShellTerminal, Size, Scroll};
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, GridEffect, StarfieldEffect, RainEffect, EffectConfig};
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, GridEffect, StarfieldEffect, RainEffect, ParticleEffect, EffectConfig};
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
 use input::{
@@ -177,12 +177,13 @@ impl App {
         let mut effect_pipeline = EffectPipeline::new(&shared.device, format);
         effect_pipeline.set_theme(theme.clone());
 
-        // Backdrop effects renderer (grid, starfield, rain, etc.)
+        // Backdrop effects renderer (grid, starfield, rain, particles, etc.)
         let mut effects_renderer = EffectsRenderer::new(&shared.device, shared.vello_renderer_arc(), format);
         // Add effects (disabled by default, enabled via CSS)
         effects_renderer.add_effect(Box::new(GridEffect::new()));
         effects_renderer.add_effect(Box::new(StarfieldEffect::new()));
         effects_renderer.add_effect(Box::new(RainEffect::new()));
+        effects_renderer.add_effect(Box::new(ParticleEffect::new()));
         // Configure effects from theme
         configure_effects_from_theme(&mut effects_renderer, &theme);
 
@@ -647,6 +648,26 @@ fn configure_effects_from_theme(effects_renderer: &mut EffectsRenderer, theme: &
         config.insert("rain-thickness", rain.thickness.to_string());
         config.insert("rain-glow-radius", rain.glow_radius.to_string());
         config.insert("rain-glow-intensity", rain.glow_intensity.to_string());
+    }
+
+    // Particle effect configuration from theme
+    if let Some(ref particles) = theme.particles {
+        config.insert("particles-enabled", if particles.enabled { "true" } else { "false" });
+        let c = particles.color;
+        config.insert("particles-color", format!(
+            "rgba({}, {}, {}, {})",
+            (c.r * 255.0) as u8,
+            (c.g * 255.0) as u8,
+            (c.b * 255.0) as u8,
+            c.a
+        ));
+        config.insert("particles-count", particles.count.to_string());
+        config.insert("particles-shape", particles.shape.as_str().to_string());
+        config.insert("particles-behavior", particles.behavior.as_str().to_string());
+        config.insert("particles-size", particles.size.to_string());
+        config.insert("particles-speed", particles.speed.to_string());
+        config.insert("particles-glow-radius", particles.glow_radius.to_string());
+        config.insert("particles-glow-intensity", particles.glow_intensity.to_string());
     }
 
     effects_renderer.configure(&config);

@@ -1,0 +1,23 @@
+/* Particle Effect Demo Theme */
+/* Floating hearts with soft glow */
+
+:terminal {
+    background: #1a0a1a;
+}
+
+:terminal::backdrop {
+    --particles-enabled: true;
+    --particles-color: #ff6b9d;
+    --particles-count: 50;
+    --particles-shape: heart;
+    --particles-behavior: float;
+    --particles-size: 12;
+    --particles-speed: 0.3;
+    --particles-glow-radius: 8;
+    --particles-glow-intensity: 0.4;
+}
+
+:terminal::selection {
+    background: #ff6b9d;
+    color: #1a0a1a;
+}

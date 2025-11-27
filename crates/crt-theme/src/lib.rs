@@ -478,6 +478,101 @@ impl Default for RainEffect {
     }
 }
 
+/// Particle shape type
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum ParticleShape {
+    #[default]
+    Dot,
+    Circle,
+    Star,
+    Heart,
+    Sparkle,
+}
+
+impl ParticleShape {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "dot" => Some(Self::Dot),
+            "circle" => Some(Self::Circle),
+            "star" => Some(Self::Star),
+            "heart" => Some(Self::Heart),
+            "sparkle" => Some(Self::Sparkle),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Dot => "dot",
+            Self::Circle => "circle",
+            Self::Star => "star",
+            Self::Heart => "heart",
+            Self::Sparkle => "sparkle",
+        }
+    }
+}
+
+/// Particle behavior/movement pattern
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum ParticleBehavior {
+    #[default]
+    Float,
+    Drift,
+    Rise,
+    Fall,
+}
+
+impl ParticleBehavior {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "float" => Some(Self::Float),
+            "drift" => Some(Self::Drift),
+            "rise" => Some(Self::Rise),
+            "fall" => Some(Self::Fall),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Float => "float",
+            Self::Drift => "drift",
+            Self::Rise => "rise",
+            Self::Fall => "fall",
+        }
+    }
+}
+
+/// Backdrop particle effect (floating shapes)
+#[derive(Debug, Clone, Copy)]
+pub struct ParticleEffect {
+    pub enabled: bool,
+    pub color: Color,
+    pub count: u32,
+    pub shape: ParticleShape,
+    pub behavior: ParticleBehavior,
+    pub size: f32,
+    pub speed: f32,
+    pub glow_radius: f32,
+    pub glow_intensity: f32,
+}
+
+impl Default for ParticleEffect {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            color: Color::rgba(1.0, 0.78, 0.86, 0.78), // Soft pink
+            count: 50,
+            shape: ParticleShape::Dot,
+            behavior: ParticleBehavior::Float,
+            size: 4.0,
+            speed: 0.5,
+            glow_radius: 0.0,
+            glow_intensity: 0.0,
+        }
+    }
+}
+
 /// Selection appearance
 #[derive(Debug, Clone, Copy)]
 pub struct SelectionStyle {
@@ -657,6 +752,7 @@ pub struct Theme {
     pub grid: Option<GridEffect>,
     pub starfield: Option<StarfieldEffect>,
     pub rain: Option<RainEffect>,
+    pub particles: Option<ParticleEffect>,
 
     // Tab styling
     pub tabs: TabTheme,
@@ -696,6 +792,7 @@ impl Theme {
             grid: Some(GridEffect::default()),
             starfield: None,
             rain: None,
+            particles: None,
             tabs: TabTheme::default(),
         }
     }
@@ -718,6 +815,7 @@ impl Theme {
             grid: None,
             starfield: None,
             rain: None,
+            particles: None,
             tabs: TabTheme::default(),
         }
     }
