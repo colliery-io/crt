@@ -31,7 +31,7 @@ use input::{
 };
 use menu::MenuAction;
 use render::render_frame;
-use window::{WindowState, SearchMatch};
+use window::{ContextMenuItem, WindowState, SearchMatch};
 
 use winit::{
     application::ApplicationHandler,
@@ -235,6 +235,8 @@ impl App {
             detected_urls: Vec::new(),
             hovered_url_index: None,
             search: Default::default(),
+            bell: window::BellState::from_config(&self.config.bell),
+            context_menu: window::ContextMenu::default(),
         };
 
         self.windows.insert(window_id, window_state);
@@ -470,6 +472,16 @@ impl ApplicationHandler for App {
                     }
                 }
 
+                // Handle context menu dismissal with Escape
+                if state.context_menu.visible {
+                    if let Key::Named(NamedKey::Escape) = &event.logical_key {
+                        state.context_menu.hide();
+                        state.dirty = true;
+                        state.window.request_redraw();
+                        return;
+                    }
+                }
+
                 // Handle tab editing first
                 if let TabEditResult::Handled = handle_tab_editing(state, &event.logical_key, mod_pressed) {
                     return;
@@ -647,6 +659,16 @@ impl ApplicationHandler for App {
                 let y = position.y as f32;
                 state.cursor_position = (x, y);
 
+                // Update context menu hover state
+                if state.context_menu.visible {
+                    let old_hover = state.context_menu.hovered_item;
+                    state.context_menu.update_hover(x, y);
+                    if old_hover != state.context_menu.hovered_item {
+                        state.dirty = true;
+                        state.window.request_redraw();
+                    }
+                }
+
                 // Update selection if dragging
                 handle_terminal_mouse_move(state, x, y);
 
@@ -708,6 +730,43 @@ impl ApplicationHandler for App {
                             return;
                         }
                     }
+                }
+
+                // Handle context menu interactions first
+                if state.context_menu.visible {
+                    match (button, button_state) {
+                        (winit::event::MouseButton::Left, ElementState::Pressed) => {
+                            // Check if clicking on a menu item
+                            if let Some(item) = state.context_menu.item_at(x, y) {
+                                handle_context_menu_action(state, item);
+                                state.context_menu.hide();
+                                state.dirty = true;
+                                state.window.request_redraw();
+                                return;
+                            }
+                            // Clicking outside the menu dismisses it
+                            state.context_menu.hide();
+                            state.dirty = true;
+                            state.window.request_redraw();
+                            // Fall through to normal click handling
+                        }
+                        (winit::event::MouseButton::Right, ElementState::Pressed) => {
+                            // Right-click while menu is open moves the menu
+                            state.context_menu.show(x, y);
+                            state.dirty = true;
+                            state.window.request_redraw();
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Right-click shows context menu
+                if button == winit::event::MouseButton::Right && button_state == ElementState::Pressed {
+                    state.context_menu.show(x, y);
+                    state.dirty = true;
+                    state.window.request_redraw();
+                    return;
                 }
 
                 let mouse_button = match button {
@@ -877,6 +936,47 @@ fn update_search_matches(state: &mut WindowState) {
     // Scroll to first match if any found
     if !state.search.matches.is_empty() {
         scroll_to_current_match(state);
+    }
+}
+
+/// Handle context menu action (copy, paste, select all)
+fn handle_context_menu_action(state: &mut WindowState, item: ContextMenuItem) {
+    match item {
+        ContextMenuItem::Copy => {
+            if let Some(text) = get_terminal_selection_text(state) {
+                set_clipboard_content(&text);
+            }
+        }
+        ContextMenuItem::Paste => {
+            if let Some(content) = get_clipboard_content() {
+                paste_to_terminal(state, &content);
+            }
+        }
+        ContextMenuItem::SelectAll => {
+            // Select all visible content
+            if let Some(tab_id) = state.gpu.tab_bar.active_tab_id() {
+                if let Some(shell) = state.shells.get_mut(&tab_id) {
+                    use crt_core::{Point, Line, Column, SelectionType};
+                    let terminal = shell.terminal_mut();
+                    let screen_lines = terminal.screen_lines();
+                    let columns = terminal.columns();
+
+                    // Start selection at top-left
+                    terminal.start_selection(
+                        Point { line: Line(0), column: Column(0) },
+                        SelectionType::Simple,
+                    );
+                    // Extend to bottom-right
+                    terminal.update_selection(
+                        Point {
+                            line: Line(screen_lines as i32 - 1),
+                            column: Column(columns - 1),
+                        },
+                    );
+                    state.dirty = true;
+                }
+            }
+        }
     }
 }
 

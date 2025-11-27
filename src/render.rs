@@ -3,7 +3,7 @@
 //! Multi-pass rendering pipeline for terminal content and effects.
 
 use crate::gpu::SharedGpuState;
-use crate::window::{WindowState, DecorationKind};
+use crate::window::{ContextMenuItem, WindowState, DecorationKind};
 use crt_core::SelectionRange;
 use std::sync::OnceLock;
 
@@ -287,6 +287,11 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
     let flash_intensity = state.bell.flash_intensity();
     if flash_intensity > 0.0 {
         render_bell_flash(state, shared, &mut encoder, &frame_view, flash_intensity);
+    }
+
+    // Pass 10: Render context menu (if visible)
+    if state.context_menu.visible {
+        render_context_menu(state, shared, &mut encoder, &frame_view);
     }
 
     shared.queue.submit(std::iter::once(encoder.finish()));
@@ -757,4 +762,174 @@ fn render_bell_flash(
     });
 
     state.gpu.rect_renderer.render(&shared.queue, &mut pass);
+}
+
+/// Render context menu overlay
+fn render_context_menu(
+    state: &mut WindowState,
+    shared: &SharedGpuState,
+    encoder: &mut wgpu::CommandEncoder,
+    frame_view: &wgpu::TextureView,
+) {
+    let scale = state.scale_factor;
+    let items = ContextMenuItem::all();
+    let item_count = items.len();
+
+    // Menu dimensions
+    let padding_x = 12.0 * scale;
+    let padding_y = 6.0 * scale;
+    let item_height = 28.0 * scale;
+    let menu_width = 180.0 * scale;
+    let menu_height = (item_count as f32 * item_height) + (padding_y * 2.0);
+
+    // Get menu position and adjust if near screen edges
+    let screen_width = state.gpu.config.width as f32;
+    let screen_height = state.gpu.config.height as f32;
+
+    let mut menu_x = state.context_menu.x;
+    let mut menu_y = state.context_menu.y;
+
+    // Keep menu within screen bounds
+    if menu_x + menu_width > screen_width {
+        menu_x = screen_width - menu_width - 4.0;
+    }
+    if menu_y + menu_height > screen_height {
+        menu_y = screen_height - menu_height - 4.0;
+    }
+    if menu_x < 4.0 {
+        menu_x = 4.0;
+    }
+    if menu_y < 4.0 {
+        menu_y = 4.0;
+    }
+
+    // Update context menu dimensions for hit testing
+    state.context_menu.x = menu_x;
+    state.context_menu.y = menu_y;
+    state.context_menu.width = menu_width;
+    state.context_menu.height = menu_height;
+    state.context_menu.item_height = item_height;
+
+    // Colors
+    let bg_color = [0.12, 0.12, 0.15, 0.98];
+    let border_color = [0.3, 0.3, 0.35, 0.8];
+    let hover_color = [0.25, 0.35, 0.5, 0.8];
+    let text_color = [0.9, 0.9, 0.9, 1.0];
+    let shortcut_color = [0.5, 0.5, 0.55, 1.0];
+
+    // Render background using rect_renderer
+    state.gpu.rect_renderer.clear();
+    state.gpu.rect_renderer.update_screen_size(
+        &shared.queue,
+        screen_width,
+        screen_height,
+    );
+
+    // Menu background
+    state.gpu.rect_renderer.push_rect(menu_x, menu_y, menu_width, menu_height, bg_color);
+
+    // Border (simple rectangles around the edges)
+    let border_thickness = 1.0 * scale;
+    // Top border
+    state.gpu.rect_renderer.push_rect(menu_x, menu_y, menu_width, border_thickness, border_color);
+    // Bottom border
+    state.gpu.rect_renderer.push_rect(menu_x, menu_y + menu_height - border_thickness, menu_width, border_thickness, border_color);
+    // Left border
+    state.gpu.rect_renderer.push_rect(menu_x, menu_y, border_thickness, menu_height, border_color);
+    // Right border
+    state.gpu.rect_renderer.push_rect(menu_x + menu_width - border_thickness, menu_y, border_thickness, menu_height, border_color);
+
+    // Hover highlight
+    if let Some(hover_idx) = state.context_menu.hovered_item {
+        if hover_idx < item_count {
+            let hover_y = menu_y + padding_y + (hover_idx as f32 * item_height);
+            state.gpu.rect_renderer.push_rect(
+                menu_x + border_thickness,
+                hover_y,
+                menu_width - (border_thickness * 2.0),
+                item_height,
+                hover_color,
+            );
+        }
+    }
+
+    // Render background pass
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Context Menu Background Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: frame_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        state.gpu.rect_renderer.render(&shared.queue, &mut pass);
+    }
+
+    // Render menu text
+    state.gpu.tab_title_renderer.clear();
+
+    let font_height = 12.0 * scale;
+    let text_offset_y = (item_height - font_height) / 2.0;
+
+    for (idx, item) in items.iter().enumerate() {
+        let item_y = menu_y + padding_y + (idx as f32 * item_height) + text_offset_y;
+
+        // Render label
+        let mut glyphs = Vec::new();
+        let mut char_x = menu_x + padding_x;
+        for c in item.label().chars() {
+            if let Some(glyph) = state.gpu.tab_glyph_cache.position_char(c, char_x, item_y) {
+                glyphs.push(glyph);
+            }
+            char_x += state.gpu.tab_glyph_cache.cell_width();
+        }
+        state.gpu.tab_title_renderer.push_glyphs(&glyphs, text_color);
+
+        // Render shortcut (right-aligned)
+        let shortcut = item.shortcut();
+        let shortcut_width = shortcut.len() as f32 * state.gpu.tab_glyph_cache.cell_width();
+        let shortcut_x = menu_x + menu_width - padding_x - shortcut_width;
+
+        let mut shortcut_glyphs = Vec::new();
+        let mut char_x = shortcut_x;
+        for c in shortcut.chars() {
+            if let Some(glyph) = state.gpu.tab_glyph_cache.position_char(c, char_x, item_y) {
+                shortcut_glyphs.push(glyph);
+            }
+            char_x += state.gpu.tab_glyph_cache.cell_width();
+        }
+        state.gpu.tab_title_renderer.push_glyphs(&shortcut_glyphs, shortcut_color);
+    }
+
+    state.gpu.tab_glyph_cache.flush(&shared.queue);
+
+    // Render text pass
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Context Menu Text Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: frame_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        state.gpu.tab_title_renderer.render(&shared.queue, &mut pass);
+    }
 }

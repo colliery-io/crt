@@ -125,6 +125,8 @@ pub struct WindowState {
     pub search: SearchState,
     // Bell state for visual flash
     pub bell: BellState,
+    // Context menu state
+    pub context_menu: ContextMenu,
 }
 
 /// Bell visual flash state
@@ -217,6 +219,114 @@ pub struct SearchState {
     pub matches: Vec<SearchMatch>,
     /// Index of current/focused match
     pub current_match: usize,
+}
+
+/// Context menu item
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContextMenuItem {
+    Copy,
+    Paste,
+    SelectAll,
+}
+
+impl ContextMenuItem {
+    /// Get the display label for this menu item
+    pub fn label(&self) -> &'static str {
+        match self {
+            ContextMenuItem::Copy => "Copy",
+            ContextMenuItem::Paste => "Paste",
+            ContextMenuItem::SelectAll => "Select All",
+        }
+    }
+
+    /// Get the keyboard shortcut hint
+    pub fn shortcut(&self) -> &'static str {
+        #[cfg(target_os = "macos")]
+        match self {
+            ContextMenuItem::Copy => "Cmd+C",
+            ContextMenuItem::Paste => "Cmd+V",
+            ContextMenuItem::SelectAll => "Cmd+A",
+        }
+        #[cfg(not(target_os = "macos"))]
+        match self {
+            ContextMenuItem::Copy => "Ctrl+C",
+            ContextMenuItem::Paste => "Ctrl+V",
+            ContextMenuItem::SelectAll => "Ctrl+A",
+        }
+    }
+
+    /// Get all menu items in order
+    pub fn all() -> &'static [ContextMenuItem] {
+        &[
+            ContextMenuItem::Copy,
+            ContextMenuItem::Paste,
+            ContextMenuItem::SelectAll,
+        ]
+    }
+}
+
+/// Context menu state
+#[derive(Debug, Clone, Default)]
+pub struct ContextMenu {
+    /// Whether the context menu is visible
+    pub visible: bool,
+    /// Position of the menu (top-left corner)
+    pub x: f32,
+    pub y: f32,
+    /// Currently hovered item index
+    pub hovered_item: Option<usize>,
+    /// Menu dimensions (computed during render)
+    pub width: f32,
+    pub height: f32,
+    pub item_height: f32,
+}
+
+impl ContextMenu {
+    /// Show the context menu at the given position
+    pub fn show(&mut self, x: f32, y: f32) {
+        self.visible = true;
+        self.x = x;
+        self.y = y;
+        self.hovered_item = None;
+    }
+
+    /// Hide the context menu
+    pub fn hide(&mut self) {
+        self.visible = false;
+        self.hovered_item = None;
+    }
+
+    /// Check if a point is inside the menu
+    pub fn contains(&self, x: f32, y: f32) -> bool {
+        if !self.visible {
+            return false;
+        }
+        x >= self.x && x <= self.x + self.width && y >= self.y && y <= self.y + self.height
+    }
+
+    /// Get the menu item at the given position, if any
+    pub fn item_at(&self, x: f32, y: f32) -> Option<ContextMenuItem> {
+        if !self.contains(x, y) {
+            return None;
+        }
+        let rel_y = y - self.y;
+        let index = (rel_y / self.item_height) as usize;
+        ContextMenuItem::all().get(index).copied()
+    }
+
+    /// Update hover state based on mouse position
+    pub fn update_hover(&mut self, x: f32, y: f32) {
+        if !self.visible {
+            self.hovered_item = None;
+            return;
+        }
+        if self.contains(x, y) {
+            let rel_y = y - self.y;
+            self.hovered_item = Some((rel_y / self.item_height) as usize);
+        } else {
+            self.hovered_item = None;
+        }
+    }
 }
 
 /// Cursor position info returned from text buffer update
