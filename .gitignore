@@ -1,1 +1,22 @@
+# Build
 /target
+*.pkg
+*.dmg
+*.app
+
+# macOS
+.DS_Store
+*.dSYM
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Debug/Development
+debug.entitlements
+*.log
+
+# Metis database (regenerated)
+.metis/metis.db
