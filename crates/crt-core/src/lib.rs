@@ -27,9 +27,27 @@ pub use alacritty_terminal::index::Side;
 pub use alacritty_terminal::grid::Scroll;
 pub use alacritty_terminal::term::TermMode;
 
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use alacritty_terminal::event::{Event, EventListener};
+
+/// Semantic zone type from OSC 133 shell integration
+///
+/// OSC 133 sequences mark boundaries between prompt, input, and output regions.
+/// This allows the terminal to apply different rendering (e.g., glow on prompt/input only).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SemanticZone {
+    /// No OSC 133 zone information (shell doesn't support it or before first marker)
+    #[default]
+    Unknown,
+    /// Prompt region (between OSC 133;A and OSC 133;B)
+    Prompt,
+    /// User input region (between OSC 133;B and OSC 133;C)
+    Input,
+    /// Command output region (between OSC 133;C and next OSC 133;A)
+    Output,
+}
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::{self, Config as TermConfig, Term};
 use alacritty_terminal::term::test::TermSize;
@@ -91,6 +109,11 @@ pub struct Terminal {
     event_proxy: TerminalEventProxy,
     parser: ansi::Processor,
     size: Size,
+    /// Semantic zones per line (from OSC 133)
+    /// Maps line number (can be negative for scrollback) to zone type
+    line_zones: BTreeMap<i32, SemanticZone>,
+    /// Current semantic zone state (for marking new content)
+    current_zone: SemanticZone,
 }
 
 impl Terminal {
@@ -102,7 +125,14 @@ impl Terminal {
         let term = Term::new(config, &term_size, event_proxy.clone());
         let parser = ansi::Processor::new();
 
-        Self { term, event_proxy, parser, size }
+        Self {
+            term,
+            event_proxy,
+            parser,
+            size,
+            line_zones: BTreeMap::new(),
+            current_zone: SemanticZone::Unknown,
+        }
     }
 
     /// Get terminal dimensions
@@ -122,7 +152,95 @@ impl Terminal {
 
     /// Process input bytes through the terminal parser
     pub fn process_input(&mut self, bytes: &[u8]) {
+        // Scan for OSC 133 sequences before passing to parser
+        self.scan_osc133(bytes);
+
+        // Pass through to terminal parser unchanged
         self.parser.advance(&mut self.term, bytes);
+    }
+
+    /// Scan input bytes for OSC 133 semantic prompt sequences
+    ///
+    /// OSC 133 format: `\x1b]133;X\x07` or `\x1b]133;X\x1b\\`
+    /// Where X is: A (prompt start), B (command start), C (output start), D (output end)
+    fn scan_osc133(&mut self, bytes: &[u8]) {
+        // OSC starts with \x1b] (ESC ])
+        let mut i = 0;
+        while i < bytes.len() {
+            // Look for ESC ]
+            if bytes[i] == 0x1b && i + 1 < bytes.len() && bytes[i + 1] == b']' {
+                // Check for "133;" pattern
+                if i + 6 < bytes.len()
+                    && bytes[i + 2] == b'1'
+                    && bytes[i + 3] == b'3'
+                    && bytes[i + 4] == b'3'
+                    && bytes[i + 5] == b';'
+                {
+                    let cmd = bytes[i + 6];
+                    // Check for valid terminator (BEL \x07 or ST \x1b\\)
+                    let has_bel = i + 7 < bytes.len() && bytes[i + 7] == 0x07;
+                    let has_st = i + 8 < bytes.len() && bytes[i + 7] == 0x1b && bytes[i + 8] == b'\\';
+
+                    if has_bel || has_st {
+                        self.handle_osc133(cmd);
+                    }
+                }
+            }
+            i += 1;
+        }
+    }
+
+    /// Handle an OSC 133 command
+    fn handle_osc133(&mut self, cmd: u8) {
+        // Get current cursor line from terminal
+        let cursor = self.term.renderable_content().cursor;
+        let line = cursor.point.line.0;
+
+        match cmd {
+            b'A' => {
+                // Prompt start
+                self.current_zone = SemanticZone::Prompt;
+                self.line_zones.insert(line, SemanticZone::Prompt);
+                log::debug!("OSC 133;A: Prompt start at line {}", line);
+            }
+            b'B' => {
+                // Command start (end of prompt, user input begins)
+                self.current_zone = SemanticZone::Input;
+                self.line_zones.insert(line, SemanticZone::Input);
+                log::debug!("OSC 133;B: Input start at line {}", line);
+            }
+            b'C' => {
+                // Output start (command executed)
+                self.current_zone = SemanticZone::Output;
+                self.line_zones.insert(line, SemanticZone::Output);
+                log::debug!("OSC 133;C: Output start at line {}", line);
+            }
+            b'D' => {
+                // Output end (could parse exit code from params)
+                log::debug!("OSC 133;D: Output end at line {}", line);
+            }
+            _ => {}
+        }
+    }
+
+    /// Get semantic zone for a given line
+    ///
+    /// Returns Unknown if no OSC 133 marker has been seen for this line.
+    pub fn get_line_zone(&self, line: i32) -> SemanticZone {
+        self.line_zones.get(&line).copied().unwrap_or(SemanticZone::Unknown)
+    }
+
+    /// Check if any OSC 133 zones have been detected
+    ///
+    /// Returns true if the shell has sent at least one OSC 133 sequence,
+    /// indicating it supports semantic prompts.
+    pub fn has_semantic_zones(&self) -> bool {
+        !self.line_zones.is_empty()
+    }
+
+    /// Get the current semantic zone state
+    pub fn current_zone(&self) -> SemanticZone {
+        self.current_zone
     }
 
     /// Get access to renderable content (cells, cursor, etc.)
@@ -485,5 +603,90 @@ mod tests {
 
         // Terminal should now have content
         // (We're not checking specific content as it depends on shell)
+    }
+
+    #[test]
+    fn osc133_no_zones_initially() {
+        let term = Terminal::new(Size::new(80, 24));
+        assert!(!term.has_semantic_zones());
+        assert_eq!(term.get_line_zone(0), SemanticZone::Unknown);
+        assert_eq!(term.current_zone(), SemanticZone::Unknown);
+    }
+
+    #[test]
+    fn osc133_prompt_start_with_bel() {
+        let mut term = Terminal::new(Size::new(80, 24));
+
+        // OSC 133;A with BEL terminator (prompt start)
+        term.process_input(b"\x1b]133;A\x07");
+
+        assert!(term.has_semantic_zones());
+        assert_eq!(term.current_zone(), SemanticZone::Prompt);
+        assert_eq!(term.get_line_zone(0), SemanticZone::Prompt);
+    }
+
+    #[test]
+    fn osc133_prompt_start_with_st() {
+        let mut term = Terminal::new(Size::new(80, 24));
+
+        // OSC 133;A with ST terminator (ESC \)
+        term.process_input(b"\x1b]133;A\x1b\\");
+
+        assert!(term.has_semantic_zones());
+        assert_eq!(term.current_zone(), SemanticZone::Prompt);
+    }
+
+    #[test]
+    fn osc133_full_sequence() {
+        let mut term = Terminal::new(Size::new(80, 24));
+
+        // Simulate full shell integration sequence:
+        // A = prompt start, B = command start, C = output start
+
+        // Prompt start
+        term.process_input(b"\x1b]133;A\x07");
+        assert_eq!(term.current_zone(), SemanticZone::Prompt);
+
+        // Some prompt text
+        term.process_input(b"$ ");
+
+        // Command start (user input begins)
+        term.process_input(b"\x1b]133;B\x07");
+        assert_eq!(term.current_zone(), SemanticZone::Input);
+
+        // User types command and hits enter, then output starts
+        term.process_input(b"ls -la\n");
+        term.process_input(b"\x1b]133;C\x07");
+        assert_eq!(term.current_zone(), SemanticZone::Output);
+
+        // Output
+        term.process_input(b"file1.txt\nfile2.txt\n");
+
+        // Next prompt
+        term.process_input(b"\x1b]133;A\x07");
+        assert_eq!(term.current_zone(), SemanticZone::Prompt);
+    }
+
+    #[test]
+    fn osc133_embedded_in_other_data() {
+        let mut term = Terminal::new(Size::new(80, 24));
+
+        // OSC 133 embedded in other text (as it would be from shell)
+        term.process_input(b"some text\x1b]133;A\x07more text");
+
+        assert!(term.has_semantic_zones());
+        assert_eq!(term.current_zone(), SemanticZone::Prompt);
+    }
+
+    #[test]
+    fn osc133_unknown_command_ignored() {
+        let mut term = Terminal::new(Size::new(80, 24));
+
+        // Unknown OSC 133 command (X) should be ignored
+        term.process_input(b"\x1b]133;X\x07");
+
+        // No zones should be set
+        assert!(!term.has_semantic_zones());
+        assert_eq!(term.current_zone(), SemanticZone::Unknown);
     }
 }

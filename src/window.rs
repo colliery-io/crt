@@ -8,7 +8,7 @@ use std::hash::Hasher;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crt_core::{AnsiColor, CellFlags, ShellTerminal, Size};
+use crt_core::{AnsiColor, CellFlags, SemanticZone, ShellTerminal, Size};
 use crt_renderer::GlyphStyle;
 use crt_theme::AnsiPalette;
 use winit::window::Window;
@@ -455,6 +455,9 @@ impl WindowState {
             self.detected_urls.extend(urls);
         }
 
+        // Check if shell supports OSC 133 semantic zones
+        let has_semantic_zones = terminal.has_semantic_zones();
+
         // Re-read content for rendering pass
         let content = terminal.renderable_content();
 
@@ -590,12 +593,20 @@ impl WindowState {
             );
 
             if let Some(glyph) = self.gpu.glyph_cache.position_char_styled(c, x, y, style) {
-                // Route to appropriate renderer:
-                // - Cursor line and line above (for multi-line prompts) go to grid_renderer (glow)
-                // - All other lines go to output_grid_renderer (rendered flat)
-                let is_prompt_area = viewport_line >= cursor_viewport_line - 1
-                    && viewport_line <= cursor_viewport_line;
-                if is_prompt_area {
+                // Route to appropriate renderer based on semantic zones (OSC 133)
+                // - Prompt/Input zones -> grid_renderer (with glow effect)
+                // - Output/Unknown zones -> output_grid_renderer (flat, no glow)
+                let use_glow = if has_semantic_zones {
+                    // Use deterministic zone-based routing
+                    let zone = terminal.get_line_zone(grid_line);
+                    matches!(zone, SemanticZone::Prompt | SemanticZone::Input)
+                } else {
+                    // Fallback heuristic: cursor line and line above (for multi-line prompts)
+                    viewport_line >= cursor_viewport_line - 1
+                        && viewport_line <= cursor_viewport_line
+                };
+
+                if use_glow {
                     self.gpu.grid_renderer.push_glyphs(&[glyph], fg_color);
                 } else {
                     self.gpu.output_grid_renderer.push_glyphs(&[glyph], fg_color);
