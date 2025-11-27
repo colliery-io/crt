@@ -26,6 +26,7 @@ use input::{
     handle_terminal_mouse_release, handle_terminal_scroll,
     clear_terminal_selection, get_terminal_selection_text, get_clipboard_content, set_clipboard_content,
     paste_to_terminal, MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT,
+    find_url_at_position, find_url_index_at_position, open_url,
 };
 use menu::MenuAction;
 use render::render_frame;
@@ -237,6 +238,8 @@ impl App {
             last_selection_click_time: None,
             last_selection_click_pos: None,
             cached_render: Default::default(),
+            detected_urls: Vec::new(),
+            hovered_url_index: None,
         };
 
         self.windows.insert(window_id, window_state);
@@ -553,13 +556,73 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::CursorMoved { position, .. } => {
-                state.cursor_position = (position.x as f32, position.y as f32);
+                let x = position.x as f32;
+                let y = position.y as f32;
+                state.cursor_position = (x, y);
+
                 // Update selection if dragging
-                handle_terminal_mouse_move(state, position.x as f32, position.y as f32);
+                handle_terminal_mouse_move(state, x, y);
+
+                // Check for URL hover and update underline state
+                let (offset_x, offset_y) = state.gpu.tab_bar.content_offset();
+                let padding = 10.0 * state.scale_factor;
+                let cell_width = state.gpu.glyph_cache.cell_width();
+                let line_height = state.gpu.glyph_cache.line_height();
+
+                let rel_x = x - offset_x - padding;
+                let rel_y = y - offset_y - padding;
+
+                let new_hovered = if rel_x >= 0.0 && rel_y >= 0.0 {
+                    let col = (rel_x / cell_width) as usize;
+                    let line = (rel_y / line_height) as usize;
+                    find_url_index_at_position(&state.detected_urls, col, line)
+                } else {
+                    None
+                };
+
+                // Redraw if hover state changed
+                if new_hovered != state.hovered_url_index {
+                    state.hovered_url_index = new_hovered;
+                    // Force content re-render to update decorations
+                    state.force_active_tab_redraw();
+                }
             }
 
             WindowEvent::MouseInput { state: button_state, button, .. } => {
                 let (x, y) = state.cursor_position;
+
+                // Check for Cmd+click (Super on macOS, Ctrl on Linux) to open URLs
+                #[cfg(target_os = "macos")]
+                let cmd_pressed = self.modifiers.state().super_key();
+                #[cfg(not(target_os = "macos"))]
+                let cmd_pressed = self.modifiers.state().control_key();
+
+                if cmd_pressed
+                    && button == winit::event::MouseButton::Left
+                    && button_state == ElementState::Pressed
+                {
+                    // Calculate cell position from pixel coordinates
+                    let (offset_x, offset_y) = state.gpu.tab_bar.content_offset();
+                    let padding = 10.0 * state.scale_factor;
+                    let cell_width = state.gpu.glyph_cache.cell_width();
+                    let line_height = state.gpu.glyph_cache.line_height();
+
+                    let rel_x = x - offset_x - padding;
+                    let rel_y = y - offset_y - padding;
+
+                    if rel_x >= 0.0 && rel_y >= 0.0 {
+                        let col = (rel_x / cell_width) as usize;
+                        let line = (rel_y / line_height) as usize;
+
+                        // Check if there's a URL at this position
+                        if let Some(url) = find_url_at_position(&state.detected_urls, col, line) {
+                            log::info!("Opening URL: {}", url.url);
+                            open_url(&url.url);
+                            return;
+                        }
+                    }
+                }
+
                 let mouse_button = match button {
                     winit::event::MouseButton::Left => Some(MOUSE_BUTTON_LEFT),
                     winit::event::MouseButton::Middle => Some(MOUSE_BUTTON_MIDDLE),

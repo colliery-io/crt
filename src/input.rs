@@ -2,12 +2,86 @@
 //!
 //! Keyboard and mouse input processing for terminal and tab bar.
 
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use crt_core::{Column, Line, Point, SelectionType, ShellTerminal, TermMode};
+use regex::Regex;
 use winit::keyboard::{Key, NamedKey};
 
 use crate::window::WindowState;
+
+/// Detected URL with its position in the terminal
+#[derive(Debug, Clone)]
+pub struct DetectedUrl {
+    /// The URL string
+    pub url: String,
+    /// Starting column (0-indexed)
+    pub start_col: usize,
+    /// Ending column (exclusive, 0-indexed)
+    pub end_col: usize,
+    /// Line number (0-indexed viewport line)
+    pub line: usize,
+}
+
+/// Get the URL regex (compiled once)
+fn url_regex() -> &'static Regex {
+    static URL_REGEX: OnceLock<Regex> = OnceLock::new();
+    URL_REGEX.get_or_init(|| {
+        // Match http://, https://, file:// URLs
+        // Also match bare domains like github.com/path
+        Regex::new(
+            r"(?x)
+            (?:https?://|file://)  # Protocol
+            [^\s<>\[\]{}|\\^`\x00-\x1f]+  # URL characters (no whitespace or special chars)
+            |
+            (?:www\.)  # www. prefix
+            [^\s<>\[\]{}|\\^`\x00-\x1f]+  # URL characters
+            "
+        ).expect("Invalid URL regex")
+    })
+}
+
+/// Scan a line of text for URLs and return their positions
+pub fn detect_urls_in_line(line_text: &str, line_num: usize) -> Vec<DetectedUrl> {
+    let regex = url_regex();
+    regex.find_iter(line_text)
+        .map(|m| DetectedUrl {
+            url: m.as_str().to_string(),
+            start_col: m.start(),
+            end_col: m.end(),
+            line: line_num,
+        })
+        .collect()
+}
+
+/// Check if a position (col, line) is within a detected URL
+pub fn find_url_at_position(urls: &[DetectedUrl], col: usize, line: usize) -> Option<&DetectedUrl> {
+    urls.iter().find(|url| {
+        url.line == line && col >= url.start_col && col < url.end_col
+    })
+}
+
+/// Find the index of a URL at a given position
+pub fn find_url_index_at_position(urls: &[DetectedUrl], col: usize, line: usize) -> Option<usize> {
+    urls.iter().position(|url| {
+        url.line == line && col >= url.start_col && col < url.end_col
+    })
+}
+
+/// Open a URL in the default browser
+pub fn open_url(url: &str) {
+    // Ensure URL has a protocol
+    let full_url = if url.starts_with("www.") {
+        format!("https://{}", url)
+    } else {
+        url.to_string()
+    };
+
+    if let Err(e) = open::that(&full_url) {
+        log::error!("Failed to open URL '{}': {}", full_url, e);
+    }
+}
 
 /// Threshold for multi-click detection
 const MULTI_CLICK_THRESHOLD: Duration = Duration::from_millis(400);

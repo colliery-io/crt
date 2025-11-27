@@ -14,6 +14,7 @@ use crt_theme::AnsiPalette;
 use winit::window::Window;
 
 use crate::gpu::{SharedGpuState, WindowGpuState};
+use crate::input::detect_urls_in_line;
 
 /// Map alacritty_terminal AnsiColor to RGBA array using theme palette
 fn ansi_color_to_rgba(color: AnsiColor, palette: &AnsiPalette, default_color: [f32; 4]) -> [f32; 4] {
@@ -116,6 +117,10 @@ pub struct WindowState {
     pub last_selection_click_pos: Option<(usize, usize)>,
     // Cached render state (decorations persist across frames)
     pub cached_render: CachedRenderState,
+    // Detected URLs in current viewport
+    pub detected_urls: Vec<crate::input::DetectedUrl>,
+    // Index of currently hovered URL (for hover underline effect)
+    pub hovered_url_index: Option<usize>,
 }
 
 /// Cursor position info returned from text buffer update
@@ -229,6 +234,23 @@ impl WindowState {
         let cursor_x = offset_x + padding + (cursor_point.column.0 as f32 * cell_width);
         let cursor_y = offset_y + padding + (cursor_viewport_line as f32 * line_height);
 
+        // First pass: collect line text for URL detection
+        let mut line_texts: std::collections::BTreeMap<i32, String> = std::collections::BTreeMap::new();
+        for cell in content.display_iter {
+            let viewport_line = cell.point.line.0 + display_offset;
+            line_texts.entry(viewport_line).or_default().push(cell.c);
+        }
+
+        // Detect URLs before rendering so we can underline them with text color
+        self.detected_urls.clear();
+        for (viewport_line, line_text) in &line_texts {
+            let urls = detect_urls_in_line(line_text, *viewport_line as usize);
+            self.detected_urls.extend(urls);
+        }
+
+        // Re-read content for rendering pass
+        let content = terminal.renderable_content();
+
         // Collect decorations (backgrounds, underline, strikethrough)
         let mut decorations: Vec<TextDecoration> = Vec::new();
 
@@ -300,6 +322,25 @@ impl WindowState {
                     color: fg_color,
                     kind: DecorationKind::Strikethrough,
                 });
+            }
+
+            // Check if this cell is part of the hovered URL and add underline
+            if let Some(hovered_idx) = self.hovered_url_index {
+                if let Some(hovered_url) = self.detected_urls.get(hovered_idx) {
+                    if hovered_url.line == viewport_line as usize
+                        && col >= hovered_url.start_col
+                        && col < hovered_url.end_col
+                    {
+                        decorations.push(TextDecoration {
+                            x,
+                            y,
+                            cell_width,
+                            cell_height: line_height,
+                            color: fg_color,
+                            kind: DecorationKind::Underline,
+                        });
+                    }
+                }
             }
 
             let c = cell.c;
