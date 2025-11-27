@@ -9,6 +9,9 @@ pub mod builtin {
     /// Background shader - renders gradient + animated perspective grid
     pub const BACKGROUND: &str = include_str!("background.wgsl");
 
+    /// Background image shader - renders textured background with sizing/positioning
+    pub const BACKGROUND_IMAGE: &str = include_str!("background_image.wgsl");
+
     /// Composite shader - applies glow blur to text texture (25-sample Gaussian)
     pub const COMPOSITE: &str = include_str!("composite.wgsl");
 

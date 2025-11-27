@@ -11,3 +11,4 @@ vello.workspace = true
 swash.workspace = true
 bytemuck.workspace = true
 log.workspace = true
+image.workspace = true

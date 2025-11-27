@@ -186,6 +186,91 @@ impl Default for LinearGradient {
     }
 }
 
+/// Background image sizing mode (CSS background-size)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BackgroundSize {
+    /// Scale to cover the entire area, may crop
+    #[default]
+    Cover,
+    /// Scale to fit within area, may show background color
+    Contain,
+    /// Original size
+    Auto,
+    /// Fixed dimensions (width, height in pixels)
+    Fixed(u32, u32),
+}
+
+/// Background image positioning (CSS background-position)
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum BackgroundPosition {
+    /// Center in both axes
+    #[default]
+    Center,
+    /// Top-left corner
+    TopLeft,
+    /// Top center
+    Top,
+    /// Top-right corner
+    TopRight,
+    /// Left center
+    Left,
+    /// Right center
+    Right,
+    /// Bottom-left corner
+    BottomLeft,
+    /// Bottom center
+    Bottom,
+    /// Bottom-right corner
+    BottomRight,
+    /// Custom position as percentages (0.0 = left/top, 1.0 = right/bottom)
+    Percent(f32, f32),
+}
+
+/// Background image repeat mode (CSS background-repeat)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BackgroundRepeat {
+    /// Don't repeat
+    #[default]
+    NoRepeat,
+    /// Repeat in both directions
+    Repeat,
+    /// Repeat horizontally only
+    RepeatX,
+    /// Repeat vertically only
+    RepeatY,
+}
+
+/// Background image configuration
+#[derive(Debug, Clone, Default)]
+pub struct BackgroundImage {
+    /// Path to image file (relative to theme file or absolute)
+    pub path: Option<String>,
+    /// How to size the image
+    pub size: BackgroundSize,
+    /// Where to position the image
+    pub position: BackgroundPosition,
+    /// How to repeat the image
+    pub repeat: BackgroundRepeat,
+    /// Opacity (0.0 = transparent, 1.0 = opaque)
+    pub opacity: f32,
+}
+
+impl BackgroundImage {
+    pub fn new(path: impl Into<String>) -> Self {
+        Self {
+            path: Some(path.into()),
+            size: BackgroundSize::Cover,
+            position: BackgroundPosition::Center,
+            repeat: BackgroundRepeat::NoRepeat,
+            opacity: 1.0,
+        }
+    }
+
+    pub fn has_image(&self) -> bool {
+        self.path.is_some()
+    }
+}
+
 /// Backdrop grid effect (synthwave floor)
 #[derive(Debug, Clone, Copy)]
 pub struct GridEffect {
@@ -378,6 +463,7 @@ pub struct Theme {
     // Colors
     pub foreground: Color,
     pub background: LinearGradient,
+    pub background_image: Option<BackgroundImage>,
     pub palette: AnsiPalette,
 
     // States
@@ -418,6 +504,7 @@ impl Theme {
             },
             foreground: Color::from_hex(0xc8c8c8),
             background: LinearGradient::default(),
+            background_image: None,
             palette: AnsiPalette::default(),
             selection: SelectionStyle::default(),
             highlight: HighlightStyle::default(),
@@ -437,6 +524,7 @@ impl Theme {
                 top: Color::from_hex(0x1a1a1a),
                 bottom: Color::from_hex(0x1a1a1a),
             },
+            background_image: None,
             palette: AnsiPalette::default(),
             selection: SelectionStyle::default(),
             highlight: HighlightStyle::default(),

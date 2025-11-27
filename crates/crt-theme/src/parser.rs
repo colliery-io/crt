@@ -13,7 +13,10 @@ use lightningcss::values::color::CssColor;
 use lightningcss::traits::ToCss;
 use lightningcss::printer::PrinterOptions;
 
-use crate::{Color, GridEffect, LinearGradient, TextShadow, Theme};
+use crate::{
+    BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
+    Color, GridEffect, LinearGradient, TextShadow, Theme,
+};
 
 #[derive(Error, Debug)]
 pub enum ThemeParseError {
@@ -272,6 +275,68 @@ pub fn parse_text_shadow(value: &str) -> Result<TextShadow, ThemeParseError> {
     })
 }
 
+/// Parse background-size from CSS string
+pub fn parse_background_size(value: &str) -> BackgroundSize {
+    let value = value.trim().to_lowercase();
+    match value.as_str() {
+        "cover" => BackgroundSize::Cover,
+        "contain" => BackgroundSize::Contain,
+        "auto" | "auto auto" => BackgroundSize::Auto,
+        _ => {
+            // Try to parse as fixed dimensions (e.g., "100px 200px")
+            let parts: Vec<&str> = value.split_whitespace().collect();
+            if parts.len() >= 2 {
+                let w = parts[0].trim_end_matches("px").parse().unwrap_or(0);
+                let h = parts[1].trim_end_matches("px").parse().unwrap_or(0);
+                if w > 0 && h > 0 {
+                    return BackgroundSize::Fixed(w, h);
+                }
+            }
+            BackgroundSize::Cover
+        }
+    }
+}
+
+/// Parse background-position from CSS string
+pub fn parse_background_position(value: &str) -> BackgroundPosition {
+    let value = value.trim().to_lowercase();
+    match value.as_str() {
+        "center" | "center center" | "50% 50%" => BackgroundPosition::Center,
+        "top" | "center top" | "top center" | "50% 0%" => BackgroundPosition::Top,
+        "bottom" | "center bottom" | "bottom center" | "50% 100%" => BackgroundPosition::Bottom,
+        "left" | "left center" | "center left" | "0% 50%" => BackgroundPosition::Left,
+        "right" | "right center" | "center right" | "100% 50%" => BackgroundPosition::Right,
+        "top left" | "left top" | "0% 0%" => BackgroundPosition::TopLeft,
+        "top right" | "right top" | "100% 0%" => BackgroundPosition::TopRight,
+        "bottom left" | "left bottom" | "0% 100%" => BackgroundPosition::BottomLeft,
+        "bottom right" | "right bottom" | "100% 100%" => BackgroundPosition::BottomRight,
+        _ => {
+            // Try to parse as percentage values
+            let parts: Vec<&str> = value.split_whitespace().collect();
+            if parts.len() >= 2 {
+                let x = parts[0].trim_end_matches('%').parse::<f32>().ok();
+                let y = parts[1].trim_end_matches('%').parse::<f32>().ok();
+                if let (Some(x), Some(y)) = (x, y) {
+                    return BackgroundPosition::Percent(x / 100.0, y / 100.0);
+                }
+            }
+            BackgroundPosition::Center
+        }
+    }
+}
+
+/// Parse background-repeat from CSS string
+pub fn parse_background_repeat(value: &str) -> BackgroundRepeat {
+    let value = value.trim().to_lowercase();
+    match value.as_str() {
+        "no-repeat" => BackgroundRepeat::NoRepeat,
+        "repeat" | "repeat repeat" => BackgroundRepeat::Repeat,
+        "repeat-x" | "repeat no-repeat" => BackgroundRepeat::RepeatX,
+        "repeat-y" | "no-repeat repeat" => BackgroundRepeat::RepeatY,
+        _ => BackgroundRepeat::NoRepeat,
+    }
+}
+
 /// Collected properties from a CSS rule
 struct RuleProperties {
     standard: HashMap<String, String>,
@@ -327,15 +392,18 @@ fn extract_properties(rule: &lightningcss::rules::style::StyleRule) -> RulePrope
                 }
             }
             Property::Background(backgrounds) => {
-                // Handle background shorthand - check for gradients
+                // Handle background shorthand - check for gradients and images
                 for bg in backgrounds.iter() {
-                    // bg.image is Image, not Option<Image>
                     use lightningcss::values::image::Image;
                     match &bg.image {
                         Image::Gradient(gradient) => {
                             if let Ok(css_str) = gradient.to_css_string(opts()) {
                                 standard.insert("background".to_string(), css_str);
                             }
+                        }
+                        Image::Url(url) => {
+                            // Extract URL for background image
+                            standard.insert("background-image".to_string(), url.url.to_string());
                         }
                         Image::None => {
                             // No image, check color
@@ -346,6 +414,55 @@ fn extract_properties(rule: &lightningcss::rules::style::StyleRule) -> RulePrope
                             }
                         }
                         _ => {}
+                    }
+                    // Also extract background-size, position, repeat from shorthand
+                    if let Ok(css_str) = bg.size.to_css_string(opts()) {
+                        if css_str != "auto" && css_str != "auto auto" {
+                            standard.insert("background-size".to_string(), css_str);
+                        }
+                    }
+                    if let Ok(css_str) = bg.position.to_css_string(opts()) {
+                        if css_str != "0% 0%" {
+                            standard.insert("background-position".to_string(), css_str);
+                        }
+                    }
+                    if let Ok(css_str) = bg.repeat.to_css_string(opts()) {
+                        if css_str != "repeat" {
+                            standard.insert("background-repeat".to_string(), css_str);
+                        }
+                    }
+                }
+            }
+            Property::BackgroundImage(images) => {
+                // Handle background-image property directly
+                use lightningcss::values::image::Image;
+                for img in images.iter() {
+                    match img {
+                        Image::Url(url) => {
+                            standard.insert("background-image".to_string(), url.url.to_string());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Property::BackgroundSize(sizes) => {
+                if let Some(size) = sizes.first() {
+                    if let Ok(css_str) = size.to_css_string(opts()) {
+                        standard.insert("background-size".to_string(), css_str);
+                    }
+                }
+            }
+            Property::BackgroundPosition(positions) => {
+                if let Some(pos) = positions.first() {
+                    if let Ok(css_str) = pos.to_css_string(opts()) {
+                        standard.insert("background-position".to_string(), css_str);
+                    }
+                }
+            }
+            Property::BackgroundRepeat(repeats) => {
+                if let Some(repeat) = repeats.first() {
+                    if let Ok(css_str) = repeat.to_css_string(opts()) {
+                        standard.insert("background-repeat".to_string(), css_str);
                     }
                 }
             }
@@ -572,6 +689,30 @@ fn apply_terminal_properties(
     // Text shadow / glow
     if let Some(shadow) = standard.get("text-shadow") {
         theme.text_shadow = Some(parse_text_shadow(shadow)?);
+    }
+
+    // Background image
+    if let Some(url) = standard.get("background-image") {
+        let size = standard.get("background-size")
+            .map(|s| parse_background_size(s))
+            .unwrap_or_default();
+        let position = standard.get("background-position")
+            .map(|s| parse_background_position(s))
+            .unwrap_or_default();
+        let repeat = standard.get("background-repeat")
+            .map(|s| parse_background_repeat(s))
+            .unwrap_or_default();
+        let opacity = custom.get("--background-opacity")
+            .and_then(|s| s.parse::<f32>().ok())
+            .unwrap_or(1.0);
+
+        theme.background_image = Some(BackgroundImage {
+            path: Some(url.clone()),
+            size,
+            position,
+            repeat,
+            opacity,
+        });
     }
 
     // ANSI palette colors - supports both --ansi-* and --color-* naming
@@ -999,5 +1140,49 @@ mod tests {
 
         let bright_cyan = theme.palette.get(14);
         assert!((bright_cyan.r - 0.643).abs() < 0.02); // #a4ffff
+    }
+
+    #[test]
+    fn test_parse_background_image() {
+        let css = r#"
+            :terminal {
+                background-image: url("/path/to/image.png");
+                background-size: cover;
+                background-position: center;
+                background-repeat: no-repeat;
+                --background-opacity: 0.8;
+            }
+        "#;
+
+        let theme = parse_theme(css).unwrap();
+        let bg = theme.background_image.expect("background_image should be set");
+        assert_eq!(bg.path, Some("/path/to/image.png".to_string()));
+        assert_eq!(bg.size, BackgroundSize::Cover);
+        assert_eq!(bg.position, BackgroundPosition::Center);
+        assert_eq!(bg.repeat, BackgroundRepeat::NoRepeat);
+        assert!((bg.opacity - 0.8).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_parse_background_size() {
+        assert_eq!(parse_background_size("cover"), BackgroundSize::Cover);
+        assert_eq!(parse_background_size("contain"), BackgroundSize::Contain);
+        assert_eq!(parse_background_size("auto"), BackgroundSize::Auto);
+        assert_eq!(parse_background_size("100px 200px"), BackgroundSize::Fixed(100, 200));
+    }
+
+    #[test]
+    fn test_parse_background_position() {
+        assert_eq!(parse_background_position("center"), BackgroundPosition::Center);
+        assert_eq!(parse_background_position("top left"), BackgroundPosition::TopLeft);
+        assert_eq!(parse_background_position("bottom right"), BackgroundPosition::BottomRight);
+    }
+
+    #[test]
+    fn test_parse_background_repeat() {
+        assert_eq!(parse_background_repeat("no-repeat"), BackgroundRepeat::NoRepeat);
+        assert_eq!(parse_background_repeat("repeat"), BackgroundRepeat::Repeat);
+        assert_eq!(parse_background_repeat("repeat-x"), BackgroundRepeat::RepeatX);
+        assert_eq!(parse_background_repeat("repeat-y"), BackgroundRepeat::RepeatY);
     }
 }

@@ -18,7 +18,7 @@ use std::time::Instant;
 
 use config::Config;
 use crt_core::{ShellTerminal, Size, Scroll};
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TextRenderTarget, TabBar};
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TextRenderTarget, TabBar, BackgroundImagePipeline, BackgroundImageState};
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
 use input::{
@@ -189,6 +189,27 @@ impl App {
         // Rect renderer for cell backgrounds
         let rect_renderer = RectRenderer::new(&shared.device, format);
 
+        // Background image pipeline (always created, state only if theme has background image)
+        let background_image_pipeline = BackgroundImagePipeline::new(&shared.device, format);
+        let (background_image_state, background_image_bind_group) = if let Some(ref bg_image) = theme.background_image {
+            match BackgroundImageState::new(&shared.device, &shared.queue, bg_image) {
+                Ok(state) => {
+                    let bind_group = background_image_pipeline.create_bind_group(
+                        &shared.device,
+                        &state.texture.view,
+                    );
+                    log::info!("Loaded background image: {:?}", bg_image.path);
+                    (Some(state), Some(bind_group))
+                }
+                Err(e) => {
+                    log::warn!("Failed to load background image: {}", e);
+                    (None, None)
+                }
+            }
+        } else {
+            (None, None)
+        };
+
         let gpu = WindowGpuState {
             surface,
             config: surface_config,
@@ -202,6 +223,9 @@ impl App {
             tab_bar,
             terminal_vello,
             rect_renderer,
+            background_image_pipeline,
+            background_image_state,
+            background_image_bind_group,
         };
 
         // Create initial shell

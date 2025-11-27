@@ -2,7 +2,7 @@
 //!
 //! Shared and per-window GPU resources for wgpu rendering.
 
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TextRenderTarget, TabBar, TerminalVelloRenderer};
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TextRenderTarget, TabBar, TerminalVelloRenderer, BackgroundImagePipeline, BackgroundImageState};
 
 /// Shared GPU resources across all windows
 pub struct SharedGpuState {
@@ -76,4 +76,9 @@ pub struct WindowGpuState {
 
     // Rect renderer for cell backgrounds
     pub rect_renderer: RectRenderer,
+
+    // Background image rendering (optional)
+    pub background_image_pipeline: BackgroundImagePipeline,
+    pub background_image_state: Option<BackgroundImageState>,
+    pub background_image_bind_group: Option<wgpu::BindGroup>,
 }

@@ -15,6 +15,12 @@
     background: linear-gradient(to bottom, #1a0a2e, #16213e);
     cursor-color: #00ffff;
 
+    /* Background image */
+    background-image: url("/Users/dstorey/Desktop/colliery/crt/assets/background.jpg");
+    background-size: cover;
+    background-position: center;
+    --background-opacity: 0.3;
+
     /* Text glow effect - strong teal glow */
     text-shadow: 0 0 20px rgba(97, 226, 254, 1.0);
 }

@@ -1,12 +1,13 @@
 //! CRT Renderer - GPU-accelerated text and effect rendering
 //!
 //! This crate provides a two-layer rendering architecture:
-//! - Background layer: gradient + animated grid (runs every frame, no texture samples)
+//! - Background layer: gradient + animated grid + optional background image (runs every frame)
 //! - Text overlay: rendered only when content changes, composited on top
 //!
 //! This separation allows smooth 60fps animation while only re-rendering
 //! text when it actually changes.
 
+pub mod background_image;
 pub mod glyph_cache;
 pub mod grid_renderer;
 pub mod rect_renderer;
@@ -15,6 +16,7 @@ pub mod tab_bar;
 pub mod terminal_vello;
 pub mod vello_renderer;
 
+pub use background_image::{BackgroundImageState, BackgroundTexture, LoadedImage, ImageFrame};
 pub use glyph_cache::{GlyphCache, GlyphKey, GlyphStyle, FontVariants, CachedGlyph, PositionedGlyph};
 pub use grid_renderer::GridRenderer;
 pub use rect_renderer::RectRenderer;
@@ -146,6 +148,170 @@ impl BackgroundPipeline {
     pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.bind_group, &[]);
+        render_pass.draw(0..4, 0..1);
+    }
+}
+
+/// Uniform buffer for background image shader
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct BackgroundImageUniforms {
+    /// UV transform: (scale_x, scale_y, offset_x, offset_y)
+    pub uv_transform: [f32; 4],
+    /// Opacity (0-1)
+    pub opacity: f32,
+    /// Padding for alignment
+    pub _pad: [f32; 3],
+}
+
+/// Background image pipeline - renders textured background with sizing/positioning
+pub struct BackgroundImagePipeline {
+    pipeline: wgpu::RenderPipeline,
+    bind_group_layout: wgpu::BindGroupLayout,
+    uniform_buffer: wgpu::Buffer,
+    sampler: wgpu::Sampler,
+}
+
+impl BackgroundImagePipeline {
+    pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Background Image Shader"),
+            source: wgpu::ShaderSource::Wgsl(builtin::BACKGROUND_IMAGE.into()),
+        });
+
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Background Image Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Background Image Pipeline Layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Background Image Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: target_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        let uniforms = BackgroundImageUniforms {
+            uv_transform: [1.0, 1.0, 0.0, 0.0],
+            opacity: 1.0,
+            _pad: [0.0; 3],
+        };
+
+        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Background Image Uniform Buffer"),
+            contents: cast_slice(&[uniforms]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Background Image Sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            ..Default::default()
+        });
+
+        Self {
+            pipeline,
+            bind_group_layout,
+            uniform_buffer,
+            sampler,
+        }
+    }
+
+    pub fn create_bind_group(
+        &self,
+        device: &wgpu::Device,
+        texture_view: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Background Image Bind Group"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        })
+    }
+
+    pub fn update_uniforms(&self, queue: &wgpu::Queue, uv_transform: [f32; 4], opacity: f32) {
+        let uniforms = BackgroundImageUniforms {
+            uv_transform,
+            opacity,
+            _pad: [0.0; 3],
+        };
+        queue.write_buffer(&self.uniform_buffer, 0, cast_slice(&[uniforms]));
+    }
+
+    pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>, bind_group: &'a wgpu::BindGroup) {
+        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_bind_group(0, bind_group, &[]);
         render_pass.draw(0..4, 0..1);
     }
 }

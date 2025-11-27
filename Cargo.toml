@@ -32,6 +32,9 @@ lightningcss = "1.0.0-alpha.68"
 toml = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 
+# Image loading
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif"] }
+
 # Utilities
 pollster = "0.4"
 log = "0.4"

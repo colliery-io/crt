@@ -80,7 +80,7 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
         state.gpu.config.height as f32,
     );
 
-    // Pass 1: Render background
+    // Pass 1: Render background gradient
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Background Render Pass"),
@@ -99,6 +99,53 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
         });
 
         state.gpu.effect_pipeline.background.render(&mut pass);
+    }
+
+    // Pass 1.5: Render background image (if configured)
+    if let (Some(bg_state), Some(bind_group)) = (
+        &mut state.gpu.background_image_state,
+        &state.gpu.background_image_bind_group,
+    ) {
+        // Update animation if this is an animated GIF
+        if bg_state.update(&shared.queue) {
+            // Animation frame changed, need to redraw
+            state.dirty = true;
+        }
+
+        // Keep redrawing for animations
+        if bg_state.image.is_animated() {
+            state.dirty = true;
+        }
+
+        // Update uniforms with UV transform and opacity
+        let uv_transform = bg_state.calculate_uv_transform(
+            state.gpu.config.width as f32,
+            state.gpu.config.height as f32,
+        );
+        state.gpu.background_image_pipeline.update_uniforms(
+            &shared.queue,
+            uv_transform,
+            bg_state.opacity(),
+        );
+
+        // Render background image
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Background Image Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &frame_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        state.gpu.background_image_pipeline.render(&mut pass, bind_group);
     }
 
     // Pass 2: Update cursor position if content changed
