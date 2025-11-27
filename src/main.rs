@@ -19,7 +19,7 @@ use std::time::Instant;
 
 use config::Config;
 use crt_core::{ShellTerminal, Size, Scroll};
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, GridEffect, StarfieldEffect, RainEffect, ParticleEffect, MatrixEffect, EffectConfig};
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, GridEffect, StarfieldEffect, RainEffect, ParticleEffect, MatrixEffect, ShapeEffect, EffectConfig};
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
 use input::{
@@ -185,6 +185,7 @@ impl App {
         effects_renderer.add_effect(Box::new(RainEffect::new()));
         effects_renderer.add_effect(Box::new(ParticleEffect::new()));
         effects_renderer.add_effect(Box::new(MatrixEffect::new()));
+        effects_renderer.add_effect(Box::new(ShapeEffect::new()));
         // Configure effects from theme
         configure_effects_from_theme(&mut effects_renderer, &theme);
 
@@ -686,6 +687,51 @@ fn configure_effects_from_theme(effects_renderer: &mut EffectsRenderer, theme: &
         config.insert("matrix-speed", matrix.speed.to_string());
         config.insert("matrix-font-size", matrix.font_size.to_string());
         config.insert("matrix-charset", matrix.charset.clone());
+    }
+
+    // Shape effect configuration from theme
+    if let Some(ref shape) = theme.shape {
+        config.insert("shape-enabled", if shape.enabled { "true" } else { "false" });
+        config.insert("shape-type", shape.shape_type.as_str().to_string());
+        config.insert("shape-size", shape.size.to_string());
+        if let Some(ref fill) = shape.fill {
+            config.insert("shape-fill", format!(
+                "rgba({}, {}, {}, {})",
+                (fill.r * 255.0) as u8,
+                (fill.g * 255.0) as u8,
+                (fill.b * 255.0) as u8,
+                fill.a
+            ));
+        } else {
+            config.insert("shape-fill", "none".to_string());
+        }
+        if let Some(ref stroke) = shape.stroke {
+            config.insert("shape-stroke", format!(
+                "rgba({}, {}, {}, {})",
+                (stroke.r * 255.0) as u8,
+                (stroke.g * 255.0) as u8,
+                (stroke.b * 255.0) as u8,
+                stroke.a
+            ));
+        } else {
+            config.insert("shape-stroke", "none".to_string());
+        }
+        config.insert("shape-stroke-width", shape.stroke_width.to_string());
+        config.insert("shape-glow-radius", shape.glow_radius.to_string());
+        if let Some(ref glow_color) = shape.glow_color {
+            config.insert("shape-glow-color", format!(
+                "rgba({}, {}, {}, {})",
+                (glow_color.r * 255.0) as u8,
+                (glow_color.g * 255.0) as u8,
+                (glow_color.b * 255.0) as u8,
+                glow_color.a
+            ));
+        }
+        config.insert("shape-rotation", shape.rotation.as_str().to_string());
+        config.insert("shape-rotation-speed", shape.rotation_speed.to_string());
+        config.insert("shape-motion", shape.motion.as_str().to_string());
+        config.insert("shape-motion-speed", shape.motion_speed.to_string());
+        config.insert("shape-polygon-sides", shape.polygon_sides.to_string());
     }
 
     effects_renderer.configure(&config);

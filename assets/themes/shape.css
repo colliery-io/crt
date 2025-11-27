@@ -1,0 +1,26 @@
+/* Shape Effect Theme */
+/* Bouncing heart with glow */
+
+:terminal {
+    background: #1a0a2e;
+}
+
+:terminal::backdrop {
+    --shape-enabled: true;
+    --shape-type: heart;
+    --shape-size: 120;
+    --shape-fill: rgba(255, 100, 150, 0.8);
+    --shape-stroke: #ff79c6;
+    --shape-stroke-width: 3;
+    --shape-glow-radius: 20;
+    --shape-glow-color: #ff79c6;
+    --shape-rotation: wobble;
+    --shape-rotation-speed: 2;
+    --shape-motion: bounce;
+    --shape-motion-speed: 1;
+}
+
+:terminal::selection {
+    background: #ff79c6;
+    color: #1a0a2e;
+}

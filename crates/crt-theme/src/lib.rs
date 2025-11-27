@@ -597,6 +597,146 @@ impl Default for MatrixEffect {
     }
 }
 
+/// Shape type for geometric effect
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum ShapeType {
+    #[default]
+    Circle,
+    Rect,
+    Ellipse,
+    Triangle,
+    Star,
+    Heart,
+    Polygon,
+}
+
+impl ShapeType {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "circle" => Some(Self::Circle),
+            "rect" | "rectangle" => Some(Self::Rect),
+            "ellipse" => Some(Self::Ellipse),
+            "triangle" => Some(Self::Triangle),
+            "star" => Some(Self::Star),
+            "heart" => Some(Self::Heart),
+            "polygon" => Some(Self::Polygon),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Circle => "circle",
+            Self::Rect => "rect",
+            Self::Ellipse => "ellipse",
+            Self::Triangle => "triangle",
+            Self::Star => "star",
+            Self::Heart => "heart",
+            Self::Polygon => "polygon",
+        }
+    }
+}
+
+/// Rotation behavior for shape effect
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum ShapeRotation {
+    #[default]
+    None,
+    Spin,
+    Wobble,
+}
+
+impl ShapeRotation {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "none" => Some(Self::None),
+            "spin" => Some(Self::Spin),
+            "wobble" => Some(Self::Wobble),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Spin => "spin",
+            Self::Wobble => "wobble",
+        }
+    }
+}
+
+/// Motion behavior for shape effect
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum ShapeMotion {
+    #[default]
+    None,
+    Bounce,
+    Scroll,
+    Float,
+    Orbit,
+}
+
+impl ShapeMotion {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "none" => Some(Self::None),
+            "bounce" => Some(Self::Bounce),
+            "scroll" => Some(Self::Scroll),
+            "float" => Some(Self::Float),
+            "orbit" => Some(Self::Orbit),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Bounce => "bounce",
+            Self::Scroll => "scroll",
+            Self::Float => "float",
+            Self::Orbit => "orbit",
+        }
+    }
+}
+
+/// Backdrop shape effect (single geometric shape with motion)
+#[derive(Debug, Clone)]
+pub struct ShapeEffect {
+    pub enabled: bool,
+    pub shape_type: ShapeType,
+    pub size: f32,
+    pub fill: Option<Color>,
+    pub stroke: Option<Color>,
+    pub stroke_width: f32,
+    pub glow_radius: f32,
+    pub glow_color: Option<Color>,
+    pub rotation: ShapeRotation,
+    pub rotation_speed: f32,
+    pub motion: ShapeMotion,
+    pub motion_speed: f32,
+    pub polygon_sides: u32,
+}
+
+impl Default for ShapeEffect {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            shape_type: ShapeType::Circle,
+            size: 100.0,
+            fill: Some(Color::rgba(1.0, 0.4, 0.6, 0.8)),
+            stroke: None,
+            stroke_width: 2.0,
+            glow_radius: 0.0,
+            glow_color: None,
+            rotation: ShapeRotation::None,
+            rotation_speed: 1.0,
+            motion: ShapeMotion::Bounce,
+            motion_speed: 1.0,
+            polygon_sides: 6,
+        }
+    }
+}
+
 /// Selection appearance
 #[derive(Debug, Clone, Copy)]
 pub struct SelectionStyle {
@@ -778,6 +918,7 @@ pub struct Theme {
     pub rain: Option<RainEffect>,
     pub particles: Option<ParticleEffect>,
     pub matrix: Option<MatrixEffect>,
+    pub shape: Option<ShapeEffect>,
 
     // Tab styling
     pub tabs: TabTheme,
@@ -819,6 +960,7 @@ impl Theme {
             rain: None,
             particles: None,
             matrix: None,
+            shape: None,
             tabs: TabTheme::default(),
         }
     }
@@ -843,6 +985,7 @@ impl Theme {
             rain: None,
             particles: None,
             matrix: None,
+            shape: None,
             tabs: TabTheme::default(),
         }
     }

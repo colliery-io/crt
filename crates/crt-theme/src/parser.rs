@@ -16,7 +16,8 @@ use lightningcss::printer::PrinterOptions;
 use crate::{
     BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
     Color, GridEffect, LinearGradient, MatrixEffect, ParticleBehavior, ParticleEffect,
-    ParticleShape, RainEffect, StarDirection, StarfieldEffect, TextShadow, Theme,
+    ParticleShape, RainEffect, ShapeEffect, ShapeMotion, ShapeRotation, ShapeType,
+    StarDirection, StarfieldEffect, TextShadow, Theme,
 };
 
 #[derive(Error, Debug)]
@@ -1012,6 +1013,75 @@ fn apply_backdrop_properties(
 
     if matrix.enabled {
         theme.matrix = Some(matrix);
+    }
+
+    // Parse shape effect properties
+    let mut shape = theme.shape.clone().unwrap_or(ShapeEffect {
+        enabled: false,
+        ..Default::default()
+    });
+
+    let has_shape_props = custom.keys().any(|k| k.starts_with("--shape-"));
+
+    if let Some(v) = custom.get("--shape-type") {
+        if let Some(t) = ShapeType::from_str(v.trim()) {
+            shape.shape_type = t;
+        }
+    }
+    if let Some(v) = custom.get("--shape-size") {
+        shape.size = v.parse().unwrap_or(100.0);
+    }
+    if let Some(v) = custom.get("--shape-fill") {
+        if v.trim().to_lowercase() == "none" {
+            shape.fill = None;
+        } else {
+            shape.fill = Some(parse_color(v)?);
+        }
+    }
+    if let Some(v) = custom.get("--shape-stroke") {
+        if v.trim().to_lowercase() == "none" {
+            shape.stroke = None;
+        } else {
+            shape.stroke = Some(parse_color(v)?);
+        }
+    }
+    if let Some(v) = custom.get("--shape-stroke-width") {
+        shape.stroke_width = v.parse().unwrap_or(2.0);
+    }
+    if let Some(v) = custom.get("--shape-glow-radius") {
+        shape.glow_radius = v.parse().unwrap_or(0.0);
+    }
+    if let Some(v) = custom.get("--shape-glow-color") {
+        shape.glow_color = Some(parse_color(v)?);
+    }
+    if let Some(v) = custom.get("--shape-rotation") {
+        if let Some(r) = ShapeRotation::from_str(v.trim()) {
+            shape.rotation = r;
+        }
+    }
+    if let Some(v) = custom.get("--shape-rotation-speed") {
+        shape.rotation_speed = v.parse().unwrap_or(1.0);
+    }
+    if let Some(v) = custom.get("--shape-motion") {
+        if let Some(m) = ShapeMotion::from_str(v.trim()) {
+            shape.motion = m;
+        }
+    }
+    if let Some(v) = custom.get("--shape-motion-speed") {
+        shape.motion_speed = v.parse().unwrap_or(1.0);
+    }
+    if let Some(v) = custom.get("--shape-polygon-sides") {
+        shape.polygon_sides = v.parse().unwrap_or(6);
+    }
+
+    if let Some(v) = custom.get("--shape-enabled") {
+        shape.enabled = v.trim() == "true";
+    } else if has_shape_props {
+        shape.enabled = true;
+    }
+
+    if shape.enabled {
+        theme.shape = Some(shape);
     }
 
     Ok(())
