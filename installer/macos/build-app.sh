@@ -46,9 +46,21 @@ mkdir -p "$ASSETS_DEST/fonts"
 # Copy config template
 cp "$PROJECT_ROOT/assets/config.toml" "$ASSETS_DEST/"
 
-# Copy themes
+# Copy themes (CSS files)
 if [ -d "$PROJECT_ROOT/assets/themes" ]; then
     cp "$PROJECT_ROOT/assets/themes/"*.css "$ASSETS_DEST/themes/" 2>/dev/null || true
+fi
+
+# Copy theme asset directories (sprites, images, etc.)
+# Preserve directory structure so paths like "wh40k/sprite.png" work
+if [ -d "$PROJECT_ROOT/assets/themes" ]; then
+    for subdir in "$PROJECT_ROOT/assets/themes/"*/; do
+        if [ -d "$subdir" ]; then
+            dirname=$(basename "$subdir")
+            mkdir -p "$ASSETS_DEST/themes/$dirname"
+            cp -R "$subdir"* "$ASSETS_DEST/themes/$dirname/" 2>/dev/null || true
+        fi
+    done
 fi
 
 # Copy fonts
