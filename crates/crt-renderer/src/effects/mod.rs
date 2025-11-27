@@ -24,10 +24,12 @@
 pub mod grid;
 pub mod motion;
 pub mod renderer;
+pub mod starfield;
 
 pub use grid::GridEffect;
 pub use motion::MotionBehavior;
 pub use renderer::EffectsRenderer;
+pub use starfield::StarfieldEffect;
 
 use vello::kurbo::{Rect, Vec2};
 use std::collections::HashMap;

@@ -373,6 +373,81 @@ impl Default for GridEffect {
     }
 }
 
+/// Direction stars drift
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum StarDirection {
+    /// Stars don't move (static field)
+    #[default]
+    Static,
+    /// Stars drift upward
+    Up,
+    /// Stars drift downward
+    Down,
+    /// Stars drift left
+    Left,
+    /// Stars drift right
+    Right,
+}
+
+impl StarDirection {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "static" | "none" => Some(Self::Static),
+            "up" => Some(Self::Up),
+            "down" => Some(Self::Down),
+            "left" => Some(Self::Left),
+            "right" => Some(Self::Right),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Static => "static",
+            Self::Up => "up",
+            Self::Down => "down",
+            Self::Left => "left",
+            Self::Right => "right",
+        }
+    }
+}
+
+/// Backdrop starfield effect (parallax star layers)
+#[derive(Debug, Clone, Copy)]
+pub struct StarfieldEffect {
+    pub enabled: bool,
+    pub color: Color,
+    pub density: u32,
+    pub layers: u32,
+    pub speed: f32,
+    pub direction: StarDirection,
+    pub glow_radius: f32,
+    pub glow_intensity: f32,
+    pub twinkle: bool,
+    pub twinkle_speed: f32,
+    pub min_size: f32,
+    pub max_size: f32,
+}
+
+impl Default for StarfieldEffect {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            color: Color::rgba(1.0, 1.0, 1.0, 1.0), // white
+            density: 100,
+            layers: 3,
+            speed: 0.3,
+            direction: StarDirection::Static,
+            glow_radius: 0.0,
+            glow_intensity: 0.0,
+            twinkle: true,
+            twinkle_speed: 2.0,
+            min_size: 1.0,
+            max_size: 3.0,
+        }
+    }
+}
+
 /// Selection appearance
 #[derive(Debug, Clone, Copy)]
 pub struct SelectionStyle {
@@ -550,6 +625,7 @@ pub struct Theme {
     // Effects
     pub text_shadow: Option<TextShadow>,
     pub grid: Option<GridEffect>,
+    pub starfield: Option<StarfieldEffect>,
 
     // Tab styling
     pub tabs: TabTheme,
@@ -587,6 +663,7 @@ impl Theme {
             cursor_color: Color::from_hex(0x00ffff),
             text_shadow: Some(TextShadow::default()),
             grid: Some(GridEffect::default()),
+            starfield: None,
             tabs: TabTheme::default(),
         }
     }
@@ -607,6 +684,7 @@ impl Theme {
             cursor_color: Color::from_hex(0xffffff),
             text_shadow: None,
             grid: None,
+            starfield: None,
             tabs: TabTheme::default(),
         }
     }

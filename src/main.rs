@@ -19,7 +19,7 @@ use std::time::Instant;
 
 use config::Config;
 use crt_core::{ShellTerminal, Size, Scroll};
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, GridEffect, EffectConfig};
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, GridEffect, StarfieldEffect, EffectConfig};
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
 use input::{
@@ -179,8 +179,9 @@ impl App {
 
         // Backdrop effects renderer (grid, starfield, etc.)
         let mut effects_renderer = EffectsRenderer::new(&shared.device, shared.vello_renderer_arc(), format);
-        // Add the grid effect (disabled by default, enabled via CSS)
+        // Add effects (disabled by default, enabled via CSS)
         effects_renderer.add_effect(Box::new(GridEffect::new()));
+        effects_renderer.add_effect(Box::new(StarfieldEffect::new()));
         // Configure effects from theme
         configure_effects_from_theme(&mut effects_renderer, &theme);
 
@@ -601,6 +602,30 @@ fn configure_effects_from_theme(effects_renderer: &mut EffectsRenderer, theme: &
         config.insert("grid-glow-intensity", grid.glow_intensity.to_string());
         config.insert("grid-vanishing-spread", grid.vanishing_spread.to_string());
         config.insert("grid-curved", if grid.curved { "true" } else { "false" });
+    }
+
+    // Starfield effect configuration from theme
+    if let Some(ref starfield) = theme.starfield {
+        config.insert("starfield-enabled", if starfield.enabled { "true" } else { "false" });
+        // Convert Color to rgba() string
+        let c = starfield.color;
+        config.insert("starfield-color", format!(
+            "rgba({}, {}, {}, {})",
+            (c.r * 255.0) as u8,
+            (c.g * 255.0) as u8,
+            (c.b * 255.0) as u8,
+            c.a
+        ));
+        config.insert("starfield-density", starfield.density.to_string());
+        config.insert("starfield-layers", starfield.layers.to_string());
+        config.insert("starfield-speed", starfield.speed.to_string());
+        config.insert("starfield-direction", starfield.direction.as_str().to_string());
+        config.insert("starfield-glow-radius", starfield.glow_radius.to_string());
+        config.insert("starfield-glow-intensity", starfield.glow_intensity.to_string());
+        config.insert("starfield-twinkle", if starfield.twinkle { "true" } else { "false" });
+        config.insert("starfield-twinkle-speed", starfield.twinkle_speed.to_string());
+        config.insert("starfield-min-size", starfield.min_size.to_string());
+        config.insert("starfield-max-size", starfield.max_size.to_string());
     }
 
     effects_renderer.configure(&config);

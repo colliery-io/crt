@@ -15,7 +15,7 @@ use lightningcss::printer::PrinterOptions;
 
 use crate::{
     BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
-    Color, GridEffect, LinearGradient, TextShadow, Theme,
+    Color, GridEffect, LinearGradient, StarDirection, StarfieldEffect, TextShadow, Theme,
 };
 
 #[derive(Error, Debug)]
@@ -826,6 +826,63 @@ fn apply_backdrop_properties(
 
     if grid.enabled {
         theme.grid = Some(grid);
+    }
+
+    // Parse starfield effect properties
+    let mut starfield = theme.starfield.unwrap_or(StarfieldEffect {
+        enabled: false,
+        ..Default::default()
+    });
+
+    let mut has_starfield_props = false;
+
+    if let Some(c) = custom.get("--starfield-color") {
+        starfield.color = parse_color(c)?;
+        has_starfield_props = true;
+    }
+    if let Some(v) = custom.get("--starfield-density") {
+        starfield.density = v.parse().unwrap_or(100);
+        has_starfield_props = true;
+    }
+    if let Some(v) = custom.get("--starfield-layers") {
+        starfield.layers = v.parse().unwrap_or(3);
+        has_starfield_props = true;
+    }
+    if let Some(v) = custom.get("--starfield-speed") {
+        starfield.speed = v.parse().unwrap_or(0.3);
+    }
+    if let Some(v) = custom.get("--starfield-direction") {
+        if let Some(dir) = StarDirection::from_str(v.trim()) {
+            starfield.direction = dir;
+        }
+    }
+    if let Some(v) = custom.get("--starfield-glow-radius") {
+        starfield.glow_radius = v.parse().unwrap_or(0.0);
+    }
+    if let Some(v) = custom.get("--starfield-glow-intensity") {
+        starfield.glow_intensity = v.parse().unwrap_or(0.0);
+    }
+    if let Some(v) = custom.get("--starfield-twinkle") {
+        starfield.twinkle = v.trim() == "true";
+    }
+    if let Some(v) = custom.get("--starfield-twinkle-speed") {
+        starfield.twinkle_speed = v.parse().unwrap_or(2.0);
+    }
+    if let Some(v) = custom.get("--starfield-min-size") {
+        starfield.min_size = v.parse().unwrap_or(1.0);
+    }
+    if let Some(v) = custom.get("--starfield-max-size") {
+        starfield.max_size = v.parse().unwrap_or(3.0);
+    }
+
+    if let Some(v) = custom.get("--starfield-enabled") {
+        starfield.enabled = v.trim() == "true";
+    } else if has_starfield_props {
+        starfield.enabled = true;
+    }
+
+    if starfield.enabled {
+        theme.starfield = Some(starfield);
     }
 
     Ok(())

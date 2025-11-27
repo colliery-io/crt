@@ -1,0 +1,98 @@
+/* Starship Theme - Journey through the stars */
+
+:terminal {
+    /* Typography */
+    font-family: "MesloLGS NF", "Fira Code", monospace;
+    font-size: 14;
+    line-height: 1.4;
+    font-bold: "MesloLGS NF Bold";
+    font-italic: "MesloLGS NF Italic";
+    font-bold-italic: "MesloLGS NF Bold Italic";
+    ligatures: true;
+
+    /* Base colors - silver/white text on deep space */
+    color: #e0e0e0;
+    background: linear-gradient(to bottom, #0a0a1a, #000008);
+    cursor-color: #00ffff;
+
+    /* Subtle text glow */
+    text-shadow: 0 0 8px rgba(200, 220, 255, 0.4);
+}
+
+:terminal::selection {
+    background: #2a4a6a;
+    color: #ffffff;
+}
+
+:terminal::highlight {
+    background: #4a6a8a;
+    color: #ffffff;
+}
+
+:terminal::backdrop {
+    /* Starfield - gentle drift through space */
+    --starfield-enabled: true;
+    --starfield-color: rgba(255, 255, 255, 0.9);
+    --starfield-density: 200;
+    --starfield-layers: 4;
+    --starfield-speed: 0.3;
+    --starfield-direction: up;
+    --starfield-glow-radius: 3;
+    --starfield-glow-intensity: 0.5;
+    --starfield-twinkle: true;
+    --starfield-twinkle-speed: 2.0;
+    --starfield-min-size: 0.5;
+    --starfield-max-size: 2.0;
+}
+
+/* ANSI 16-color palette - space-inspired */
+:terminal::palette {
+    /* Normal colors */
+    --color-0: #0a0a1a;   /* black - deep space */
+    --color-1: #ff4444;   /* red - warning */
+    --color-2: #44ff88;   /* green - systems go */
+    --color-3: #ffdd44;   /* yellow - caution */
+    --color-4: #4488ff;   /* blue - info */
+    --color-5: #cc66ff;   /* magenta - nebula */
+    --color-6: #44ddff;   /* cyan - comm */
+    --color-7: #d0d0d0;   /* white */
+
+    /* Bright colors */
+    --color-8: #404060;   /* bright black */
+    --color-9: #ff6666;   /* bright red */
+    --color-10: #66ffaa;  /* bright green */
+    --color-11: #ffee66;  /* bright yellow */
+    --color-12: #66aaff;  /* bright blue */
+    --color-13: #dd88ff;  /* bright magenta */
+    --color-14: #66eeff;  /* bright cyan */
+    --color-15: #ffffff;  /* bright white */
+}
+
+/* Tab bar styling */
+:terminal::tab-bar {
+    background: #0a0a1a;
+    border-color: #2a2a4a;
+    height: 36px;
+    padding: 4px;
+}
+
+:tab {
+    background: #1a1a3a;
+    color: #8888aa;
+    border-radius: 4px;
+    min-width: 80px;
+    max-width: 200px;
+}
+
+:tab.active {
+    background: #2a2a5a;
+    color: #44ddff;
+    accent-color: #44ddff;
+    text-shadow: 0 0 10px rgba(68, 221, 255, 0.7);
+}
+
+:terminal::tab-close {
+    color: #666688;
+    --hover-background: #ff4444;
+    --hover-color: #ffffff;
+}
