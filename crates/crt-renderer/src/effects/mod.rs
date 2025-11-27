@@ -21,9 +21,11 @@
 //! }
 //! ```
 
+pub mod grid;
 pub mod motion;
 pub mod renderer;
 
+pub use grid::GridEffect;
 pub use motion::MotionBehavior;
 pub use renderer::EffectsRenderer;
 

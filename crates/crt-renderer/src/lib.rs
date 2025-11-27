@@ -17,7 +17,7 @@ pub mod tab_bar;
 pub mod terminal_vello;
 
 pub use background_image::{BackgroundImageState, BackgroundTexture, LoadedImage, ImageFrame};
-pub use effects::{BackdropEffect, EffectConfig, EffectsRenderer, MotionBehavior, Position};
+pub use effects::{BackdropEffect, EffectConfig, EffectsRenderer, GridEffect, MotionBehavior, Position};
 pub use glyph_cache::{GlyphCache, GlyphKey, GlyphStyle, FontVariants, CachedGlyph, PositionedGlyph};
 pub use grid_renderer::GridRenderer;
 pub use rect_renderer::RectRenderer;
