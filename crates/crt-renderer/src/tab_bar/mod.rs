@@ -311,13 +311,14 @@ impl TabBar {
         self.vello_renderer.prepare(device, &self.state, &self.layout, &self.theme);
     }
 
-    /// Render vello scene to internal texture
+    /// Render vello scene to internal texture using shared renderer
     pub fn render_vello(
         &mut self,
+        renderer: &mut vello::Renderer,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Result<(), vello::Error> {
-        self.vello_renderer.render_to_texture(device, queue)
+        self.vello_renderer.render_to_texture(renderer, device, queue)
     }
 
     /// Get vello texture view for compositing

@@ -62,6 +62,7 @@ path = "src/main.rs"
 [dependencies]
 wgpu = { workspace = true }
 winit = { workspace = true }
+vello = { workspace = true }
 pollster = { workspace = true }
 bytemuck = { workspace = true }
 env_logger = { workspace = true }

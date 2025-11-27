@@ -2,7 +2,8 @@
 //!
 //! Shared and per-window GPU resources for wgpu rendering.
 
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TextRenderTarget, TabBar, TerminalVelloRenderer, BackgroundImagePipeline, BackgroundImageState};
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, TerminalVelloRenderer, BackgroundImagePipeline, BackgroundImageState};
+use vello::{Renderer, RendererOptions};
 
 /// Shared GPU resources across all windows
 pub struct SharedGpuState {
@@ -10,6 +11,8 @@ pub struct SharedGpuState {
     pub adapter: wgpu::Adapter,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
+    /// Shared Vello renderer - expensive to create, so we share one across all windows
+    pub vello_renderer: Renderer,
 }
 
 impl SharedGpuState {
@@ -36,11 +39,21 @@ impl SharedGpuState {
                 .expect("Failed to create device")
         });
 
+        // Create shared Vello renderer - expensive, so we share across all windows
+        let vello_renderer = Renderer::new(
+            &device,
+            RendererOptions {
+                pipeline_cache: None,
+                ..Default::default()
+            },
+        ).expect("Failed to create shared Vello renderer");
+
         Self {
             instance,
             adapter,
             device,
             queue,
+            vello_renderer,
         }
     }
 }
@@ -61,12 +74,8 @@ pub struct WindowGpuState {
     // commands are batched, so they need separate instance buffers)
     pub tab_title_renderer: GridRenderer,
 
-    // Offscreen text target
-    pub text_target: TextRenderTarget,
-
     // Effect pipeline
     pub effect_pipeline: EffectPipeline,
-    pub composite_bind_group: Option<wgpu::BindGroup>,
 
     // Tab bar
     pub tab_bar: TabBar,

@@ -2,9 +2,10 @@
 //!
 //! Renders terminal UI elements (cursor, selection rectangles) via vello.
 //! Uses cached GPU resources to avoid per-frame allocations.
+//! The expensive vello::Renderer is shared across all renderers to save memory.
 
 use std::time::{Duration, Instant};
-use vello::{peniko, kurbo, Scene, Renderer, RendererOptions, RenderParams, AaConfig};
+use vello::{peniko, kurbo, Scene, Renderer, RenderParams, AaConfig};
 
 /// Cursor shape style
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,12 +41,14 @@ pub struct CursorState {
 
 /// Terminal vello renderer with cached GPU resources
 ///
-/// Pattern matches VelloTabBarRenderer:
+/// Uses a shared vello::Renderer passed in during render calls to save memory.
+/// Each instance maintains its own Scene and render target.
+///
+/// Pattern:
 /// 1. Build shapes into Scene during prepare()
-/// 2. Render Scene to cached texture via vello
+/// 2. Render Scene to cached texture via shared vello renderer
 /// 3. Composite texture onto frame
 pub struct TerminalVelloRenderer {
-    renderer: Renderer,
     scene: Scene,
     // Cached render target
     target_texture: Option<wgpu::Texture>,
@@ -68,17 +71,10 @@ impl TerminalVelloRenderer {
     /// Default blink interval in milliseconds
     pub const DEFAULT_BLINK_INTERVAL_MS: u64 = 530;
 
-    pub fn new(device: &wgpu::Device) -> Self {
-        let renderer = Renderer::new(
-            device,
-            RendererOptions {
-                pipeline_cache: None,
-                ..Default::default()
-            },
-        ).expect("Failed to create Vello renderer for terminal");
-
+    /// Create a new terminal vello renderer.
+    /// Note: The expensive vello::Renderer is shared and passed during render calls.
+    pub fn new(_device: &wgpu::Device) -> Self {
         Self {
-            renderer,
             scene: Scene::new(),
             target_texture: None,
             target_view: None,
@@ -252,9 +248,10 @@ impl TerminalVelloRenderer {
         );
     }
 
-    /// Render the scene to the internal texture
+    /// Render the scene to the internal texture using the shared renderer
     pub fn render_to_texture(
         &mut self,
+        renderer: &mut Renderer,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Result<(), vello::Error> {
@@ -274,7 +271,7 @@ impl TerminalVelloRenderer {
             antialiasing_method: AaConfig::Area,
         };
 
-        self.renderer.render_to_texture(
+        renderer.render_to_texture(
             device,
             queue,
             &self.scene,

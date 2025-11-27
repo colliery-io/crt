@@ -18,7 +18,7 @@ use std::time::Instant;
 
 use config::Config;
 use crt_core::{ShellTerminal, Size, Scroll};
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TextRenderTarget, TabBar, BackgroundImagePipeline, BackgroundImageState};
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState};
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
 use input::{
@@ -161,12 +161,10 @@ impl App {
         tab_title_renderer.set_glyph_cache(&shared.device, &tab_glyph_cache);
         tab_title_renderer.update_screen_size(&shared.queue, size.width as f32, size.height as f32);
 
-        // Text render target and effects
-        let text_target = TextRenderTarget::new(&shared.device, size.width, size.height, format);
+        // Effect pipeline for background rendering
         let theme = self.load_theme();
         let mut effect_pipeline = EffectPipeline::new(&shared.device, format);
         effect_pipeline.set_theme(theme.clone());
-        let composite_bind_group = Some(effect_pipeline.create_bind_group(&shared.device, &text_target.view));
 
         // Tab bar (always at top)
         let mut tab_bar = TabBar::new(&shared.device, format);
@@ -217,9 +215,7 @@ impl App {
             grid_renderer,
             tab_glyph_cache,
             tab_title_renderer,
-            text_target,
             effect_pipeline,
-            composite_bind_group,
             tab_bar,
             terminal_vello,
             rect_renderer,
@@ -849,7 +845,7 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::RedrawRequested => {
-                let shared = self.shared_gpu.as_ref().unwrap();
+                let shared = self.shared_gpu.as_mut().unwrap();
                 render_frame(state, shared);
             }
 

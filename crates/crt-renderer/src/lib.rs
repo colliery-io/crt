@@ -14,7 +14,6 @@ pub mod rect_renderer;
 pub mod shaders;
 pub mod tab_bar;
 pub mod terminal_vello;
-pub mod vello_renderer;
 
 pub use background_image::{BackgroundImageState, BackgroundTexture, LoadedImage, ImageFrame};
 pub use glyph_cache::{GlyphCache, GlyphKey, GlyphStyle, FontVariants, CachedGlyph, PositionedGlyph};
@@ -22,10 +21,6 @@ pub use grid_renderer::GridRenderer;
 pub use rect_renderer::RectRenderer;
 pub use tab_bar::{TabBar, Tab, TabRect, EditState, TabBarState, TabLayout, VelloTabBarRenderer};
 pub use terminal_vello::{TerminalVelloRenderer, CursorShape, CursorState};
-pub use vello_renderer::{VelloContext, UiBuilder};
-
-// Re-export vello types needed by consumers
-pub use vello::Scene;
 
 use bytemuck::cast_slice;
 use crt_theme::Theme;
@@ -518,48 +513,6 @@ impl EffectPipeline {
     // Old render method - kept for compatibility but should migrate to new approach
     pub fn render<'a>(&'a self, _render_pass: &mut wgpu::RenderPass<'a>, _bind_group: &'a wgpu::BindGroup) {
         panic!("Use render_background() and render_composite() separately");
-    }
-}
-
-/// Offscreen render target for text
-pub struct TextRenderTarget {
-    pub texture: wgpu::Texture,
-    pub view: wgpu::TextureView,
-    pub width: u32,
-    pub height: u32,
-}
-
-impl TextRenderTarget {
-    pub fn new(device: &wgpu::Device, width: u32, height: u32, format: wgpu::TextureFormat) -> Self {
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Text Render Target"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-
-        let view = texture.create_view(&Default::default());
-
-        Self {
-            texture,
-            view,
-            width,
-            height,
-        }
-    }
-
-    pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32, format: wgpu::TextureFormat) {
-        if self.width != width || self.height != height {
-            *self = Self::new(device, width, height, format);
-        }
     }
 }
 

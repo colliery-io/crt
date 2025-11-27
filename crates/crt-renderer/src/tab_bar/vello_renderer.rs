@@ -2,23 +2,24 @@
 //!
 //! Renders tab bar shapes (backgrounds, borders, rounded rects) using vello.
 //! Text glow effects are still handled by the existing text renderer.
-//!
-//! This serves as the pattern for all vello-based UI rendering.
+//! The expensive vello::Renderer is shared across all renderers to save memory.
 
 use crt_theme::{TabTheme, Color};
-use vello::{peniko, kurbo, Scene, Renderer, RendererOptions, RenderParams, AaConfig};
+use vello::{peniko, kurbo, Scene, Renderer, RenderParams, AaConfig};
 
 use super::state::TabBarState;
 use super::layout::TabLayout;
 
 /// Vello-based tab bar renderer
 ///
-/// Pattern for UI rendering:
+/// Uses a shared vello::Renderer passed in during render calls to save memory.
+/// Each instance maintains its own Scene and render target.
+///
+/// Pattern:
 /// 1. Build shapes into Scene during prepare()
-/// 2. Render Scene to texture via vello
+/// 2. Render Scene to texture via shared vello renderer
 /// 3. Text/glow effects rendered separately by existing pipeline
 pub struct VelloTabBarRenderer {
-    renderer: Renderer,
     scene: Scene,
     // Render target for vello output
     target_texture: Option<wgpu::Texture>,
@@ -27,17 +28,10 @@ pub struct VelloTabBarRenderer {
 }
 
 impl VelloTabBarRenderer {
-    pub fn new(device: &wgpu::Device, _format: wgpu::TextureFormat) -> Self {
-        let renderer = Renderer::new(
-            device,
-            RendererOptions {
-                pipeline_cache: None,
-                ..Default::default()
-            },
-        ).expect("Failed to create Vello renderer for tab bar");
-
+    /// Create a new tab bar vello renderer.
+    /// Note: The expensive vello::Renderer is shared and passed during render calls.
+    pub fn new(_device: &wgpu::Device, _format: wgpu::TextureFormat) -> Self {
         Self {
-            renderer,
             scene: Scene::new(),
             target_texture: None,
             target_view: None,
@@ -84,8 +78,10 @@ impl VelloTabBarRenderer {
         // Reset scene for new frame
         self.scene.reset();
 
-        let (screen_width, screen_height) = layout.screen_size();
-        self.ensure_target(device, screen_width as u32, screen_height as u32);
+        // Size target to actual tab bar dimensions, not full screen
+        let (screen_width, _screen_height) = layout.screen_size();
+        let bar_height = (layout.height() * layout.scale_factor()) as u32;
+        self.ensure_target(device, screen_width as u32, bar_height.max(1));
 
         // Build shapes
         self.build_scene(state, layout, theme);
@@ -190,9 +186,10 @@ impl VelloTabBarRenderer {
         }
     }
 
-    /// Render the scene to the internal texture
+    /// Render the scene to the internal texture using the shared renderer
     pub fn render_to_texture(
         &mut self,
+        renderer: &mut Renderer,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Result<(), vello::Error> {
@@ -212,7 +209,7 @@ impl VelloTabBarRenderer {
             antialiasing_method: AaConfig::Area,
         };
 
-        self.renderer.render_to_texture(
+        renderer.render_to_texture(
             device,
             queue,
             &self.scene,

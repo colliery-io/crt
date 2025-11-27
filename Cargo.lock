@@ -706,6 +706,7 @@ dependencies = [
  "regex",
  "serde",
  "toml",
+ "vello",
  "wgpu",
  "winit",
 ]

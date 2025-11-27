@@ -17,7 +17,7 @@ struct BlitPipeline {
 }
 
 /// Render a single frame for a window
-pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
+pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     state.frame_count = state.frame_count.saturating_add(1);
 
     // Process PTY output from active shell
@@ -281,7 +281,7 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
             }
         }
 
-        if let Err(e) = state.gpu.terminal_vello.render_to_texture(&shared.device, &shared.queue) {
+        if let Err(e) = state.gpu.terminal_vello.render_to_texture(&mut shared.vello_renderer, &shared.device, &shared.queue) {
             log::warn!("Terminal vello render error: {:?}", e);
         }
 
@@ -303,8 +303,8 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
     {
         state.gpu.tab_bar.prepare(&shared.device, &shared.queue);
 
-        // Render vello scene to texture
-        if let Err(e) = state.gpu.tab_bar.render_vello(&shared.device, &shared.queue) {
+        // Render vello scene to texture using shared renderer
+        if let Err(e) = state.gpu.tab_bar.render_vello(&mut shared.vello_renderer, &shared.device, &shared.queue) {
             log::warn!("Vello tab bar render error: {:?}", e);
         }
 
@@ -492,7 +492,7 @@ fn render_tab_titles(
 /// Render search bar overlay
 fn render_search_bar(
     state: &mut WindowState,
-    shared: &SharedGpuState,
+    shared: &mut SharedGpuState,
     encoder: &mut wgpu::CommandEncoder,
     frame_view: &wgpu::TextureView,
 ) {
@@ -517,8 +517,8 @@ fn render_search_bar(
         border_color,
     );
 
-    // Render vello scene to texture
-    if let Err(e) = state.gpu.terminal_vello.render_to_texture(&shared.device, &shared.queue) {
+    // Render vello scene to texture using shared renderer
+    if let Err(e) = state.gpu.terminal_vello.render_to_texture(&mut shared.vello_renderer, &shared.device, &shared.queue) {
         log::warn!("Search bar vello render error: {:?}", e);
     }
 
@@ -713,14 +713,17 @@ fn get_or_init_blit_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat)
 }
 
 /// Composite vello-rendered texture onto the framebuffer
+///
+/// When `target_height` equals `screen_height`, does a full-screen blit.
+/// When `target_height` is smaller, restricts rendering to the top portion.
 fn composite_vello_texture(
     device: &wgpu::Device,
     encoder: &mut wgpu::CommandEncoder,
     frame_view: &wgpu::TextureView,
     vello_view: &wgpu::TextureView,
-    _width: u32,
-    _height: u32,
-    _tab_bar_height: f32,
+    screen_width: u32,
+    screen_height: u32,
+    target_height: f32,
 ) {
     // Get or create the blit pipeline
     // Note: We use Rgba8Unorm as source format, destination format from surface
@@ -756,6 +759,19 @@ fn composite_vello_texture(
         timestamp_writes: None,
         occlusion_query_set: None,
     });
+
+    // Use viewport to restrict rendering when target is smaller than screen
+    let is_partial = (target_height as u32) < screen_height;
+    if is_partial {
+        pass.set_viewport(
+            0.0,
+            0.0,
+            screen_width as f32,
+            target_height,
+            0.0,
+            1.0,
+        );
+    }
 
     pass.set_pipeline(&blit.pipeline);
     pass.set_bind_group(0, &bind_group, &[]);

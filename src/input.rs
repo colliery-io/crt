@@ -414,10 +414,6 @@ pub fn handle_resize(
     );
 
     state.gpu.tab_bar.resize(new_width as f32, new_height as f32);
-    state.gpu.text_target.resize(&shared.device, new_width, new_height, state.gpu.config.format);
-    state.gpu.composite_bind_group = Some(
-        state.gpu.effect_pipeline.create_bind_group(&shared.device, &state.gpu.text_target.view)
-    );
 
     state.dirty = true;
     for hash in state.content_hashes.values_mut() {
