@@ -155,7 +155,7 @@ fn parse_named_color(name: &str) -> Option<Color> {
     Some(Color::rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0))
 }
 
-/// Parse a hex color (#rgb, #rrggbb, #rrggbbaa)
+/// Parse a hex color (#rgb, #rgba, #rrggbb, #rrggbbaa)
 pub fn parse_hex_color(hex: &str) -> Result<Color, ThemeParseError> {
     let hex = hex.trim_start_matches('#');
 
@@ -171,6 +171,23 @@ pub fn parse_hex_color(hex: &str) -> Result<Color, ThemeParseError> {
                 r as f32 / 255.0,
                 g as f32 / 255.0,
                 b as f32 / 255.0,
+            ))
+        }
+        4 => {
+            // #rgba shorthand (e.g., #0ffc -> #00ffffcc)
+            let r = u8::from_str_radix(&hex[0..1].repeat(2), 16)
+                .map_err(|_| ThemeParseError::InvalidColor(hex.to_string()))?;
+            let g = u8::from_str_radix(&hex[1..2].repeat(2), 16)
+                .map_err(|_| ThemeParseError::InvalidColor(hex.to_string()))?;
+            let b = u8::from_str_radix(&hex[2..3].repeat(2), 16)
+                .map_err(|_| ThemeParseError::InvalidColor(hex.to_string()))?;
+            let a = u8::from_str_radix(&hex[3..4].repeat(2), 16)
+                .map_err(|_| ThemeParseError::InvalidColor(hex.to_string()))?;
+            Ok(Color::rgba(
+                r as f32 / 255.0,
+                g as f32 / 255.0,
+                b as f32 / 255.0,
+                a as f32 / 255.0,
             ))
         }
         6 => {

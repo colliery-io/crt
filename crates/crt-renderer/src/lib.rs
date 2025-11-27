@@ -13,11 +13,13 @@ pub mod glyph_cache;
 pub mod grid_renderer;
 pub mod rect_renderer;
 pub mod shaders;
+pub mod sprite_renderer;
 pub mod tab_bar;
 pub mod terminal_vello;
 
 pub use background_image::{BackgroundImageState, BackgroundTexture, LoadedImage, ImageFrame};
 pub use effects::{BackdropEffect, EffectConfig, EffectsRenderer, GridEffect, MatrixEffect, MotionBehavior, ParticleEffect, Position, RainEffect, ShapeEffect, SpriteEffect, StarfieldEffect};
+pub use sprite_renderer::{SpriteRenderer, SpriteSheet, SpriteTexture, SpriteAnimationState, SpriteConfig, SpritePosition, SpriteMotion};
 pub use glyph_cache::{GlyphCache, GlyphKey, GlyphStyle, FontVariants, CachedGlyph, PositionedGlyph};
 pub use grid_renderer::GridRenderer;
 pub use rect_renderer::RectRenderer;

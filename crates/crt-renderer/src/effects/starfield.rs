@@ -501,7 +501,7 @@ mod tests {
 
     #[test]
     fn test_direction_parsing() {
-        assert_eq!(StarDirection::from_str("warp"), Some(StarDirection::Warp));
+        assert_eq!(StarDirection::from_str("static"), Some(StarDirection::Static));
         assert_eq!(StarDirection::from_str("UP"), Some(StarDirection::Up));
         assert_eq!(StarDirection::from_str("down"), Some(StarDirection::Down));
         assert_eq!(StarDirection::from_str("LEFT"), Some(StarDirection::Left));

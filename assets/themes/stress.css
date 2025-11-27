@@ -1,0 +1,169 @@
+/* STRESS TEST THEME - Everything at once! */
+/* Purpose: Test memory stability with all effects enabled simultaneously */
+/* If this runs stable, the frame throttling fix is working */
+
+:terminal {
+    /* Typography */
+    font-family: "MesloLGS NF", "Fira Code", monospace;
+    font-size: 14;
+    line-height: 1.4;
+    ligatures: true;
+
+    /* Cyberpunk aesthetic - cyan on dark */
+    color: #00ffff;
+    background: linear-gradient(to bottom, #0a0015, #000008);
+    cursor-color: #ff00ff;
+
+    /* Heavy text glow */
+    text-shadow: 0 0 15px rgba(0, 255, 255, 0.8);
+
+    /* Background image too! */
+    background-image: url("wh40k/admech-logo.png");
+    background-size: 25%;
+    background-position: center;
+    background-repeat: no-repeat;
+    --background-opacity: 0.05;
+}
+
+:terminal::selection {
+    background: #ff00ff;
+    color: #000000;
+}
+
+:terminal::backdrop {
+    /* === EFFECT 1: TRON GRID === */
+    --grid-enabled: true;
+    --grid-color: rgba(0, 255, 255, 0.15);
+    --grid-spacing: 6;
+    --grid-line-width: 1.5;
+    --grid-perspective: 2.5;
+    --grid-horizon: 0.7;
+    --grid-animation-speed: 0.5;
+    --grid-glow-radius: 8;
+    --grid-glow-intensity: 0.5;
+    --grid-vanishing-spread: 0.4;
+    --grid-curved: true;
+
+    /* === EFFECT 2: STARFIELD === */
+    --starfield-enabled: true;
+    --starfield-color: rgba(255, 255, 255, 0.8);
+    --starfield-density: 150;
+    --starfield-layers: 4;
+    --starfield-speed: 0.4;
+    --starfield-direction: up;
+    --starfield-glow-radius: 4;
+    --starfield-glow-intensity: 0.6;
+    --starfield-twinkle: true;
+    --starfield-twinkle-speed: 2.5;
+    --starfield-min-size: 0.5;
+    --starfield-max-size: 2.5;
+
+    /* === EFFECT 3: RAIN === */
+    --rain-enabled: true;
+    --rain-color: rgba(100, 150, 255, 0.4);
+    --rain-density: 100;
+    --rain-speed: 1.5;
+    --rain-angle: 15;
+    --rain-length: 30;
+    --rain-thickness: 1.0;
+    --rain-glow-radius: 2;
+    --rain-glow-intensity: 0.3;
+
+    /* === EFFECT 4: MATRIX FALLING CODE === */
+    --matrix-enabled: true;
+    --matrix-color: #00ff00;
+    --matrix-density: 0.5;
+    --matrix-speed: 6;
+    --matrix-font-size: 12;
+    --matrix-charset: "01";
+
+    /* === EFFECT 5: PARTICLES === */
+    --particles-enabled: true;
+    --particles-color: #ff00ff;
+    --particles-count: 30;
+    --particles-shape: star;
+    --particles-behavior: float;
+    --particles-size: 8;
+    --particles-speed: 0.2;
+    --particles-glow-radius: 6;
+    --particles-glow-intensity: 0.5;
+
+    /* === EFFECT 6: BOUNCING SHAPE === */
+    --shape-enabled: true;
+    --shape-type: hexagon;
+    --shape-size: 80;
+    --shape-fill: rgba(255, 0, 255, 0.3);
+    --shape-stroke: #ff00ff;
+    --shape-stroke-width: 2;
+    --shape-glow-radius: 15;
+    --shape-glow-color: #ff00ff;
+    --shape-rotation: spin;
+    --shape-rotation-speed: 1.5;
+    --shape-motion: bounce;
+    --shape-motion-speed: 0.8;
+
+    /* === EFFECT 7: ANIMATED SPRITE === */
+    --sprite-enabled: true;
+    --sprite-path: "wh40k/servo-skull-transparent.png";
+    --sprite-frame-width: 512;
+    --sprite-frame-height: 512;
+    --sprite-columns: 5;
+    --sprite-rows: 5;
+    --sprite-frame-count: 25;
+    --sprite-fps: 12;
+    --sprite-scale: 0.6;
+    --sprite-opacity: 0.8;
+    --sprite-motion: wander;
+    --sprite-motion-speed: 30;
+    --sprite-position: center;
+}
+
+/* Cyberpunk ANSI palette */
+:terminal::palette {
+    --color-0: #0a0015;   /* black */
+    --color-1: #ff0055;   /* red - hot pink */
+    --color-2: #00ff88;   /* green - neon */
+    --color-3: #ffff00;   /* yellow - electric */
+    --color-4: #0088ff;   /* blue */
+    --color-5: #ff00ff;   /* magenta - cyber pink */
+    --color-6: #00ffff;   /* cyan - neon */
+    --color-7: #ffffff;   /* white */
+
+    --color-8: #333355;   /* bright black */
+    --color-9: #ff3388;   /* bright red */
+    --color-10: #33ffaa;  /* bright green */
+    --color-11: #ffff66;  /* bright yellow */
+    --color-12: #33aaff;  /* bright blue */
+    --color-13: #ff66ff;  /* bright magenta */
+    --color-14: #66ffff;  /* bright cyan */
+    --color-15: #ffffff;  /* bright white */
+}
+
+/* Tab bar - matching cyber style */
+:terminal::tab-bar {
+    background: #0a0015;
+    border-color: #ff00ff;
+    height: 36px;
+    padding: 4px;
+}
+
+:tab {
+    background: #150025;
+    color: #00aaaa;
+    border-radius: 0;
+    min-width: 80px;
+    max-width: 200px;
+}
+
+:tab.active {
+    background: #250045;
+    color: #00ffff;
+    accent-color: #ff00ff;
+    text-shadow: 0 0 12px rgba(0, 255, 255, 0.9);
+}
+
+:terminal::tab-close {
+    color: #00aaaa;
+    --hover-background: #ff0055;
+    --hover-color: #ffffff;
+}

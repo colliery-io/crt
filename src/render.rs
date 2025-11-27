@@ -6,9 +6,21 @@ use crate::gpu::SharedGpuState;
 use crate::window::{ContextMenuItem, WindowState, DecorationKind};
 use crt_core::SelectionRange;
 
+/// How often to reset vello renderer to clean up atlas resources (in frames)
+/// At 60fps, 300 frames = every 5 seconds
+const VELLO_RESET_INTERVAL: u32 = 300;
+
 /// Render a single frame for a window
 pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     state.frame_count = state.frame_count.saturating_add(1);
+
+    // Periodically reset vello renderer to clean up accumulated texture atlas resources
+    // This prevents unbounded GPU memory growth from vello's internal caches
+    // NOTE: The primary memory fix is frame throttling in main.rs (see about_to_wait).
+    // This reset is a secondary defense against vello atlas accumulation.
+    if state.frame_count % VELLO_RESET_INTERVAL == 0 && state.gpu.effects_renderer.has_enabled_effects() {
+        shared.reset_vello_renderer();
+    }
 
     // Update backdrop effects animation (assume ~60fps for dt)
     let dt = 1.0 / 60.0;
@@ -16,6 +28,11 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
 
     // Keep redrawing if effects are animating
     if state.gpu.effects_renderer.has_enabled_effects() {
+        state.dirty = true;
+    }
+
+    // Keep redrawing if sprite animation is active (uses raw wgpu, no memory growth)
+    if state.gpu.sprite_state.is_some() {
         state.dirty = true;
     }
 
@@ -62,6 +79,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
 
     // Render backdrop effects to their intermediate texture (if any effects are enabled)
     // This must happen before we create our command encoder since Vello submits its own commands
+    // NOTE: Memory stability depends on frame throttling in main.rs (see about_to_wait)
     let effects_rendered = if state.gpu.effects_renderer.has_enabled_effects() {
         // Ensure Vello renderer is initialized
         shared.ensure_vello_renderer();
@@ -135,6 +153,43 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         });
 
         state.gpu.effects_renderer.composite(&mut pass);
+    }
+
+    // Pass 1.3: Render sprite animation (if configured, uses raw wgpu to bypass vello memory issues)
+    if let Some(ref mut sprite_state) = state.gpu.sprite_state {
+        let width = state.gpu.config.width as f32;
+        let height = state.gpu.config.height as f32;
+
+        // Log once to confirm sprite is rendering
+        static LOGGED_SPRITE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !LOGGED_SPRITE.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            log::info!("Rendering sprite: {}x{}", width, height);
+        }
+
+        // Update animation state
+        sprite_state.update(dt, width, height);
+
+        // Render sprite
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Sprite Animation Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &frame_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        sprite_state.render(&mut pass, &shared.queue, width, height);
+
+        // Keep redrawing while sprite is animated
+        state.dirty = true;
     }
 
     // Pass 1.5: Render background image (if configured)

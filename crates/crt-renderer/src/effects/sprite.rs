@@ -22,7 +22,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use vello::kurbo::{Affine, Point, Rect};
-use vello::peniko::{Blob, ImageAlphaType, ImageData, ImageFormat, ImageBrush};
+use vello::peniko::{Blob, ImageAlphaType, ImageBrush, ImageData, ImageFormat};
 use vello::Scene;
 
 use super::{BackdropEffect, EffectConfig};
@@ -91,8 +91,8 @@ impl SpritePosition {
 /// Sprite sheet configuration
 #[derive(Debug, Clone)]
 struct SpriteSheet {
-    /// Image data for Vello
-    image_data: Arc<ImageData>,
+    /// Cached ImageData for vello (created once, reused every frame)
+    image_data: ImageData,
     /// Width of full sprite sheet
     sheet_width: u32,
     /// Height of full sprite sheet
@@ -103,8 +103,6 @@ struct SpriteSheet {
     frame_height: u32,
     /// Number of columns
     columns: u32,
-    /// Number of rows
-    rows: u32,
     /// Total frame count
     frame_count: u32,
 }
@@ -144,17 +142,17 @@ impl SpriteSheet {
         let max_frames = columns * rows;
         let frame_count = frame_count.unwrap_or(max_frames).min(max_frames);
 
-        // Create Vello ImageData
+        // Create Vello ImageData - this is created ONCE and reused
         let data = rgba.into_raw();
         let blob = Blob::new(Arc::new(data));
 
-        let image_data = Arc::new(ImageData {
+        let image_data = ImageData {
             data: blob,
             format: ImageFormat::Rgba8,
             alpha_type: ImageAlphaType::Alpha,
             width: sheet_width,
             height: sheet_height,
-        });
+        };
 
         log::info!(
             "Loaded sprite sheet {:?}: {}x{}, {}x{} frames, {} total",
@@ -168,7 +166,6 @@ impl SpriteSheet {
             frame_width,
             frame_height,
             columns,
-            rows,
             frame_count,
         })
     }
@@ -409,6 +406,12 @@ impl BackdropEffect for SpriteEffect {
             return;
         };
 
+        // Create image brush from the cached ImageData
+        // The ImageData is created once when loading and reused here
+        // The clone of ImageData is cheap (just Arc increments for the Blob)
+        let image_brush = ImageBrush::new(sheet.image_data.clone())
+            .with_alpha(self.opacity);
+
         // Calculate sprite display size
         let sprite_width = sheet.frame_width as f64 * self.scale;
         let sprite_height = sheet.frame_height as f64 * self.scale;
@@ -418,10 +421,6 @@ impl BackdropEffect for SpriteEffect {
 
         // Get frame offset in sprite sheet
         let (frame_x, frame_y) = sheet.frame_offset(self.current_frame);
-
-        // Create image brush with opacity
-        let image_brush = ImageBrush::new((*sheet.image_data).clone())
-            .with_alpha(self.opacity);
 
         // Calculate transform:
         // 1. Translate so the frame's top-left is at origin
@@ -558,7 +557,7 @@ mod tests {
         let frame_width = 64;
         let frame_height = 64;
         let columns = 4;
-        let rows = 2;
+        let _rows = 2;
 
         // Frame 0: (0, 0)
         let col0 = 0 % columns;

@@ -4,7 +4,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, TerminalVelloRenderer, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer};
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, TerminalVelloRenderer, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, SpriteAnimationState};
 
 /// Shared GPU resources across all windows
 pub struct SharedGpuState {
@@ -80,6 +80,30 @@ impl SharedGpuState {
     pub fn vello_renderer_arc(&self) -> Arc<Mutex<Option<vello::Renderer>>> {
         self.vello_renderer.clone()
     }
+
+    /// Reset the Vello renderer to clean up accumulated texture atlas resources.
+    ///
+    /// Vello's internal atlas/texture caches grow over time and don't have a
+    /// built-in cleanup mechanism. Recreating the renderer periodically prevents
+    /// unbounded GPU memory growth.
+    pub fn reset_vello_renderer(&self) {
+        let mut guard = self.vello_renderer.lock().unwrap();
+        if guard.is_some() {
+            log::info!("Resetting Vello renderer to free accumulated GPU resources");
+            // Drop the old renderer
+            *guard = None;
+            // Create a new one
+            *guard = Some(
+                vello::Renderer::new(
+                    &self.device,
+                    vello::RendererOptions {
+                        pipeline_cache: None,
+                        ..Default::default()
+                    },
+                ).expect("Failed to recreate Vello renderer")
+            );
+        }
+    }
 }
 
 /// Per-window GPU state (surface tied to specific window)
@@ -124,6 +148,9 @@ pub struct WindowGpuState {
     pub background_image_pipeline: BackgroundImagePipeline,
     pub background_image_state: Option<BackgroundImageState>,
     pub background_image_bind_group: Option<wgpu::BindGroup>,
+
+    // Sprite animation rendering (optional, bypasses vello for memory efficiency)
+    pub sprite_state: Option<SpriteAnimationState>,
 
     // Intermediate text texture for glow effect
     // Text is rendered here first, then composited with Gaussian blur

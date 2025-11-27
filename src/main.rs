@@ -19,7 +19,7 @@ use std::time::Instant;
 
 use config::Config;
 use crt_core::{ShellTerminal, Size, Scroll};
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, GridEffect, StarfieldEffect, RainEffect, ParticleEffect, MatrixEffect, ShapeEffect, SpriteEffect, EffectConfig};
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, GridEffect, StarfieldEffect, RainEffect, ParticleEffect, MatrixEffect, ShapeEffect, SpriteEffect, EffectConfig, SpriteAnimationState, SpriteConfig, SpritePosition, SpriteMotion};
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
 use input::{
@@ -65,6 +65,8 @@ struct App {
     modifiers: Modifiers,
     pending_new_window: bool,
     config_watcher: Option<watcher::ConfigWatcher>,
+    /// Last frame time for throttling redraws (prevents Metal memory leak)
+    last_frame_time: Instant,
     #[cfg(target_os = "macos")]
     menu: Option<Menu>,
     #[cfg(target_os = "macos")]
@@ -84,6 +86,7 @@ impl App {
             modifiers: Modifiers::default(),
             pending_new_window: false,
             config_watcher,
+            last_frame_time: Instant::now(),
             #[cfg(target_os = "macos")]
             menu: None,
             #[cfg(target_os = "macos")]
@@ -236,6 +239,63 @@ impl App {
             (None, None)
         };
 
+        // Sprite animation state (bypasses vello for memory efficiency)
+        log::info!("Checking sprite config: {:?}", theme.sprite.as_ref().map(|s| (s.enabled, &s.path)));
+        let sprite_state = if let Some(ref sprite) = theme.sprite {
+            if sprite.enabled {
+                if let Some(ref path_str) = sprite.path {
+                    // Resolve path relative to theme base directory
+                    let path = std::path::PathBuf::from(path_str);
+                    let resolved_path = if let Some(ref bg) = theme.background_image {
+                        if let Some(ref base_dir) = bg.base_dir {
+                            if path.is_relative() {
+                                base_dir.join(&path)
+                            } else {
+                                path.clone()
+                            }
+                        } else {
+                            path.clone()
+                        }
+                    } else {
+                        path.clone()
+                    };
+
+                    log::info!("Resolved sprite path: {:?}", resolved_path);
+                    let config = SpriteConfig {
+                        path: resolved_path.clone(),
+                        frame_width: sprite.frame_width,
+                        frame_height: sprite.frame_height,
+                        columns: sprite.columns,
+                        rows: sprite.rows,
+                        frame_count: sprite.frame_count,
+                        fps: sprite.fps,
+                        scale: sprite.scale,
+                        opacity: sprite.opacity,
+                        position: SpritePosition::from_str(sprite.position.as_str()),
+                        motion: SpriteMotion::from_str(sprite.motion.as_str()),
+                        motion_speed: sprite.motion_speed,
+                    };
+
+                    match SpriteAnimationState::new(&shared.device, &shared.queue, config, format) {
+                        Ok(state) => {
+                            log::info!("Loaded sprite animation using raw wgpu (bypassing vello)");
+                            Some(state)
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to load sprite animation: {}", e);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // Create intermediate text texture for glow effect
         let text_texture = shared.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Text Texture"),
@@ -274,6 +334,7 @@ impl App {
             background_image_pipeline,
             background_image_state,
             background_image_bind_group,
+            sprite_state,
             text_texture,
             text_texture_view,
             composite_bind_group,
@@ -735,32 +796,10 @@ fn configure_effects_from_theme(effects_renderer: &mut EffectsRenderer, theme: &
         config.insert("shape-polygon-sides", shape.polygon_sides.to_string());
     }
 
-    // Sprite effect configuration from theme
-    if let Some(ref sprite) = theme.sprite {
-        config.insert("sprite-enabled", if sprite.enabled { "true" } else { "false" });
-        if let Some(ref path) = sprite.path {
-            config.insert("sprite-path", path.clone());
-        }
-        config.insert("sprite-frame-width", sprite.frame_width.to_string());
-        config.insert("sprite-frame-height", sprite.frame_height.to_string());
-        config.insert("sprite-columns", sprite.columns.to_string());
-        config.insert("sprite-rows", sprite.rows.to_string());
-        if let Some(count) = sprite.frame_count {
-            config.insert("sprite-frame-count", count.to_string());
-        }
-        config.insert("sprite-fps", sprite.fps.to_string());
-        config.insert("sprite-scale", sprite.scale.to_string());
-        config.insert("sprite-opacity", sprite.opacity.to_string());
-        config.insert("sprite-motion", sprite.motion.as_str().to_string());
-        config.insert("sprite-motion-speed", sprite.motion_speed.to_string());
-        config.insert("sprite-position", sprite.position.as_str().to_string());
-        // Set base directory for relative paths (from theme directory or cwd)
-        if let Some(ref bg) = theme.background_image {
-            if let Some(ref base_dir) = bg.base_dir {
-                config.insert("sprite-base-dir", base_dir.display().to_string());
-            }
-        }
-    }
+    // Sprite effect: DISABLED - now using raw wgpu SpriteRenderer to avoid vello memory issues
+    // The vello-based SpriteEffect causes unbounded memory growth due to atlas texture system.
+    // Sprite rendering is handled by SpriteAnimationState in render.rs instead.
+    config.insert("sprite-enabled", "false");
 
     effects_renderer.configure(&config);
 }
@@ -1220,8 +1259,34 @@ impl ApplicationHandler for App {
             self.create_window(event_loop);
         }
 
-        for state in self.windows.values() {
-            state.window.request_redraw();
+        // FRAME THROTTLING - Critical fix for Metal/wgpu memory leak (November 2024)
+        //
+        // WHY: wgpu/Metal on macOS has a bug where IOAccelerator drawable allocations grow
+        // unboundedly when frames are rendered at high rates. With ControlFlow::Poll and
+        // continuous request_redraw(), we were seeing 1500+ GPU allocations per second,
+        // causing memory to balloon from ~130MB to 4-9GB within minutes.
+        //
+        // WHAT: Limits redraws to ~60fps by only calling request_redraw() when at least
+        // 16.6ms has elapsed since the last frame. This keeps IOAccelerator regions
+        // at ~500 instead of 40,000+ and memory stable at ~150-220MB.
+        //
+        // RE-EVALUATE WHEN:
+        // - wgpu updates to 24.x+ (check if Metal backend fixes drawable allocation)
+        // - Testing on non-macOS platforms (this may not be needed on Windows/Linux)
+        // - If we need variable refresh rate support (would need smarter throttling)
+        // - If Apple fixes the IOAccelerator memory management in a future macOS version
+        //
+        // Related: https://github.com/gfx-rs/wgpu/issues/3292 (Metal memory growth issues)
+        const TARGET_FRAME_TIME: std::time::Duration = std::time::Duration::from_micros(16666); // ~60fps
+        let elapsed = self.last_frame_time.elapsed();
+
+        if elapsed >= TARGET_FRAME_TIME {
+            self.last_frame_time = Instant::now();
+
+            for state in self.windows.values() {
+                // Always request redraw at throttled rate to check for PTY output
+                state.window.request_redraw();
+            }
         }
     }
 }

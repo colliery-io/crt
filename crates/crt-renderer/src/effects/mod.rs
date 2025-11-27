@@ -129,6 +129,38 @@ pub trait BackdropEffect: Send + Sync {
 
     /// Check if the effect is enabled
     fn is_enabled(&self) -> bool;
+
+    /// Prepare GPU resources for effects that need persistent textures.
+    ///
+    /// Called before rendering when GPU resources are available.
+    /// Effects can use `renderer.register_texture()` to pre-upload textures
+    /// that bypass vello's atlas system, preventing memory growth.
+    ///
+    /// Default implementation does nothing.
+    fn prepare_gpu_resources(
+        &mut self,
+        _device: &wgpu::Device,
+        _queue: &wgpu::Queue,
+        _renderer: &mut vello::Renderer,
+    ) {
+        // Default: no GPU resources needed
+    }
+
+    /// Check if GPU resources need to be prepared or updated.
+    ///
+    /// Returns true if `prepare_gpu_resources` should be called.
+    /// Default implementation returns false.
+    fn needs_gpu_resources(&self) -> bool {
+        false
+    }
+
+    /// Cleanup GPU resources when effect is disabled or removed.
+    ///
+    /// Called to unregister textures and free GPU memory.
+    /// Default implementation does nothing.
+    fn cleanup_gpu_resources(&mut self, _renderer: &mut vello::Renderer) {
+        // Default: no cleanup needed
+    }
 }
 
 /// Position with velocity for motion behaviors

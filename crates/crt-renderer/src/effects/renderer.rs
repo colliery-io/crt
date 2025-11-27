@@ -360,6 +360,31 @@ impl EffectsRenderer {
             return false;
         }
 
+        // Prepare GPU resources for effects that need them (e.g., texture registration)
+        let mut did_gpu_setup = false;
+        {
+            let mut renderer_guard = match self.vello_renderer.lock() {
+                Ok(guard) => guard,
+                Err(_) => return false,
+            };
+            let renderer = match renderer_guard.as_mut() {
+                Some(r) => r,
+                None => return false,
+            };
+            for effect in &mut self.effects {
+                if effect.needs_gpu_resources() {
+                    effect.prepare_gpu_resources(device, queue, renderer);
+                    did_gpu_setup = true;
+                }
+            }
+        }
+
+        // Skip rendering on frames where we registered textures to avoid encoder conflicts
+        if did_gpu_setup {
+            log::debug!("Skipping render frame after GPU resource setup");
+            return false;
+        }
+
         // Reset scene for new frame
         self.scene.reset();
 
