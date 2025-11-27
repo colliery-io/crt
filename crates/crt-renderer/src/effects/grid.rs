@@ -1,8 +1,8 @@
 //! Grid backdrop effect - perspective grid with animation
 //!
 //! Renders a retro-style perspective grid below a configurable horizon line.
-//! Vertical lines converge toward a vanishing point, horizontal lines
-//! use perspective spacing, and the whole grid animates/scrolls.
+//! Vertical lines converge toward a vanishing point with perspective curvature,
+//! horizontal lines use perspective spacing, and the whole grid animates/scrolls.
 //!
 //! ## CSS Properties
 //!
@@ -14,8 +14,12 @@
 //! - `--grid-horizon: <number>` (0 = top, 1 = bottom)
 //! - `--grid-intensity: <number>` (0-1 opacity)
 //! - `--grid-animation-speed: <number>`
+//! - `--grid-glow-radius: <number>` (glow spread in pixels, 0 = no glow)
+//! - `--grid-glow-intensity: <number>` (0-1 glow brightness)
+//! - `--grid-vanishing-spread: <number>` (0-1, how spread lines are at horizon)
+//! - `--grid-curved: true|false` (curved or straight vertical lines)
 
-use vello::kurbo::{Affine, Line, Rect, Stroke};
+use vello::kurbo::{Affine, BezPath, Line, Point, Rect, Stroke};
 use vello::peniko::{Brush, Color};
 use vello::Scene;
 
@@ -33,10 +37,6 @@ struct Rgba {
 impl Rgba {
     fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }
-    }
-
-    fn to_peniko_color(&self) -> Color {
-        Color::from_rgba8(self.r, self.g, self.b, self.a)
     }
 
     fn with_alpha(&self, alpha: u8) -> Color {
@@ -72,20 +72,36 @@ pub struct GridEffect {
 
     /// Current time offset for animation
     time_offset: f64,
+
+    /// Glow radius in pixels (0 = no glow)
+    glow_radius: f64,
+
+    /// Glow intensity (0-1)
+    glow_intensity: f64,
+
+    /// How spread out lines are at the vanishing point (0 = all converge, 1 = no convergence)
+    vanishing_spread: f64,
+
+    /// Whether vertical lines curve (true) or are straight (false)
+    curved: bool,
 }
 
 impl Default for GridEffect {
     fn default() -> Self {
         Self {
             enabled: false,
-            color: Rgba::new(0, 255, 255, 40), // Cyan with low alpha
+            color: Rgba::new(0, 255, 255, 80), // Cyan with moderate alpha
             spacing: 8.0,
-            line_width: 1.0,
+            line_width: 1.5,
             perspective: 2.0,
             horizon: 0.3,
             intensity: 1.0,
             animation_speed: 0.5,
             time_offset: 0.0,
+            glow_radius: 0.0,
+            glow_intensity: 0.0,
+            vanishing_spread: 0.3,
+            curved: true,
         }
     }
 }
@@ -122,6 +138,39 @@ impl GridEffect {
         let horizon_fade = (t * 6.67).min(1.0); // Fade in over first ~15%
         let distance_fade = 1.0 - t * 0.3;
         horizon_fade * distance_fade * self.intensity
+    }
+
+    /// Draw a stroke with optional glow effect
+    /// Glow is achieved by drawing multiple strokes with increasing width and decreasing alpha
+    fn stroke_with_glow<S: vello::kurbo::Shape>(
+        &self,
+        scene: &mut Scene,
+        shape: &S,
+        base_width: f64,
+        base_color: Color,
+    ) {
+        if self.glow_radius > 0.0 && self.glow_intensity > 0.0 {
+            // Extract RGBA components from the color
+            let [r, g, b, a] = base_color.components;
+
+            // Draw glow layers (outer to inner)
+            let glow_layers = 4;
+            for i in (0..glow_layers).rev() {
+                let t = (i + 1) as f64 / glow_layers as f64;
+                let glow_width = base_width + self.glow_radius * 2.0 * t;
+                let glow_alpha = (a as f64 * self.glow_intensity * (1.0 - t) * 0.5) as f32;
+
+                if glow_alpha > 0.001 {
+                    let glow_color = Color::new([r, g, b, glow_alpha]);
+                    let stroke = Stroke::new(glow_width);
+                    scene.stroke(&stroke, Affine::IDENTITY, &Brush::Solid(glow_color), None, shape);
+                }
+            }
+        }
+
+        // Draw the core line
+        let stroke = Stroke::new(base_width);
+        scene.stroke(&stroke, Affine::IDENTITY, &Brush::Solid(base_color), None, shape);
     }
 }
 
@@ -182,38 +231,71 @@ impl BackdropEffect for GridEffect {
             let adjusted_width = self.line_width * (0.5 + t * 1.5);
 
             let line = Line::new((bounds.x0, y), (bounds.x1, y));
-            let stroke = Stroke::new(adjusted_width);
-
-            scene.stroke(&stroke, Affine::IDENTITY, &Brush::Solid(line_color), None, &line);
+            self.stroke_with_glow(scene, &line, adjusted_width, line_color);
         }
 
-        // Number of vertical lines
-        let v_line_count = (self.spacing * 2.0) as usize;
-        let half_count = v_line_count / 2;
+        // Vanishing spread: controls how much lines fan out from horizon to bottom
+        // Higher values = more spread at bottom relative to horizon
+        let spread = self.vanishing_spread.max(0.01);
 
-        // Draw vertical lines converging to vanishing point at horizon center
+        // Calculate line count to fill the horizon
+        // At horizon we want full screen coverage, at bottom lines extend beyond
+        let base_line_count = (self.spacing * 2.0) as usize;
+        // Need more lines because outer ones go off-screen at bottom
+        let v_line_count = ((base_line_count as f64) * (spread + 1.0) / spread) as usize;
+        let half_count = (v_line_count / 2).max(1);
+
+        // Draw vertical lines: fill horizon, fan out toward bottom
         for i in 0..=v_line_count {
-            // Position from -half to +half, normalized
+            // x_offset: -1 to 1 maps to full horizon width
             let x_offset = (i as f64 - half_count as f64) / half_count as f64;
 
-            // Start position at bottom of screen
-            let bottom_x = center_x + x_offset * width * 0.5;
-
-            // End position converges toward center at horizon
-            // Lines closer to center converge less
-            let convergence = x_offset.abs().powf(0.5); // Square root for smoother convergence
-            let horizon_x = center_x + x_offset * width * 0.1 * convergence;
-
-            // Draw line from horizon to bottom
-            let line = Line::new((horizon_x, horizon_y), (bottom_x, bottom_y));
-
-            // Fade lines that are further from center
+            // Fade based on horizon position (center = brightest)
             let center_fade = 1.0 - x_offset.abs() * 0.3;
-            let alpha = (self.color.a as f64 / 255.0 * self.intensity * center_fade * 255.0) as u8;
+            let alpha = (self.color.a as f64 / 255.0 * self.intensity * center_fade.max(0.0) * 255.0) as u8;
+
+            if alpha == 0 {
+                continue;
+            }
+
             let line_color = self.color.with_alpha(alpha);
 
-            let stroke = Stroke::new(self.line_width);
-            scene.stroke(&stroke, Affine::IDENTITY, &Brush::Solid(line_color), None, &line);
+            // Start vertical lines slightly below horizon
+            // Use half the horizontal line spacing so verticals begin at first h-line
+            let start_t = 0.5 / (self.spacing * 2.0);
+
+            if self.curved {
+                let curve_segments = 20;
+                let mut path = BezPath::new();
+
+                for seg in 0..=curve_segments {
+                    // Start from first horizontal line, not the horizon itself
+                    let t = start_t + (1.0 - start_t) * (seg as f64 / curve_segments as f64);
+                    let y = horizon_y + t * grid_height;
+
+                    // At horizon (t=0): x = x_offset * width/2 (fills screen)
+                    // At bottom (t=1): x = x_offset * width/2 * (spread+1)/spread (extends beyond)
+                    let perspective_t = t.powf(self.perspective);
+                    let x = center_x + x_offset * width * 0.5 * (spread + perspective_t) / spread;
+
+                    if seg == 0 {
+                        path.move_to(Point::new(x, y));
+                    } else {
+                        path.line_to(Point::new(x, y));
+                    }
+                }
+
+                self.stroke_with_glow(scene, &path, self.line_width, line_color);
+            } else {
+                // Straight lines - start below horizon
+                let start_perspective = start_t.powf(self.perspective);
+                let start_x = center_x + x_offset * width * 0.5 * (spread + start_perspective) / spread;
+                let start_y = horizon_y + start_t * grid_height;
+                let bottom_x = center_x + x_offset * width * 0.5 * (spread + 1.0) / spread;
+                let line = Line::new((start_x, start_y), (bottom_x, bottom_y));
+
+                self.stroke_with_glow(scene, &line, self.line_width, line_color);
+            }
         }
     }
 
@@ -244,6 +326,22 @@ impl BackdropEffect for GridEffect {
 
         if let Some(speed) = config.get_f64("animation-speed") {
             self.animation_speed = speed;
+        }
+
+        if let Some(glow_radius) = config.get_f64("glow-radius") {
+            self.glow_radius = glow_radius.max(0.0);
+        }
+
+        if let Some(glow_intensity) = config.get_f64("glow-intensity") {
+            self.glow_intensity = glow_intensity.clamp(0.0, 1.0);
+        }
+
+        if let Some(vanishing_spread) = config.get_f64("vanishing-spread") {
+            self.vanishing_spread = vanishing_spread.max(0.0);
+        }
+
+        if let Some(curved) = config.get_bool("curved") {
+            self.curved = curved;
         }
 
         // Parse color - for now just support basic format

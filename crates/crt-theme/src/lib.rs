@@ -349,6 +349,10 @@ pub struct GridEffect {
     pub perspective: f32,
     pub horizon: f32,
     pub animation_speed: f32,
+    pub glow_radius: f32,
+    pub glow_intensity: f32,
+    pub vanishing_spread: f32,
+    pub curved: bool,
 }
 
 impl Default for GridEffect {
@@ -357,10 +361,14 @@ impl Default for GridEffect {
             enabled: true,
             color: Color::rgba(1.0, 0.0, 1.0, 0.3), // magenta
             spacing: 8.0,
-            line_width: 0.02,
+            line_width: 1.5,
             perspective: 2.0,
             horizon: 0.35,
             animation_speed: 0.5,
+            glow_radius: 0.0,
+            glow_intensity: 0.0,
+            vanishing_spread: 0.3,
+            curved: true,
         }
     }
 }

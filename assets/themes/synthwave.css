@@ -34,10 +34,14 @@
     --grid-enabled: true;
     --grid-color: rgba(255, 0, 255, 0.3);
     --grid-spacing: 8;
-    --grid-line-width: 0.02;
+    --grid-line-width: 1.5;
     --grid-perspective: 2;
     --grid-horizon: 0.35;
     --grid-animation-speed: 0.5;
+    --grid-glow-radius: 8;
+    --grid-glow-intensity: 0.8;
+    --grid-vanishing-spread: 0.4;
+    --grid-curved: true;
 }
 
 /* ANSI 16-color palette */

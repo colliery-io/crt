@@ -10,6 +10,15 @@ use crt_core::SelectionRange;
 pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     state.frame_count = state.frame_count.saturating_add(1);
 
+    // Update backdrop effects animation (assume ~60fps for dt)
+    let dt = 1.0 / 60.0;
+    state.gpu.effects_renderer.update(dt);
+
+    // Keep redrawing if effects are animating
+    if state.gpu.effects_renderer.has_enabled_effects() {
+        state.dirty = true;
+    }
+
     // Process PTY output from active shell
     let active_tab_id = state.gpu.tab_bar.active_tab_id();
     if let Some(tab_id) = active_tab_id {
@@ -51,6 +60,22 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         None
     };
 
+    // Render backdrop effects to their intermediate texture (if any effects are enabled)
+    // This must happen before we create our command encoder since Vello submits its own commands
+    let effects_rendered = if state.gpu.effects_renderer.has_enabled_effects() {
+        // Ensure Vello renderer is initialized
+        shared.ensure_vello_renderer();
+
+        // Render effects to intermediate texture
+        state.gpu.effects_renderer.render(
+            &shared.device,
+            &shared.queue,
+            (state.gpu.config.width, state.gpu.config.height),
+        ).is_some()
+    } else {
+        false
+    };
+
     // Render
     let frame = match state.gpu.surface.get_current_texture() {
         Ok(f) => f,
@@ -89,6 +114,27 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         });
 
         state.gpu.effect_pipeline.background.render(&mut pass);
+    }
+
+    // Pass 1.25: Composite backdrop effects (grid, etc.) if rendered
+    if effects_rendered {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Backdrop Effects Composite Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &frame_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        state.gpu.effects_renderer.composite(&mut pass);
     }
 
     // Pass 1.5: Render background image (if configured)

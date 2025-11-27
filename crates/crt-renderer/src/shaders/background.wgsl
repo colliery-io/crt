@@ -1,10 +1,11 @@
-// Background shader - renders gradient + animated grid
+// Background shader - renders gradient only
+// Grid effects are now handled by the Vello-based effects system
 // No texture samples needed, just math - very fast
 
 struct Params {
     screen_size: vec2<f32>,
     time: f32,
-    grid_intensity: f32,
+    grid_intensity: f32,  // Kept for uniform layout compatibility, ignored
     gradient_top: vec4<f32>,
     gradient_bottom: vec4<f32>,
     grid_color: vec4<f32>,
@@ -40,40 +41,9 @@ fn gradient(uv: vec2<f32>, top: vec3<f32>, bottom: vec3<f32>) -> vec3<f32> {
     return mix(top, bottom, uv.y);
 }
 
-fn perspective_grid(uv: vec2<f32>, time: f32) -> f32 {
-    let horizon = params.grid_horizon;
-    if uv.y < horizon {
-        return 0.0;
-    }
-
-    let grid_y = (uv.y - horizon) / (1.0 - horizon);
-    let perspective = pow(grid_y, params.grid_perspective);
-    let horizon_fade = smoothstep(0.0, 0.15, grid_y);
-
-    let x_centered = uv.x - 0.5;
-    let x_perspective = x_centered / (perspective + 0.01);
-    let x_grid = abs(fract(x_perspective * params.grid_spacing + 0.5) - 0.5);
-    let line_width = params.grid_line_width / (perspective + 0.2);
-    let x_line = 1.0 - smoothstep(0.0, line_width, x_grid);
-
-    let y_scroll = perspective * params.grid_spacing * 2.0 - time * 0.5;
-    let y_grid = abs(fract(y_scroll + 0.5) - 0.5);
-    let y_line = 1.0 - smoothstep(0.0, params.grid_line_width * 3.0, y_grid);
-
-    let grid = max(x_line, y_line);
-    let distance_fade = 1.0 - perspective * 0.3;
-
-    return grid * horizon_fade * distance_fade * params.grid_intensity;
-}
-
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    var color = gradient(in.uv, params.gradient_top.rgb, params.gradient_bottom.rgb);
-
-    if params.grid_intensity > 0.0 {
-        let grid = perspective_grid(in.uv, params.time);
-        color = mix(color, params.grid_color.rgb, grid * params.grid_color.a);
-    }
-
+    // Render gradient only - grid is handled by Vello effects system
+    let color = gradient(in.uv, params.gradient_top.rgb, params.gradient_bottom.rgb);
     return vec4<f32>(color, 1.0);
 }

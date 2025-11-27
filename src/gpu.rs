@@ -2,7 +2,9 @@
 //!
 //! Shared and per-window GPU resources for wgpu rendering.
 
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, TerminalVelloRenderer, BackgroundImagePipeline, BackgroundImageState};
+use std::sync::{Arc, Mutex};
+
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, TerminalVelloRenderer, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer};
 
 /// Shared GPU resources across all windows
 pub struct SharedGpuState {
@@ -11,8 +13,9 @@ pub struct SharedGpuState {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     /// Shared Vello renderer - lazy loaded only when CSS effects need it
-    /// (rounded corners, gradients, shadows, etc.)
-    pub vello_renderer: Option<vello::Renderer>,
+    /// (rounded corners, gradients, shadows, backdrop effects, etc.)
+    /// Wrapped in Arc<Mutex> for sharing with EffectsRenderer
+    pub vello_renderer: Arc<Mutex<Option<vello::Renderer>>>,
 }
 
 impl SharedGpuState {
@@ -40,8 +43,8 @@ impl SharedGpuState {
         });
 
         // Vello renderer is lazy-loaded only when CSS effects need it
-        // (rounded corners, gradients, shadows, complex paths)
-        let vello_renderer = None;
+        // (rounded corners, gradients, shadows, backdrop effects, complex paths)
+        let vello_renderer = Arc::new(Mutex::new(None));
 
         Self {
             instance,
@@ -52,15 +55,16 @@ impl SharedGpuState {
         }
     }
 
-    /// Get or create the Vello renderer (lazy initialization)
+    /// Ensure the Vello renderer is initialized (lazy initialization)
     ///
     /// Call this when you need advanced CSS effects like rounded corners,
-    /// gradients, or complex paths. The renderer is cached after first creation.
-    #[allow(dead_code)]
-    pub fn get_or_create_vello_renderer(&mut self) -> &mut vello::Renderer {
-        if self.vello_renderer.is_none() {
-            log::info!("Lazy-loading Vello renderer for advanced CSS effects");
-            self.vello_renderer = Some(
+    /// gradients, backdrop effects, or complex paths. The renderer is
+    /// cached after first creation.
+    pub fn ensure_vello_renderer(&self) {
+        let mut guard = self.vello_renderer.lock().unwrap();
+        if guard.is_none() {
+            log::info!("Lazy-loading Vello renderer for advanced CSS/backdrop effects");
+            *guard = Some(
                 vello::Renderer::new(
                     &self.device,
                     vello::RendererOptions {
@@ -70,7 +74,11 @@ impl SharedGpuState {
                 ).expect("Failed to create Vello renderer")
             );
         }
-        self.vello_renderer.as_mut().unwrap()
+    }
+
+    /// Get a clone of the shared Vello renderer Arc for passing to EffectsRenderer
+    pub fn vello_renderer_arc(&self) -> Arc<Mutex<Option<vello::Renderer>>> {
+        self.vello_renderer.clone()
     }
 }
 
@@ -95,6 +103,9 @@ pub struct WindowGpuState {
 
     // Effect pipeline
     pub effect_pipeline: EffectPipeline,
+
+    // Backdrop effects renderer (grid, starfield, particles, etc.)
+    pub effects_renderer: EffectsRenderer,
 
     // Tab bar
     pub tab_bar: TabBar,

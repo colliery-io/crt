@@ -19,7 +19,7 @@ use std::time::Instant;
 
 use config::Config;
 use crt_core::{ShellTerminal, Size, Scroll};
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState};
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, GridEffect, EffectConfig};
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
 use input::{
@@ -177,6 +177,13 @@ impl App {
         let mut effect_pipeline = EffectPipeline::new(&shared.device, format);
         effect_pipeline.set_theme(theme.clone());
 
+        // Backdrop effects renderer (grid, starfield, etc.)
+        let mut effects_renderer = EffectsRenderer::new(&shared.device, shared.vello_renderer_arc(), format);
+        // Add the grid effect (disabled by default, enabled via CSS)
+        effects_renderer.add_effect(Box::new(GridEffect::new()));
+        // Configure effects from theme
+        configure_effects_from_theme(&mut effects_renderer, &theme);
+
         // Tab bar (always at top)
         let mut tab_bar = TabBar::new(&shared.device, format);
         tab_bar.set_scale_factor(scale_factor);
@@ -253,6 +260,7 @@ impl App {
             tab_glyph_cache,
             tab_title_renderer,
             effect_pipeline,
+            effects_renderer,
             tab_bar,
             terminal_vello,
             rect_renderer,
@@ -553,6 +561,9 @@ impl App {
             // Update effect pipeline with new theme
             state.gpu.effect_pipeline.set_theme(theme.clone());
 
+            // Update backdrop effects from theme
+            configure_effects_from_theme(&mut state.gpu.effects_renderer, &theme);
+
             // Update tab bar theme
             state.gpu.tab_bar.set_theme(theme.tabs.clone());
 
@@ -563,6 +574,36 @@ impl App {
             }
         }
     }
+}
+
+/// Configure backdrop effects from theme settings
+fn configure_effects_from_theme(effects_renderer: &mut EffectsRenderer, theme: &Theme) {
+    let mut config = EffectConfig::new();
+
+    // Grid effect configuration from theme
+    if let Some(ref grid) = theme.grid {
+        config.insert("grid-enabled", if grid.enabled { "true" } else { "false" });
+        // Convert Color to rgba() string
+        let c = grid.color;
+        config.insert("grid-color", format!(
+            "rgba({}, {}, {}, {})",
+            (c.r * 255.0) as u8,
+            (c.g * 255.0) as u8,
+            (c.b * 255.0) as u8,
+            c.a
+        ));
+        config.insert("grid-spacing", grid.spacing.to_string());
+        config.insert("grid-line-width", grid.line_width.to_string());
+        config.insert("grid-perspective", grid.perspective.to_string());
+        config.insert("grid-horizon", grid.horizon.to_string());
+        config.insert("grid-animation-speed", grid.animation_speed.to_string());
+        config.insert("grid-glow-radius", grid.glow_radius.to_string());
+        config.insert("grid-glow-intensity", grid.glow_intensity.to_string());
+        config.insert("grid-vanishing-spread", grid.vanishing_spread.to_string());
+        config.insert("grid-curved", if grid.curved { "true" } else { "false" });
+    }
+
+    effects_renderer.configure(&config);
 }
 
 impl ApplicationHandler for App {

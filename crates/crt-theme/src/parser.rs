@@ -805,6 +805,18 @@ fn apply_backdrop_properties(
     if let Some(v) = custom.get("--grid-animation-speed") {
         grid.animation_speed = v.parse().unwrap_or(0.5);
     }
+    if let Some(v) = custom.get("--grid-glow-radius") {
+        grid.glow_radius = v.parse().unwrap_or(0.0);
+    }
+    if let Some(v) = custom.get("--grid-glow-intensity") {
+        grid.glow_intensity = v.parse().unwrap_or(0.0);
+    }
+    if let Some(v) = custom.get("--grid-vanishing-spread") {
+        grid.vanishing_spread = v.parse().unwrap_or(0.3);
+    }
+    if let Some(v) = custom.get("--grid-curved") {
+        grid.curved = v.trim() == "true";
+    }
 
     if let Some(v) = custom.get("--grid-enabled") {
         grid.enabled = v.trim() == "true";

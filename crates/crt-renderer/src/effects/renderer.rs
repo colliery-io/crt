@@ -16,14 +16,15 @@ use super::{BackdropEffect, EffectConfig};
 /// # Usage
 ///
 /// ```ignore
-/// let effects_renderer = EffectsRenderer::new(vello_renderer);
+/// let effects_renderer = EffectsRenderer::new(device, vello_renderer, format);
 ///
 /// // Configure from theme
 /// effects_renderer.configure(&theme);
 ///
 /// // Each frame:
 /// effects_renderer.update(dt);
-/// let texture = effects_renderer.render(device, queue, (width, height));
+/// effects_renderer.render(device, queue, (width, height));
+/// effects_renderer.composite(render_pass);
 /// ```
 pub struct EffectsRenderer {
     /// Collection of active effects
@@ -46,11 +47,102 @@ pub struct EffectsRenderer {
 
     /// Total elapsed time
     time: f32,
+
+    /// Blit pipeline for compositing effects to frame
+    blit_pipeline: wgpu::RenderPipeline,
+
+    /// Bind group layout for blit
+    blit_bind_group_layout: wgpu::BindGroupLayout,
+
+    /// Sampler for blit
+    blit_sampler: wgpu::Sampler,
+
+    /// Current bind group (recreated when texture changes)
+    blit_bind_group: Option<wgpu::BindGroup>,
 }
 
 impl EffectsRenderer {
     /// Create a new effects renderer with shared Vello renderer
-    pub fn new(vello_renderer: Arc<Mutex<Option<Renderer>>>) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        vello_renderer: Arc<Mutex<Option<Renderer>>>,
+        format: wgpu::TextureFormat,
+    ) -> Self {
+        // Create blit shader
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Effects Blit Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/effects_blit.wgsl").into()),
+        });
+
+        // Bind group layout
+        let blit_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Effects Blit Bind Group Layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        // Pipeline layout
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Effects Blit Pipeline Layout"),
+            bind_group_layouts: &[&blit_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        // Blit pipeline with alpha blending
+        let blit_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Effects Blit Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            multiview: None,
+            cache: None,
+        });
+
+        // Sampler
+        let blit_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Effects Blit Sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+
         Self {
             effects: Vec::new(),
             vello_renderer,
@@ -59,6 +151,10 @@ impl EffectsRenderer {
             target_view: None,
             target_size: (0, 0),
             time: 0.0,
+            blit_pipeline,
+            blit_bind_group_layout,
+            blit_sampler,
+            blit_bind_group: None,
         }
     }
 
@@ -94,6 +190,11 @@ impl EffectsRenderer {
             }
 
             effect.configure(&effect_config);
+            log::info!(
+                "Configured effect '{}': enabled={}",
+                effect.effect_type(),
+                effect.is_enabled()
+            );
         }
     }
 
@@ -138,9 +239,38 @@ impl EffectsRenderer {
 
             let view = texture.create_view(&Default::default());
 
+            // Create bind group for blitting this texture
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Effects Blit Bind Group"),
+                layout: &self.blit_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.blit_sampler),
+                    },
+                ],
+            });
+
             self.target_texture = Some(texture);
             self.target_view = Some(view);
+            self.blit_bind_group = Some(bind_group);
             self.target_size = (width, height);
+        }
+    }
+
+    /// Composite the effects texture onto the frame
+    ///
+    /// Call this after render() to draw the effects onto the frame.
+    /// The render pass should already be started with the frame as target.
+    pub fn composite<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
+        if let Some(bind_group) = &self.blit_bind_group {
+            pass.set_pipeline(&self.blit_pipeline);
+            pass.set_bind_group(0, bind_group, &[]);
+            pass.draw(0..4, 0..1);
         }
     }
 
@@ -159,6 +289,12 @@ impl EffectsRenderer {
         // Skip if no effects enabled or invalid size
         if !self.has_enabled_effects() || width == 0 || height == 0 {
             return None;
+        }
+
+        // Log once when we first render
+        static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            log::info!("Effects render starting: {}x{}", width, height);
         }
 
         // Ensure target is sized
@@ -195,7 +331,71 @@ impl EffectsRenderer {
             return None;
         }
 
+        // Log success once
+        static LOGGED2: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !LOGGED2.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            log::info!("Effects rendered to texture successfully");
+        }
+
         self.target_view.as_ref()
+    }
+
+    /// Render all enabled effects directly to a target texture view
+    ///
+    /// This renders the effects scene directly to the provided target view,
+    /// which can be the frame's surface texture for direct rendering.
+    ///
+    /// Returns true if rendering occurred, false if skipped (no effects enabled
+    /// or invalid size).
+    pub fn render_to_view(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        target_view: &wgpu::TextureView,
+        width: u32,
+        height: u32,
+    ) -> bool {
+        // Skip if no effects enabled or invalid size
+        if !self.has_enabled_effects() || width == 0 || height == 0 {
+            return false;
+        }
+
+        // Reset scene for new frame
+        self.scene.reset();
+
+        // Build scene from all enabled effects
+        let bounds = Rect::new(0.0, 0.0, width as f64, height as f64);
+
+        for effect in &self.effects {
+            if effect.is_enabled() {
+                effect.render(&mut self.scene, bounds);
+            }
+        }
+
+        // Render scene directly to target via shared Vello renderer
+        let mut renderer_guard = match self.vello_renderer.lock() {
+            Ok(guard) => guard,
+            Err(_) => return false,
+        };
+        let renderer = match renderer_guard.as_mut() {
+            Some(r) => r,
+            None => return false,
+        };
+
+        let params = RenderParams {
+            base_color: peniko::Color::TRANSPARENT,
+            width,
+            height,
+            antialiasing_method: AaConfig::Area,
+        };
+
+        match renderer.render_to_texture(device, queue, &self.scene, target_view, &params) {
+            Ok(_) => true,
+            Err(e) => {
+                log::error!("Failed to render effects to view: {:?}", e);
+                false
+            }
+        }
     }
 
     /// Get the current render target texture view
