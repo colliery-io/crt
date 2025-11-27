@@ -231,15 +231,20 @@ impl Default for SelectionStyle {
 /// Highlight appearance (search matches)
 #[derive(Debug, Clone, Copy)]
 pub struct HighlightStyle {
+    /// Background for non-active search matches
     pub background: Color,
+    /// Text color for highlighted text
     pub foreground: Color,
+    /// Background for the current/active search match (brighter)
+    pub current_background: Color,
 }
 
 impl Default for HighlightStyle {
     fn default() -> Self {
         Self {
-            background: Color::from_hex(0xe6db74),
+            background: Color::from_hex_alpha(0x99803366), // Semi-transparent yellow
             foreground: Color::from_hex(0x1a1a1a),
+            current_background: Color::from_hex_alpha(0xe6b800b3), // Brighter yellow for current
         }
     }
 }

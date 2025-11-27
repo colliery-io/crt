@@ -121,6 +121,32 @@ pub struct WindowState {
     pub detected_urls: Vec<crate::input::DetectedUrl>,
     // Index of currently hovered URL (for hover underline effect)
     pub hovered_url_index: Option<usize>,
+    // Search state
+    pub search: SearchState,
+}
+
+/// Search match position in terminal
+#[derive(Debug, Clone, Copy)]
+pub struct SearchMatch {
+    /// Line number (viewport-relative)
+    pub line: usize,
+    /// Starting column
+    pub start_col: usize,
+    /// Ending column (exclusive)
+    pub end_col: usize,
+}
+
+/// Search state for find-in-terminal functionality
+#[derive(Debug, Clone, Default)]
+pub struct SearchState {
+    /// Whether search mode is active
+    pub active: bool,
+    /// Current search query
+    pub query: String,
+    /// All matches found
+    pub matches: Vec<SearchMatch>,
+    /// Index of current/focused match
+    pub current_match: usize,
 }
 
 /// Cursor position info returned from text buffer update
@@ -339,6 +365,33 @@ impl WindowState {
                             color: fg_color,
                             kind: DecorationKind::Underline,
                         });
+                    }
+                }
+            }
+
+            // Check if this cell is part of a search match and add background highlight
+            if self.search.active && !self.search.matches.is_empty() {
+                let highlight_style = &self.gpu.effect_pipeline.theme().highlight;
+                for (match_idx, search_match) in self.search.matches.iter().enumerate() {
+                    if search_match.line == viewport_line as usize
+                        && col >= search_match.start_col
+                        && col < search_match.end_col
+                    {
+                        // Use brighter color for current match, theme color for others
+                        let highlight_color = if match_idx == self.search.current_match {
+                            highlight_style.current_background.to_array()
+                        } else {
+                            highlight_style.background.to_array()
+                        };
+                        decorations.push(TextDecoration {
+                            x,
+                            y,
+                            cell_width,
+                            cell_height: line_height,
+                            color: highlight_color,
+                            kind: DecorationKind::Background,
+                        });
+                        break; // Only one match highlight per cell
                     }
                 }
             }

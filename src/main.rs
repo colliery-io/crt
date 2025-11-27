@@ -30,7 +30,7 @@ use input::{
 };
 use menu::MenuAction;
 use render::render_frame;
-use window::WindowState;
+use window::{WindowState, SearchMatch};
 
 use winit::{
     application::ApplicationHandler,
@@ -240,6 +240,7 @@ impl App {
             cached_render: Default::default(),
             detected_urls: Vec::new(),
             hovered_url_index: None,
+            search: Default::default(),
         };
 
         self.windows.insert(window_id, window_state);
@@ -359,6 +360,20 @@ impl App {
                     }
                 }
             }
+            MenuAction::Find => {
+                if let Some(state) = self.focused_window_mut() {
+                    // Toggle search mode
+                    state.search.active = !state.search.active;
+                    if !state.search.active {
+                        // Clear search when closing
+                        state.search.query.clear();
+                        state.search.matches.clear();
+                        state.search.current_match = 0;
+                    }
+                    state.force_active_tab_redraw();
+                    state.window.request_redraw();
+                }
+            }
             _ => log::info!("{:?} not yet implemented", action),
         }
     }
@@ -466,6 +481,48 @@ impl ApplicationHandler for App {
                     return;
                 }
 
+                // Handle search input when search is active
+                if state.search.active {
+                    match &event.logical_key {
+                        Key::Named(NamedKey::Escape) => {
+                            // Close search
+                            state.search.active = false;
+                            state.search.query.clear();
+                            state.search.matches.clear();
+                            state.search.current_match = 0;
+                            state.force_active_tab_redraw();
+                            state.window.request_redraw();
+                            return;
+                        }
+                        Key::Named(NamedKey::Enter) => {
+                            // Next match on Enter
+                            if !state.search.matches.is_empty() {
+                                state.search.current_match = (state.search.current_match + 1) % state.search.matches.len();
+                                state.force_active_tab_redraw();
+                                state.window.request_redraw();
+                            }
+                            return;
+                        }
+                        Key::Named(NamedKey::Backspace) => {
+                            // Delete last char from query
+                            state.search.query.pop();
+                            update_search_matches(state);
+                            state.force_active_tab_redraw();
+                            state.window.request_redraw();
+                            return;
+                        }
+                        Key::Character(c) if !mod_pressed => {
+                            // Add character to query
+                            state.search.query.push_str(c.as_str());
+                            update_search_matches(state);
+                            state.force_active_tab_redraw();
+                            state.window.request_redraw();
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
+
                 // Handle keyboard shortcuts
                 if mod_pressed {
                     if state.gpu.tab_bar.is_editing() {
@@ -516,6 +573,40 @@ impl ApplicationHandler for App {
                             state.create_shell_for_tab(tab_id);
                             state.dirty = true;
                             state.window.request_redraw();
+                            return;
+                        }
+                        Key::Character(c) if c.as_str() == "f" => {
+                            // Toggle search mode
+                            log::info!("Cmd+F pressed, toggling search mode");
+                            state.search.active = !state.search.active;
+                            log::info!("Search active: {}", state.search.active);
+                            if !state.search.active {
+                                // Clear search when closing
+                                state.search.query.clear();
+                                state.search.matches.clear();
+                                state.search.current_match = 0;
+                            }
+                            state.force_active_tab_redraw();
+                            state.window.request_redraw();
+                            return;
+                        }
+                        Key::Character(c) if c.as_str() == "g" => {
+                            // Next/prev match
+                            if state.search.active && !state.search.matches.is_empty() {
+                                if shift_pressed {
+                                    // Previous match
+                                    if state.search.current_match == 0 {
+                                        state.search.current_match = state.search.matches.len() - 1;
+                                    } else {
+                                        state.search.current_match -= 1;
+                                    }
+                                } else {
+                                    // Next match
+                                    state.search.current_match = (state.search.current_match + 1) % state.search.matches.len();
+                                }
+                                state.force_active_tab_redraw();
+                                state.window.request_redraw();
+                            }
                             return;
                         }
                         Key::Character(c) if c.as_str() == "[" && self.modifiers.state().shift_key() => {
@@ -704,6 +795,49 @@ impl ApplicationHandler for App {
 
         for state in self.windows.values() {
             state.window.request_redraw();
+        }
+    }
+}
+
+/// Update search matches based on current query
+fn update_search_matches(state: &mut WindowState) {
+    state.search.matches.clear();
+    state.search.current_match = 0;
+
+    let query = &state.search.query;
+    if query.is_empty() {
+        return;
+    }
+
+    // Get active shell's terminal content
+    let active_tab_id = state.gpu.tab_bar.active_tab_id();
+    let shell = active_tab_id.and_then(|id| state.shells.get(&id));
+    let Some(shell) = shell else { return };
+
+    let terminal = shell.terminal();
+    let content = terminal.renderable_content();
+    let display_offset = terminal.display_offset() as i32;
+
+    // Collect line text and search for matches
+    let mut line_texts: std::collections::BTreeMap<i32, String> = std::collections::BTreeMap::new();
+    for cell in content.display_iter {
+        let viewport_line = cell.point.line.0 + display_offset;
+        line_texts.entry(viewport_line).or_default().push(cell.c);
+    }
+
+    // Search each line for the query (case-insensitive)
+    let query_lower = query.to_lowercase();
+    for (viewport_line, line_text) in &line_texts {
+        let line_lower = line_text.to_lowercase();
+        let mut start = 0;
+        while let Some(pos) = line_lower[start..].find(&query_lower) {
+            let match_start = start + pos;
+            state.search.matches.push(SearchMatch {
+                line: *viewport_line as usize,
+                start_col: match_start,
+                end_col: match_start + query.len(),
+            });
+            start = match_start + 1;
         }
     }
 }

@@ -267,6 +267,11 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
     // Pass 7: Render tab title text with glow
     render_tab_titles(state, shared, &mut encoder, &frame_view);
 
+    // Pass 8: Render search bar overlay (if search is active)
+    if state.search.active {
+        render_search_bar(state, shared, &mut encoder, &frame_view);
+    }
+
     shared.queue.submit(std::iter::once(encoder.finish()));
     frame.present();
 }
@@ -398,6 +403,112 @@ fn render_tab_titles(
 
     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("Tab Title Render Pass"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: frame_view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+            depth_slice: None,
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    });
+
+    state.gpu.tab_title_renderer.render(&shared.queue, &mut pass);
+}
+
+/// Render search bar overlay
+fn render_search_bar(
+    state: &mut WindowState,
+    shared: &SharedGpuState,
+    encoder: &mut wgpu::CommandEncoder,
+    frame_view: &wgpu::TextureView,
+) {
+    let (_, content_offset_y) = state.gpu.tab_bar.content_offset();
+
+    // Theme colors for search bar
+    let bg_color = [0.15, 0.15, 0.2, 0.95]; // Dark semi-transparent background
+    let border_color = [0.3, 0.5, 0.7, 0.8]; // Accent border
+
+    // Prepare vello scene with search bar background
+    state.gpu.terminal_vello.prepare(
+        &shared.device,
+        state.gpu.config.width,
+        state.gpu.config.height,
+    );
+
+    let (text_x, text_y, _text_width, text_height) = state.gpu.terminal_vello.add_search_bar(
+        state.gpu.config.width as f32,
+        content_offset_y,
+        state.scale_factor,
+        bg_color,
+        border_color,
+    );
+
+    // Render vello scene to texture
+    if let Err(e) = state.gpu.terminal_vello.render_to_texture(&shared.device, &shared.queue) {
+        log::warn!("Search bar vello render error: {:?}", e);
+    }
+
+    // Composite search bar background onto frame
+    if let Some(vello_view) = state.gpu.terminal_vello.texture_view() {
+        composite_vello_texture(
+            &shared.device,
+            encoder,
+            frame_view,
+            vello_view,
+            state.gpu.config.width,
+            state.gpu.config.height,
+            state.gpu.config.height as f32,
+        );
+    }
+
+    // Render search text using tab glyph cache
+    state.gpu.tab_title_renderer.clear();
+
+    // Build display text: query with cursor + match count
+    let query = &state.search.query;
+    let match_count = state.search.matches.len();
+    let current_match = state.search.current_match + 1; // 1-indexed for display
+
+    let display_text = if query.is_empty() {
+        "Find...".to_string()
+    } else if match_count > 0 {
+        format!("{}| ({}/{})", query, current_match, match_count)
+    } else {
+        format!("{}| (no matches)", query)
+    };
+
+    // Render text
+    let text_color = if query.is_empty() {
+        [0.5, 0.5, 0.5, 0.8] // Placeholder color
+    } else if match_count > 0 {
+        [0.9, 0.9, 0.9, 1.0] // Normal text
+    } else {
+        [0.9, 0.5, 0.5, 1.0] // Red for no matches
+    };
+
+    let mut glyphs = Vec::new();
+    let mut char_x = text_x;
+    let font_height = 14.0 * state.scale_factor;
+    let text_baseline_y = text_y + (text_height - font_height) / 2.0;
+
+    for c in display_text.chars() {
+        if let Some(glyph) = state.gpu.tab_glyph_cache.position_char(c, char_x, text_baseline_y) {
+            glyphs.push(glyph);
+        }
+        char_x += state.gpu.tab_glyph_cache.cell_width();
+    }
+
+    state.gpu.tab_title_renderer.push_glyphs(&glyphs, text_color);
+    state.gpu.tab_glyph_cache.flush(&shared.queue);
+
+    // Render text pass
+    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("Search Bar Text Render Pass"),
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
             view: frame_view,
             resolve_target: None,

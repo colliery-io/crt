@@ -410,6 +410,75 @@ impl TerminalVelloRenderer {
             &rect,
         );
     }
+
+    /// Add a search bar background to the scene
+    /// Returns the text position (x, y) for rendering the query text
+    pub fn add_search_bar(
+        &mut self,
+        screen_width: f32,
+        content_offset_y: f32,
+        scale_factor: f32,
+        background_color: [f32; 4],
+        border_color: [f32; 4],
+    ) -> (f32, f32, f32, f32) {
+        let padding = 8.0 * scale_factor;
+        let bar_height = 32.0 * scale_factor;
+        let bar_width = 280.0 * scale_factor;
+        let border_radius = 6.0 * scale_factor;
+        let margin = 10.0 * scale_factor;
+
+        // Position at top-right, below tab bar
+        let bar_x = screen_width - bar_width - margin;
+        let bar_y = content_offset_y + margin;
+
+        // Draw background with rounded corners
+        let rect = kurbo::RoundedRect::new(
+            bar_x as f64,
+            bar_y as f64,
+            (bar_x + bar_width) as f64,
+            (bar_y + bar_height) as f64,
+            border_radius as f64,
+        );
+
+        // Background fill
+        let bg_brush = peniko::Brush::Solid(color_from_f32(
+            background_color[0],
+            background_color[1],
+            background_color[2],
+            background_color[3],
+        ));
+        self.scene.fill(
+            peniko::Fill::NonZero,
+            kurbo::Affine::IDENTITY,
+            &bg_brush,
+            None,
+            &rect,
+        );
+
+        // Border stroke
+        let border_brush = peniko::Brush::Solid(color_from_f32(
+            border_color[0],
+            border_color[1],
+            border_color[2],
+            border_color[3],
+        ));
+        let stroke = kurbo::Stroke::new(1.5 * scale_factor as f64);
+        self.scene.stroke(
+            &stroke,
+            kurbo::Affine::IDENTITY,
+            &border_brush,
+            None,
+            &rect,
+        );
+
+        // Return text position and dimensions for text rendering
+        let text_x = bar_x + padding;
+        let text_y = bar_y + padding;
+        let text_width = bar_width - padding * 2.0;
+        let text_height = bar_height - padding * 2.0;
+
+        (text_x, text_y, text_width, text_height)
+    }
 }
 
 /// Helper to create a peniko Color from f32 RGBA components (0.0-1.0)

@@ -503,7 +503,7 @@ fn apply_properties(
             apply_selection_properties(theme, standard)?;
         }
         ":terminal::highlight" | "terminal::highlight" => {
-            apply_highlight_properties(theme, standard)?;
+            apply_highlight_properties(theme, standard, custom)?;
         }
         ":terminal::cursor" | "terminal::cursor" => {
             apply_cursor_properties(theme, standard)?;
@@ -608,12 +608,16 @@ fn apply_selection_properties(
 fn apply_highlight_properties(
     theme: &mut Theme,
     standard: &HashMap<String, String>,
+    custom: &HashMap<String, String>,
 ) -> Result<(), ThemeParseError> {
     if let Some(bg) = standard.get("background") {
         theme.highlight.background = parse_color(bg)?;
     }
     if let Some(fg) = standard.get("color") {
         theme.highlight.foreground = parse_color(fg)?;
+    }
+    if let Some(bg) = custom.get("--current-background") {
+        theme.highlight.current_background = parse_color(bg)?;
     }
     Ok(())
 }
