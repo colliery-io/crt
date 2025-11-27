@@ -450,6 +450,11 @@ pub fn handle_resize(
         new_width as f32,
         new_height as f32,
     );
+    state.gpu.output_grid_renderer.update_screen_size(
+        &shared.queue,
+        new_width as f32,
+        new_height as f32,
+    );
     state.gpu.tab_title_renderer.update_screen_size(
         &shared.queue,
         new_width as f32,
