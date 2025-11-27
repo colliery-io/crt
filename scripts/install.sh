@@ -85,10 +85,12 @@ check_dependencies() {
     done
 }
 
-# Get latest release version from GitHub
+# Get latest release version from GitHub (includes prereleases)
 get_latest_version() {
-    curl -sSL "${GITHUB_API}/releases/latest" | \
+    # Use /releases instead of /releases/latest to include prereleases
+    curl -sSL "${GITHUB_API}/releases" | \
         grep '"tag_name":' | \
+        head -1 | \
         sed -E 's/.*"tag_name": *"([^"]+)".*/\1/' | \
         sed 's/^v//'
 }
