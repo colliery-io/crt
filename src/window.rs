@@ -63,20 +63,16 @@ fn ansi_color_to_rgba(color: AnsiColor, palette: &AnsiPalette, default_color: [f
         // Indexed colors (0-255)
         Indexed(idx) => {
             if idx < 16 {
-                // First 16 are the ANSI palette
+                // First 16 are the base ANSI palette
                 palette.get(idx).to_array()
-            } else if idx < 232 {
-                // 216 color cube (16-231)
-                let idx = idx - 16;
-                let r = (idx / 36) % 6;
-                let g = (idx / 6) % 6;
-                let b = idx % 6;
-                let to_float = |v: u8| if v == 0 { 0.0 } else { (v as f32 * 40.0 + 55.0) / 255.0 };
-                [to_float(r), to_float(g), to_float(b), 1.0]
             } else {
-                // Grayscale (232-255)
-                let gray = ((idx - 232) as f32 * 10.0 + 8.0) / 255.0;
-                [gray, gray, gray, 1.0]
+                // Extended colors (16-255): check for theme override first
+                if let Some(color) = palette.get_extended(idx) {
+                    color.to_array()
+                } else {
+                    // Fall back to calculated standard 256-color palette
+                    AnsiPalette::calculate_extended(idx).to_array()
+                }
             }
         }
         // Direct RGB color

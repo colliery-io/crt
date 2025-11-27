@@ -82,9 +82,11 @@ impl Default for Typography {
     }
 }
 
-/// 16-color ANSI palette
+/// 256-color ANSI palette
+/// Base 16 colors are stored as named fields, extended colors (16-255) in a HashMap
 #[derive(Debug, Clone)]
 pub struct AnsiPalette {
+    // Base 16 colors (0-15)
     pub black: Color,
     pub red: Color,
     pub green: Color,
@@ -101,10 +103,12 @@ pub struct AnsiPalette {
     pub bright_magenta: Color,
     pub bright_cyan: Color,
     pub bright_white: Color,
+    // Extended colors (16-255) - only stores overrides, None means use calculated default
+    extended: std::collections::HashMap<u8, Color>,
 }
 
 impl AnsiPalette {
-    /// Get color by ANSI index (0-15)
+    /// Get base color by ANSI index (0-15)
     pub fn get(&self, index: u8) -> Color {
         match index {
             0 => self.black,
@@ -124,6 +128,46 @@ impl AnsiPalette {
             14 => self.bright_cyan,
             15 => self.bright_white,
             _ => self.white,
+        }
+    }
+
+    /// Get extended color by index (16-255), returns None if not overridden
+    pub fn get_extended(&self, index: u8) -> Option<Color> {
+        self.extended.get(&index).copied()
+    }
+
+    /// Set an extended color (16-255)
+    pub fn set_extended(&mut self, index: u8, color: Color) {
+        if index >= 16 {
+            self.extended.insert(index, color);
+        }
+    }
+
+    /// Check if an extended color is overridden
+    pub fn has_extended(&self, index: u8) -> bool {
+        self.extended.contains_key(&index)
+    }
+
+    /// Calculate the default color for extended palette indices (16-255)
+    /// Returns the standard 256-color palette value
+    pub fn calculate_extended(index: u8) -> Color {
+        if index < 16 {
+            // Should use get() for base colors
+            Color::rgb(1.0, 1.0, 1.0)
+        } else if index < 232 {
+            // 216 color cube (16-231)
+            // 6x6x6 color cube: r, g, b each from 0-5
+            let idx = index - 16;
+            let r = (idx / 36) % 6;
+            let g = (idx / 6) % 6;
+            let b = idx % 6;
+            let to_float = |v: u8| if v == 0 { 0.0 } else { (v as f32 * 40.0 + 55.0) / 255.0 };
+            Color::rgb(to_float(r), to_float(g), to_float(b))
+        } else {
+            // Grayscale (232-255)
+            // 24 shades of gray from dark to light
+            let gray = ((index - 232) as f32 * 10.0 + 8.0) / 255.0;
+            Color::rgb(gray, gray, gray)
         }
     }
 }
@@ -148,6 +192,7 @@ impl Default for AnsiPalette {
             bright_magenta: Color::from_hex(0xff92df),
             bright_cyan: Color::from_hex(0xa4ffff),
             bright_white: Color::from_hex(0xffffff),
+            extended: std::collections::HashMap::new(),
         }
     }
 }
@@ -661,5 +706,58 @@ mod tests {
         let palette = AnsiPalette::default();
         let red = palette.get(1);
         assert!((red.r - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_ansi_palette_extended() {
+        let mut palette = AnsiPalette::default();
+
+        // No extended colors initially
+        assert!(palette.get_extended(226).is_none());
+        assert!(!palette.has_extended(226));
+
+        // Set an extended color
+        let green = Color::from_hex(0x61fe71);
+        palette.set_extended(226, green);
+
+        // Now it should be present
+        assert!(palette.has_extended(226));
+        let retrieved = palette.get_extended(226);
+        assert!(retrieved.is_some());
+        let c = retrieved.unwrap();
+        assert!((c.r - green.r).abs() < 0.01);
+        assert!((c.g - green.g).abs() < 0.01);
+        assert!((c.b - green.b).abs() < 0.01);
+
+        // Base colors (0-15) should not be set via set_extended
+        palette.set_extended(5, green);
+        assert!(!palette.has_extended(5));
+    }
+
+    #[test]
+    fn test_calculate_extended() {
+        // Test color cube calculation (16-231)
+        // Color 16 is rgb(0,0,0) in the cube
+        let c16 = AnsiPalette::calculate_extended(16);
+        assert!((c16.r - 0.0).abs() < 0.01);
+        assert!((c16.g - 0.0).abs() < 0.01);
+        assert!((c16.b - 0.0).abs() < 0.01);
+
+        // Color 226 is yellow in standard 256-color palette
+        // Index 226-16 = 210, r=210/36=5, g=(210/6)%6=5, b=210%6=0
+        let c226 = AnsiPalette::calculate_extended(226);
+        assert!(c226.r > 0.9); // Should be bright red component
+        assert!(c226.g > 0.9); // Should be bright green component
+        assert!((c226.b - 0.0).abs() < 0.01); // No blue
+
+        // Test grayscale (232-255)
+        let c232 = AnsiPalette::calculate_extended(232);
+        assert!((c232.r - c232.g).abs() < 0.01); // Should be gray
+        assert!((c232.g - c232.b).abs() < 0.01);
+        assert!(c232.r < 0.1); // Dark gray
+
+        let c255 = AnsiPalette::calculate_extended(255);
+        assert!((c255.r - c255.g).abs() < 0.01); // Should be gray
+        assert!(c255.r > 0.8); // Light gray
     }
 }

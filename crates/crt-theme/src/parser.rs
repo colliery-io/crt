@@ -987,7 +987,7 @@ fn apply_palette_properties(
     theme: &mut Theme,
     custom: &HashMap<String, String>,
 ) -> Result<(), ThemeParseError> {
-    // Indexed palette (--color-0 through --color-15)
+    // Base 16 colors (--color-0 through --color-15)
     if let Some(c) = custom.get("--color-0") {
         theme.palette.black = parse_color(c)?;
     }
@@ -1036,6 +1036,17 @@ fn apply_palette_properties(
     if let Some(c) = custom.get("--color-15") {
         theme.palette.bright_white = parse_color(c)?;
     }
+
+    // Extended colors (--color-16 through --color-255)
+    // These override the standard 256-color palette calculations
+    for idx in 16u8..=255 {
+        let key = format!("--color-{}", idx);
+        if let Some(c) = custom.get(&key) {
+            let color = parse_color(c)?;
+            theme.palette.set_extended(idx, color);
+        }
+    }
+
     Ok(())
 }
 
@@ -1185,5 +1196,40 @@ mod tests {
         assert_eq!(parse_background_repeat("repeat"), BackgroundRepeat::Repeat);
         assert_eq!(parse_background_repeat("repeat-x"), BackgroundRepeat::RepeatX);
         assert_eq!(parse_background_repeat("repeat-y"), BackgroundRepeat::RepeatY);
+    }
+
+    #[test]
+    fn test_parse_extended_palette() {
+        let css = r#"
+            :terminal::palette {
+                --color-0: #000000;
+                --color-15: #ffffff;
+                --color-226: #61fe71;
+                --color-178: #71fe81;
+                --color-255: #7d8d80;
+            }
+        "#;
+
+        let theme = parse_theme(css).unwrap();
+
+        // Base colors
+        assert!((theme.palette.black.r - 0.0).abs() < 0.01);
+        assert!((theme.palette.bright_white.r - 1.0).abs() < 0.01);
+
+        // Extended colors should be set
+        let color_226 = theme.palette.get_extended(226);
+        assert!(color_226.is_some());
+        let c = color_226.unwrap();
+        assert!((c.r - 0.38).abs() < 0.02); // #61 = 97/255 = 0.38
+
+        let color_178 = theme.palette.get_extended(178);
+        assert!(color_178.is_some());
+
+        let color_255 = theme.palette.get_extended(255);
+        assert!(color_255.is_some());
+
+        // Non-overridden extended color should return None
+        let color_100 = theme.palette.get_extended(100);
+        assert!(color_100.is_none());
     }
 }

@@ -277,10 +277,11 @@ impl GlyphCache {
             let glyph_id = font.charmap().map('M');
             if glyph_id != 0 {
                 // Render to get dimensions
+                // Prioritize scalable sources over fixed-size bitmaps
                 if let Some(image) = Render::new(&[
                     Source::ColorOutline(0),
-                    Source::ColorBitmap(StrikeWith::BestFit),
                     Source::Outline,
+                    Source::ColorBitmap(StrikeWith::BestFit),
                 ])
                 .format(Format::Alpha)
                 .render(&mut scaler, glyph_id)
@@ -350,10 +351,11 @@ impl GlyphCache {
             .build();
 
         // Render the glyph
+        // Prioritize scalable sources (outlines) over fixed-size bitmaps for proper zoom support
         let image = Render::new(&[
-            Source::ColorOutline(0),
-            Source::ColorBitmap(StrikeWith::BestFit),
-            Source::Outline,
+            Source::ColorOutline(0),  // Scalable color outlines (COLR/CPAL fonts)
+            Source::Outline,          // Scalable monochrome outlines
+            Source::ColorBitmap(StrikeWith::BestFit),  // Fixed-size bitmaps (last resort)
         ])
         .format(Format::Alpha)
         .render(&mut scaler, glyph_id)?;
