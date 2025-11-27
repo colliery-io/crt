@@ -8,6 +8,7 @@
 //! text when it actually changes.
 
 pub mod background_image;
+pub mod effects;
 pub mod glyph_cache;
 pub mod grid_renderer;
 pub mod rect_renderer;
@@ -16,6 +17,7 @@ pub mod tab_bar;
 pub mod terminal_vello;
 
 pub use background_image::{BackgroundImageState, BackgroundTexture, LoadedImage, ImageFrame};
+pub use effects::{BackdropEffect, EffectConfig, EffectsRenderer, Position};
 pub use glyph_cache::{GlyphCache, GlyphKey, GlyphStyle, FontVariants, CachedGlyph, PositionedGlyph};
 pub use grid_renderer::GridRenderer;
 pub use rect_renderer::RectRenderer;
