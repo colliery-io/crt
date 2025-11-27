@@ -1419,7 +1419,7 @@ fn handle_context_menu_action(state: &mut WindowState, item: ContextMenuItem) {
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn,crt=info")).init();
-    log::info!("CRT Terminal - swash renderer + effect pipeline");
+    log::info!("CRT Terminal starting");
 
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);

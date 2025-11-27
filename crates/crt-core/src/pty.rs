@@ -48,7 +48,15 @@ impl Pty {
             .or_else(|| std::env::var("SHELL").ok())
             .unwrap_or_else(|| String::from("/bin/sh"));
 
-        let cmd = CommandBuilder::new(&shell);
+        let mut cmd = CommandBuilder::new(&shell);
+        // Spawn as login shell so it sources user's profile (.zprofile, .bash_profile, etc.)
+        // This ensures proper PATH, LANG, and other user environment settings
+        cmd.arg("-l");
+        // Set terminal-specific environment variables (we know our capabilities)
+        // TERM is critical - without it, shells may output prompts incorrectly
+        cmd.env("TERM", "xterm-256color");
+        // COLORTERM indicates 24-bit true color support
+        cmd.env("COLORTERM", "truecolor");
         let child = pair.slave.spawn_command(cmd)?;
 
         // Set up channels for communication
