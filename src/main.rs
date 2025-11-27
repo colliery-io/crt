@@ -19,7 +19,7 @@ use std::time::Instant;
 
 use config::Config;
 use crt_core::{ShellTerminal, Size, Scroll};
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, GridEffect, StarfieldEffect, RainEffect, ParticleEffect, EffectConfig};
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, GridEffect, StarfieldEffect, RainEffect, ParticleEffect, MatrixEffect, EffectConfig};
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
 use input::{
@@ -184,6 +184,7 @@ impl App {
         effects_renderer.add_effect(Box::new(StarfieldEffect::new()));
         effects_renderer.add_effect(Box::new(RainEffect::new()));
         effects_renderer.add_effect(Box::new(ParticleEffect::new()));
+        effects_renderer.add_effect(Box::new(MatrixEffect::new()));
         // Configure effects from theme
         configure_effects_from_theme(&mut effects_renderer, &theme);
 
@@ -668,6 +669,23 @@ fn configure_effects_from_theme(effects_renderer: &mut EffectsRenderer, theme: &
         config.insert("particles-speed", particles.speed.to_string());
         config.insert("particles-glow-radius", particles.glow_radius.to_string());
         config.insert("particles-glow-intensity", particles.glow_intensity.to_string());
+    }
+
+    // Matrix effect configuration from theme
+    if let Some(ref matrix) = theme.matrix {
+        config.insert("matrix-enabled", if matrix.enabled { "true" } else { "false" });
+        let c = matrix.color;
+        config.insert("matrix-color", format!(
+            "rgba({}, {}, {}, {})",
+            (c.r * 255.0) as u8,
+            (c.g * 255.0) as u8,
+            (c.b * 255.0) as u8,
+            c.a
+        ));
+        config.insert("matrix-density", matrix.density.to_string());
+        config.insert("matrix-speed", matrix.speed.to_string());
+        config.insert("matrix-font-size", matrix.font_size.to_string());
+        config.insert("matrix-charset", matrix.charset.clone());
     }
 
     effects_renderer.configure(&config);

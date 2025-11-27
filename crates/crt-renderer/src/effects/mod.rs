@@ -22,6 +22,7 @@
 //! ```
 
 pub mod grid;
+pub mod matrix;
 pub mod motion;
 pub mod particles;
 pub mod rain;
@@ -29,6 +30,7 @@ pub mod renderer;
 pub mod starfield;
 
 pub use grid::GridEffect;
+pub use matrix::MatrixEffect;
 pub use motion::MotionBehavior;
 pub use particles::ParticleEffect;
 pub use rain::RainEffect;

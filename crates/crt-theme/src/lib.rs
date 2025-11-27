@@ -573,6 +573,30 @@ impl Default for ParticleEffect {
     }
 }
 
+/// Backdrop matrix effect (falling code columns)
+#[derive(Debug, Clone)]
+pub struct MatrixEffect {
+    pub enabled: bool,
+    pub color: Color,
+    pub density: f32,
+    pub speed: f32,
+    pub font_size: f32,
+    pub charset: String,
+}
+
+impl Default for MatrixEffect {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            color: Color::rgb(0.0, 1.0, 0.27), // Classic matrix green
+            density: 1.0,
+            speed: 8.0,
+            font_size: 14.0,
+            charset: String::new(), // Empty means use default katakana + numbers
+        }
+    }
+}
+
 /// Selection appearance
 #[derive(Debug, Clone, Copy)]
 pub struct SelectionStyle {
@@ -753,6 +777,7 @@ pub struct Theme {
     pub starfield: Option<StarfieldEffect>,
     pub rain: Option<RainEffect>,
     pub particles: Option<ParticleEffect>,
+    pub matrix: Option<MatrixEffect>,
 
     // Tab styling
     pub tabs: TabTheme,
@@ -793,6 +818,7 @@ impl Theme {
             starfield: None,
             rain: None,
             particles: None,
+            matrix: None,
             tabs: TabTheme::default(),
         }
     }
@@ -816,6 +842,7 @@ impl Theme {
             starfield: None,
             rain: None,
             particles: None,
+            matrix: None,
             tabs: TabTheme::default(),
         }
     }

@@ -15,8 +15,8 @@ use lightningcss::printer::PrinterOptions;
 
 use crate::{
     BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
-    Color, GridEffect, LinearGradient, ParticleBehavior, ParticleEffect, ParticleShape,
-    RainEffect, StarDirection, StarfieldEffect, TextShadow, Theme,
+    Color, GridEffect, LinearGradient, MatrixEffect, ParticleBehavior, ParticleEffect,
+    ParticleShape, RainEffect, StarDirection, StarfieldEffect, TextShadow, Theme,
 };
 
 #[derive(Error, Debug)]
@@ -978,6 +978,40 @@ fn apply_backdrop_properties(
 
     if particles.enabled {
         theme.particles = Some(particles);
+    }
+
+    // Parse matrix effect properties
+    let mut matrix = theme.matrix.clone().unwrap_or(MatrixEffect {
+        enabled: false,
+        ..Default::default()
+    });
+
+    let has_matrix_props = custom.keys().any(|k| k.starts_with("--matrix-"));
+
+    if let Some(v) = custom.get("--matrix-color") {
+        matrix.color = parse_color(v)?;
+    }
+    if let Some(v) = custom.get("--matrix-density") {
+        matrix.density = v.parse().unwrap_or(1.0);
+    }
+    if let Some(v) = custom.get("--matrix-speed") {
+        matrix.speed = v.parse().unwrap_or(8.0);
+    }
+    if let Some(v) = custom.get("--matrix-font-size") {
+        matrix.font_size = v.parse().unwrap_or(14.0);
+    }
+    if let Some(v) = custom.get("--matrix-charset") {
+        matrix.charset = v.trim_matches('"').to_string();
+    }
+
+    if let Some(v) = custom.get("--matrix-enabled") {
+        matrix.enabled = v.trim() == "true";
+    } else if has_matrix_props {
+        matrix.enabled = true;
+    }
+
+    if matrix.enabled {
+        theme.matrix = Some(matrix);
     }
 
     Ok(())

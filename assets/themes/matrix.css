@@ -1,0 +1,21 @@
+/* Matrix Falling Code Theme */
+/* Classic green matrix rain effect */
+/* Optional: --matrix-charset for custom characters (e.g., "ATGC" for DNA) */
+
+:terminal {
+    background: #0a0a0a;
+}
+
+:terminal::backdrop {
+    --matrix-enabled: true;
+    --matrix-color: #00ff46;
+    --matrix-density: 1.0;
+    --matrix-speed: 8;
+    --matrix-font-size: 14;
+    --matrix-charset: "ATGC";
+}
+
+:terminal::selection {
+    background: #00ff46;
+    color: #0a0a0a;
+}
