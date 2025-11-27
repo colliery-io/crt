@@ -226,6 +226,7 @@ pub fn handle_shell_input(
     state: &mut WindowState,
     key: &Key,
     mod_pressed: bool,
+    ctrl_pressed: bool,
 ) -> bool {
     let tab_id = state.gpu.tab_bar.active_tab_id();
     let Some(tab_id) = tab_id else { return false };
@@ -270,7 +271,25 @@ pub fn handle_shell_input(
             input_sent = true;
         }
         Key::Character(c) => {
-            if !mod_pressed {
+            if ctrl_pressed && !mod_pressed {
+                // Convert Ctrl+letter to control character (ASCII 1-26)
+                // Ctrl+A = 0x01, Ctrl+B = 0x02, ..., Ctrl+Z = 0x1A
+                if let Some(ch) = c.chars().next() {
+                    let ctrl_char = match ch.to_ascii_lowercase() {
+                        'a'..='z' => Some((ch.to_ascii_lowercase() as u8) - b'a' + 1),
+                        '[' => Some(0x1b), // Ctrl+[ = Escape
+                        '\\' => Some(0x1c), // Ctrl+\
+                        ']' => Some(0x1d), // Ctrl+]
+                        '^' => Some(0x1e), // Ctrl+^
+                        '_' => Some(0x1f), // Ctrl+_
+                        _ => None,
+                    };
+                    if let Some(byte) = ctrl_char {
+                        shell.send_input(&[byte]);
+                        input_sent = true;
+                    }
+                }
+            } else if !mod_pressed {
                 shell.send_input(c.as_bytes());
                 input_sent = true;
             }

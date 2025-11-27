@@ -500,4 +500,76 @@ impl GlyphCache {
     pub fn cell_width(&self) -> f32 {
         self.cached_cell_width
     }
+
+    /// Update font size for zoom functionality
+    ///
+    /// This clears the glyph cache and recalculates metrics.
+    /// Call `precache_ascii()` and `flush()` after this to repopulate the cache.
+    pub fn set_font_size(&mut self, queue: &wgpu::Queue, new_font_size: f32) {
+        if (self.font_size - new_font_size).abs() < 0.001 {
+            return;
+        }
+
+        self.font_size = new_font_size;
+
+        // Recalculate metrics
+        if let Some(font) = FontRef::from_index(&self.fonts.regular, 0) {
+            let metrics = font.metrics(&[]);
+            let units_per_em = metrics.units_per_em as f32;
+            let scale = new_font_size / units_per_em;
+
+            let ascent = metrics.ascent as f32 * scale;
+            let descent = metrics.descent as f32 * scale;
+            let line_gap = metrics.leading as f32 * scale;
+            let vertical_padding = new_font_size * 0.7;
+
+            self.cached_line_height = ascent + descent.abs() + line_gap + vertical_padding;
+            self.baseline_offset = ascent + (vertical_padding / 2.0);
+
+            // Get cell width from glyph advance
+            let glyph_id = font.charmap().map('M');
+            let advance = font.glyph_metrics(&[]).advance_width(glyph_id);
+            self.cached_cell_width = if advance > 0.0 {
+                advance * scale
+            } else {
+                new_font_size * 0.6
+            };
+            // Fallback if zero
+            if self.cached_cell_width <= 0.0 {
+                self.cached_cell_width = new_font_size * 0.6;
+            }
+        }
+
+        // Clear cached glyphs
+        self.glyphs.clear();
+
+        // Reset atlas packer
+        self.packer = AtlasPacker::new(self.atlas_width, self.atlas_height);
+
+        // Clear atlas texture (fill with zeros)
+        let clear_data = vec![0u8; (self.atlas_width * self.atlas_height) as usize];
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.atlas_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &clear_data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(self.atlas_width),
+                rows_per_image: Some(self.atlas_height),
+            },
+            wgpu::Extent3d {
+                width: self.atlas_width,
+                height: self.atlas_height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        // Clear staging
+        self.staging_data.clear();
+        self.pending_uploads.clear();
+    }
 }

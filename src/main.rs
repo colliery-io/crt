@@ -338,11 +338,11 @@ impl App {
             MenuAction::IncreaseFontSize => self.adjust_font_scale(FONT_SCALE_STEP),
             MenuAction::DecreaseFontSize => self.adjust_font_scale(-FONT_SCALE_STEP),
             MenuAction::ResetFontSize => {
-                if let Some(state) = self.focused_window_mut() {
-                    if (state.font_scale - 1.0).abs() > 0.001 {
-                        state.font_scale = 1.0;
-                        state.dirty = true;
-                        state.window.request_redraw();
+                // Compute delta to get back to scale 1.0
+                if let Some(state) = self.windows.get(&self.focused_window.unwrap_or(WindowId::dummy())) {
+                    let delta = 1.0 - state.font_scale;
+                    if delta.abs() > 0.001 {
+                        self.adjust_font_scale(delta);
                     }
                 }
             }
@@ -396,13 +396,65 @@ impl App {
 
     #[cfg(target_os = "macos")]
     fn adjust_font_scale(&mut self, delta: f32) {
-        if let Some(state) = self.focused_window_mut() {
-            let new_scale = (state.font_scale + delta).clamp(MIN_FONT_SCALE, MAX_FONT_SCALE);
-            if (new_scale - state.font_scale).abs() > 0.001 {
-                state.font_scale = new_scale;
-                state.dirty = true;
-                state.window.request_redraw();
+        use crt_core::Size;
+
+        let base_font_size = self.config.font.size;
+        let focused_id = match self.focused_window {
+            Some(id) => id,
+            None => return,
+        };
+
+        let shared = match self.shared_gpu.as_ref() {
+            Some(s) => s,
+            None => return,
+        };
+
+        let state = match self.windows.get_mut(&focused_id) {
+            Some(s) => s,
+            None => return,
+        };
+
+        let new_scale = (state.font_scale + delta).clamp(MIN_FONT_SCALE, MAX_FONT_SCALE);
+        if (new_scale - state.font_scale).abs() > 0.001 {
+            state.font_scale = new_scale;
+
+            // Update glyph cache with new font size
+            let new_font_size = base_font_size * new_scale * state.scale_factor;
+            state.gpu.glyph_cache.set_font_size(&shared.queue, new_font_size);
+            state.gpu.glyph_cache.precache_ascii();
+            state.gpu.glyph_cache.flush(&shared.queue);
+
+            // Update grid renderer with new glyph cache
+            state.gpu.grid_renderer.set_glyph_cache(&shared.device, &state.gpu.glyph_cache);
+
+            // Recalculate terminal grid size (like resize does)
+            let cell_width = state.gpu.glyph_cache.cell_width();
+            let line_height = state.gpu.glyph_cache.line_height();
+            let tab_bar_height = state.gpu.tab_bar.height();
+
+            let padding_physical = 20.0 * state.scale_factor;
+            let tab_bar_physical = tab_bar_height * state.scale_factor;
+
+            let content_width = (state.gpu.config.width as f32 - padding_physical).max(60.0);
+            let content_height = (state.gpu.config.height as f32 - padding_physical - tab_bar_physical).max(40.0);
+
+            let new_cols = ((content_width / cell_width) as usize).max(10);
+            let new_rows = ((content_height / line_height) as usize).max(4);
+
+            state.cols = new_cols;
+            state.rows = new_rows;
+
+            // Resize all shells to match new grid size
+            for shell in state.shells.values_mut() {
+                shell.resize(Size::new(new_cols, new_rows));
             }
+
+            // Force full redraw
+            state.dirty = true;
+            for hash in state.content_hashes.values_mut() {
+                *hash = 0;
+            }
+            state.window.request_redraw();
         }
     }
 
@@ -664,7 +716,8 @@ impl ApplicationHandler for App {
                 }
 
                 // Send to shell (clears selection on input)
-                if handle_shell_input(state, &event.logical_key, mod_pressed) {
+                let ctrl_pressed = self.modifiers.state().control_key();
+                if handle_shell_input(state, &event.logical_key, mod_pressed, ctrl_pressed) {
                     clear_terminal_selection(state);
                 }
             }
