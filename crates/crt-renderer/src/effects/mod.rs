@@ -21,8 +21,10 @@
 //! }
 //! ```
 
+pub mod motion;
 pub mod renderer;
 
+pub use motion::MotionBehavior;
 pub use renderer::EffectsRenderer;
 
 use vello::kurbo::{Rect, Vec2};
