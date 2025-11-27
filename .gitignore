@@ -18,5 +18,6 @@
 debug.entitlements
 *.log
 
-# Metis database (regenerated)
+# Metis (regenerated)
 .metis/metis.db
+.metis/*.log
