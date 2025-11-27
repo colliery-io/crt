@@ -122,6 +122,7 @@ pub struct PositionedGlyph {
 }
 
 /// Font variant data
+#[derive(Clone)]
 pub struct FontVariants {
     pub regular: Vec<u8>,
     pub bold: Option<Vec<u8>>,

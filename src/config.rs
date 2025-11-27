@@ -42,8 +42,9 @@ impl Default for ShellConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FontConfig {
-    /// Font family name (for system fonts, not currently used)
-    pub family: String,
+    /// Font family names in order of preference (fallback chain)
+    /// First available font will be used; falls back to embedded font if none found
+    pub family: Vec<String>,
     /// Base font size in points
     pub size: f32,
     /// Line height multiplier
@@ -53,7 +54,13 @@ pub struct FontConfig {
 impl Default for FontConfig {
     fn default() -> Self {
         Self {
-            family: "MesloLGS NF".to_string(),
+            family: vec![
+                "MesloLGS NF".to_string(),
+                "JetBrains Mono".to_string(),
+                "Fira Code".to_string(),
+                "SF Mono".to_string(),
+                "Menlo".to_string(),
+            ],
             size: 14.0,
             line_height: 1.5,
         }

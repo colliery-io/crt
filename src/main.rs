@@ -5,6 +5,7 @@
 //! 2. Composite text with effects (gradient, grid, glow) to screen
 
 mod config;
+mod font;
 mod gpu;
 mod input;
 mod menu;
@@ -17,7 +18,7 @@ use std::time::Instant;
 
 use config::Config;
 use crt_core::{ShellTerminal, Size, Scroll};
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TextRenderTarget, TabBar, FontVariants};
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TextRenderTarget, TabBar};
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
 use input::{
@@ -54,11 +55,6 @@ const MIN_FONT_SCALE: f32 = 0.5;
 const MAX_FONT_SCALE: f32 = 3.0;
 const FONT_SCALE_STEP: f32 = 0.1;
 
-// Embedded fonts - MesloLGS NF (Nerd Font with powerline glyphs)
-const FONT_REGULAR: &[u8] = include_bytes!("../assets/fonts/MesloLGS-NF-Regular.ttf");
-const FONT_BOLD: &[u8] = include_bytes!("../assets/fonts/MesloLGS-NF-Bold.ttf");
-const FONT_ITALIC: &[u8] = include_bytes!("../assets/fonts/MesloLGS-NF-Italic.ttf");
-const FONT_BOLD_ITALIC: &[u8] = include_bytes!("../assets/fonts/MesloLGS-NF-BoldItalic.ttf");
 
 struct App {
     windows: HashMap<WindowId, WindowState>,
@@ -142,13 +138,10 @@ impl App {
         };
         surface.configure(&shared.device, &surface_config);
 
-        // Initialize glyph caches with font variants
+        // Initialize glyph caches with font variants from config
         let scaled_font_size = self.config.font.size * scale_factor;
-        let font_variants = FontVariants::new(FONT_REGULAR.to_vec())
-            .with_bold(FONT_BOLD.to_vec())
-            .with_italic(FONT_ITALIC.to_vec())
-            .with_bold_italic(FONT_BOLD_ITALIC.to_vec());
-        let mut glyph_cache = GlyphCache::with_variants(&shared.device, font_variants, scaled_font_size)
+        let font_variants = font::load_font_variants(&self.config.font);
+        let mut glyph_cache = GlyphCache::with_variants(&shared.device, font_variants.clone(), scaled_font_size)
             .expect("Failed to create glyph cache");
         glyph_cache.precache_ascii();
         glyph_cache.flush(&shared.queue);
@@ -157,8 +150,9 @@ impl App {
         grid_renderer.set_glyph_cache(&shared.device, &glyph_cache);
         grid_renderer.update_screen_size(&shared.queue, size.width as f32, size.height as f32);
 
+        // Tab bar uses same font at smaller size
         let tab_font_size = 12.0 * scale_factor;
-        let mut tab_glyph_cache = GlyphCache::new(&shared.device, FONT_REGULAR, tab_font_size)
+        let mut tab_glyph_cache = GlyphCache::with_variants(&shared.device, font_variants, tab_font_size)
             .expect("Failed to create tab glyph cache");
         tab_glyph_cache.precache_ascii();
         tab_glyph_cache.flush(&shared.queue);

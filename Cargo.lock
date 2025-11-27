@@ -627,6 +627,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "core_maths"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77745e017f5edba1a9c1d854f6f3a52dac8a12dd5af5d2f54aecf61e43d80d30"
+dependencies = [
+ "libm",
+]
+
+[[package]]
 name = "crc32fast"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -681,6 +690,7 @@ dependencies = [
  "crt-theme",
  "dirs",
  "env_logger",
+ "fontdb",
  "log",
  "muda",
  "naga",
@@ -1047,6 +1057,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39a654f404bbcbd48ea58c617c2993ee91d1cb63727a37bf2323a4edeed1b8c5"
 dependencies = [
  "bytemuck",
+]
+
+[[package]]
+name = "fontconfig-parser"
+version = "0.5.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbc773e24e02d4ddd8395fd30dc147524273a83e54e0f312d986ea30de5f5646"
+dependencies = [
+ "roxmltree",
+]
+
+[[package]]
+name = "fontdb"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a3a6f9af55fb97ad673fb7a69533eb2f967648a06fa21f8c9bb2cd6d33975716"
+dependencies = [
+ "fontconfig-parser",
+ "log",
+ "memmap2",
+ "slotmap",
+ "tinyvec",
+ "ttf-parser 0.24.1",
 ]
 
 [[package]]
@@ -2504,7 +2537,7 @@ version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36820e9051aca1014ddc75770aab4d68bc1e9e632f0f5627c4086bc216fb583b"
 dependencies = [
- "ttf-parser",
+ "ttf-parser 0.25.1",
 ]
 
 [[package]]
@@ -3119,6 +3152,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "roxmltree"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
+
+[[package]]
 name = "rustc-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3727,6 +3766,15 @@ name = "tracing-core"
 version = "0.1.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9d12581f227e93f094d3af2ae690a574abb8a2b9b7a96e7cfe9647b2b617678"
+
+[[package]]
+name = "ttf-parser"
+version = "0.24.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5be21190ff5d38e8b4a2d3b6a3ae57f612cc39c96e83cedeaf7abc338a8bac4a"
+dependencies = [
+ "core_maths",
+]
 
 [[package]]
 name = "ttf-parser"

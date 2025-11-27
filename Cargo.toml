@@ -18,6 +18,7 @@ vello = "0.6"
 glyphon = "0.9"
 fontdue = "0.9"
 swash = "0.1"
+fontdb = "0.22"
 bytemuck = { version = "1.14", features = ["derive"] }
 
 # Windowing
@@ -75,3 +76,4 @@ serde = { workspace = true }
 arboard = "3.6.1"
 regex = "1.12.2"
 open = "5.3.3"
+fontdb = { workspace = true }
