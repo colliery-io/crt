@@ -423,6 +423,7 @@ impl WindowState {
         // Re-read content since we consumed it above
         let content = terminal.renderable_content();
         self.gpu.grid_renderer.clear();
+        self.gpu.output_grid_renderer.clear();
 
         let cell_width = self.gpu.glyph_cache.cell_width();
         let line_height = self.gpu.glyph_cache.line_height();
@@ -589,7 +590,16 @@ impl WindowState {
             );
 
             if let Some(glyph) = self.gpu.glyph_cache.position_char_styled(c, x, y, style) {
-                self.gpu.grid_renderer.push_glyphs(&[glyph], fg_color);
+                // Route to appropriate renderer:
+                // - Cursor line and line above (for multi-line prompts) go to grid_renderer (glow)
+                // - All other lines go to output_grid_renderer (rendered flat)
+                let is_prompt_area = viewport_line >= cursor_viewport_line - 1
+                    && viewport_line <= cursor_viewport_line;
+                if is_prompt_area {
+                    self.gpu.grid_renderer.push_glyphs(&[glyph], fg_color);
+                } else {
+                    self.gpu.output_grid_renderer.push_glyphs(&[glyph], fg_color);
+                }
             }
         }
 

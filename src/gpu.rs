@@ -81,7 +81,10 @@ pub struct WindowGpuState {
 
     // Text rendering with swash glyph cache (scales with zoom)
     pub glyph_cache: GlyphCache,
+    // Grid renderer for cursor line (rendered with glow effect)
     pub grid_renderer: GridRenderer,
+    // Grid renderer for output text (rendered flat, no glow)
+    pub output_grid_renderer: GridRenderer,
 
     // Fixed-size glyph cache for tab titles (doesn't scale with zoom)
     pub tab_glyph_cache: GlyphCache,

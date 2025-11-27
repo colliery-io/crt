@@ -156,6 +156,11 @@ impl App {
         grid_renderer.set_glyph_cache(&shared.device, &glyph_cache);
         grid_renderer.update_screen_size(&shared.queue, size.width as f32, size.height as f32);
 
+        // Separate renderer for output text (rendered flat, no glow)
+        let mut output_grid_renderer = GridRenderer::new(&shared.device, format);
+        output_grid_renderer.set_glyph_cache(&shared.device, &glyph_cache);
+        output_grid_renderer.update_screen_size(&shared.queue, size.width as f32, size.height as f32);
+
         // Tab bar uses same font at smaller size
         let tab_font_size = 12.0 * scale_factor;
         let mut tab_glyph_cache = GlyphCache::with_variants(&shared.device, font_variants, tab_font_size)
@@ -244,6 +249,7 @@ impl App {
             config: surface_config,
             glyph_cache,
             grid_renderer,
+            output_grid_renderer,
             tab_glyph_cache,
             tab_title_renderer,
             effect_pipeline,
@@ -459,8 +465,9 @@ impl App {
             state.gpu.glyph_cache.precache_ascii();
             state.gpu.glyph_cache.flush(&shared.queue);
 
-            // Update grid renderer with new glyph cache
+            // Update grid renderers with new glyph cache
             state.gpu.grid_renderer.set_glyph_cache(&shared.device, &state.gpu.glyph_cache);
+            state.gpu.output_grid_renderer.set_glyph_cache(&shared.device, &state.gpu.glyph_cache);
 
             // Recalculate terminal grid size (like resize does)
             let cell_width = state.gpu.glyph_cache.cell_width();

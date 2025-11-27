@@ -206,7 +206,29 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         }
     }
 
-    // Pass 4: Render terminal text to intermediate texture (for glow effect)
+    // Pass 3.5: Render output text directly to frame (flat, no glow)
+    // This is all terminal text EXCEPT the cursor line
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Output Text Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &frame_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        state.gpu.output_grid_renderer.render(&shared.queue, &mut pass);
+    }
+
+    // Pass 4: Render cursor line text to intermediate texture (for glow effect)
     {
         // Clear the text texture first
         let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
