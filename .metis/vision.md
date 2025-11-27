@@ -17,7 +17,7 @@ strategy_id: NULL
 initiative_id: NULL
 ---
 
-# CRT - CRT Rust Terminal
+# CRT - CRT’s a Ridiculous Terminal
 
 *A GPU-accelerated terminal emulator with CSS theming and rich visual effects.*
 
@@ -37,7 +37,7 @@ CRT is a cross-platform terminal emulator targeting developers and power users w
 
 The terminal emulator landscape in 2025:
 
-- **Hyper.js**: CSS theming via Electron. Beautiful themes, poor performance (~200MB RAM), effectively unmaintained.
+- **Hyper.js**: CSS theming via Electron. Beautiful themes, poor performance (\~200MB RAM), effectively unmaintained.
 - **Alacritty**: GPU-accelerated, minimal features, no ligatures, YAML/TOML config only.
 - **WezTerm**: Feature-rich, Lua config, ligature support, but complex and heavier.
 - **Kitty**: GPU-accelerated, custom config format, good performance, no CSS.
@@ -57,6 +57,7 @@ CRT delivers:
 - Cross-platform: Linux, macOS, Windows (best-effort)
 
 Users write CSS like:
+
 ```css
 :root {
   --foreground: #c0caf5;
@@ -122,12 +123,14 @@ Rio terminal is the closest existing project to our vision - it's MIT-licensed, 
 4. **Learning value** - understanding every line of the renderer matters for a project centered on visual effects.
 
 **What we'll study from Rio:**
+
 - Sugarloaf's wgpu pipeline architecture and shader organization
 - Their Redux-style state machine for dirty tracking
 - Platform-specific blur implementations
 - How they integrated Alacritty's VTE parser
 
 **What we'll reuse directly (battle-tested crates):**
+
 - `vte` - Alacritty's VT parser
 - `wgpu` - GPU abstraction
 - `cosmic-text` / `rustybuzz` - text shaping with ligatures
@@ -136,6 +139,7 @@ Rio terminal is the closest existing project to our vision - it's MIT-licensed, 
 - `portable-pty` - cross-platform PTY
 
 **Crate structure (design-first):**
+
 - `crt` - application shell, CLI, main loop
 - `crt-term` - terminal state, grid, scrollback
 - `crt-render` - wgpu renderer, shaders, glyph atlas

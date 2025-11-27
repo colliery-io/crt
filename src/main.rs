@@ -22,8 +22,10 @@ use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
 use input::{
     TabEditResult, handle_tab_editing, handle_shell_input, handle_tab_click, handle_resize,
-    handle_terminal_mouse_press, handle_terminal_mouse_move, handle_terminal_mouse_release,
+    handle_terminal_mouse_button, handle_terminal_mouse_move,
+    handle_terminal_mouse_release, handle_terminal_scroll,
     clear_terminal_selection, get_terminal_selection_text, get_clipboard_content, paste_to_terminal,
+    MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT,
 };
 use menu::MenuAction;
 use render::render_frame;
@@ -561,33 +563,53 @@ impl ApplicationHandler for App {
                 handle_terminal_mouse_move(state, position.x as f32, position.y as f32);
             }
 
-            WindowEvent::MouseInput { state: button_state, button: winit::event::MouseButton::Left, .. } => {
+            WindowEvent::MouseInput { state: button_state, button, .. } => {
                 let (x, y) = state.cursor_position;
-                match button_state {
-                    ElementState::Pressed => {
-                        // Try terminal selection first, then tab bar
-                        if !handle_terminal_mouse_press(state, x, y, Instant::now()) {
-                            handle_tab_click(state, x, y, Instant::now());
+                let mouse_button = match button {
+                    winit::event::MouseButton::Left => Some(MOUSE_BUTTON_LEFT),
+                    winit::event::MouseButton::Middle => Some(MOUSE_BUTTON_MIDDLE),
+                    winit::event::MouseButton::Right => Some(MOUSE_BUTTON_RIGHT),
+                    _ => None,
+                };
+
+                if let Some(btn) = mouse_button {
+                    match button_state {
+                        ElementState::Pressed => {
+                            // Try terminal (mouse reporting or selection) first, then tab bar
+                            if !handle_terminal_mouse_button(state, x, y, Instant::now(), btn, true) {
+                                if btn == MOUSE_BUTTON_LEFT {
+                                    handle_tab_click(state, x, y, Instant::now());
+                                }
+                            }
                         }
-                    }
-                    ElementState::Released => {
-                        handle_terminal_mouse_release(state);
+                        ElementState::Released => {
+                            handle_terminal_mouse_release(state, x, y);
+                        }
                     }
                 }
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
-                // Scroll terminal viewport
+                let (x, y) = state.cursor_position;
+                let delta_y = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y,
+                    MouseScrollDelta::PixelDelta(pos) => {
+                        let line_height = state.gpu.glyph_cache.line_height();
+                        (pos.y / line_height as f64) as f32
+                    }
+                };
+
+                // Check if mouse reporting should handle this
+                if handle_terminal_scroll(state, x, y, delta_y) {
+                    // Mouse reporting handled the scroll
+                    return;
+                }
+
+                // Fall back to local scrollback
                 let tab_id = state.gpu.tab_bar.active_tab_id();
                 if let Some(tab_id) = tab_id {
                     if let Some(shell) = state.shells.get_mut(&tab_id) {
-                        let lines = match delta {
-                            MouseScrollDelta::LineDelta(_, y) => y as i32,
-                            MouseScrollDelta::PixelDelta(pos) => {
-                                let line_height = state.gpu.glyph_cache.line_height();
-                                (pos.y / line_height as f64) as i32
-                            }
-                        };
+                        let lines = delta_y as i32;
                         if lines != 0 {
                             shell.scroll(Scroll::Delta(lines));
                             state.dirty = true;

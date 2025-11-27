@@ -4,7 +4,7 @@
 
 use std::time::{Duration, Instant};
 
-use crt_core::{Column, Line, Point, SelectionType};
+use crt_core::{Column, Line, Point, SelectionType, ShellTerminal, TermMode};
 use winit::keyboard::{Key, NamedKey};
 
 use crate::window::WindowState;
@@ -13,6 +13,65 @@ use crate::window::WindowState;
 const MULTI_CLICK_THRESHOLD: Duration = Duration::from_millis(400);
 /// Maximum distance (in cells) for multi-click to register
 const MULTI_CLICK_DISTANCE: usize = 1;
+
+// Mouse button codes for mouse reporting protocol
+pub const MOUSE_BUTTON_LEFT: u8 = 0;
+pub const MOUSE_BUTTON_MIDDLE: u8 = 1;
+pub const MOUSE_BUTTON_RIGHT: u8 = 2;
+pub const MOUSE_BUTTON_RELEASE: u8 = 3;
+pub const MOUSE_BUTTON_MOTION: u8 = 32;
+pub const MOUSE_BUTTON_SCROLL_UP: u8 = 64;
+pub const MOUSE_BUTTON_SCROLL_DOWN: u8 = 65;
+
+/// Check if the terminal has mouse reporting enabled
+pub fn should_report_mouse(shell: &ShellTerminal) -> bool {
+    let mode = shell.terminal().inner().mode();
+    mode.intersects(
+        TermMode::MOUSE_REPORT_CLICK
+            | TermMode::MOUSE_DRAG
+            | TermMode::MOUSE_MOTION
+            | TermMode::SGR_MOUSE,
+    )
+}
+
+/// Check if the terminal is tracking mouse motion
+pub fn should_report_motion(shell: &ShellTerminal, button_pressed: bool) -> bool {
+    let mode = shell.terminal().inner().mode();
+    // MOUSE_MOTION: report all motion
+    // MOUSE_DRAG: report motion only when button is pressed
+    mode.contains(TermMode::MOUSE_MOTION)
+        || (mode.contains(TermMode::MOUSE_DRAG) && button_pressed)
+}
+
+/// Check if SGR extended mouse mode is enabled
+pub fn is_sgr_mouse_mode(shell: &ShellTerminal) -> bool {
+    shell.terminal().inner().mode().contains(TermMode::SGR_MOUSE)
+}
+
+/// Generate mouse escape sequence for terminal
+///
+/// # Arguments
+/// * `button` - Mouse button code (0=left, 1=middle, 2=right, 3=release, 32+=motion, 64/65=scroll)
+/// * `col` - Column (0-indexed)
+/// * `line` - Line (0-indexed)
+/// * `pressed` - Whether this is a press event (for SGR mode)
+/// * `sgr_mode` - Whether to use SGR extended encoding
+pub fn mouse_report(button: u8, col: usize, line: usize, pressed: bool, sgr_mode: bool) -> Vec<u8> {
+    if sgr_mode {
+        // SGR extended mode: \x1b[<Btn;Col;RowM (press) or m (release)
+        // Uses 1-indexed coordinates
+        let suffix = if pressed { 'M' } else { 'm' };
+        format!("\x1b[<{};{};{}{}", button, col + 1, line + 1, suffix).into_bytes()
+    } else {
+        // Legacy X10 mode: \x1b[M<btn+32><col+33><row+33>
+        // Coordinates are offset by 32 and limited to 223 (255 - 32)
+        let mut seq = vec![0x1b, b'[', b'M'];
+        seq.push(button + 32);
+        seq.push(((col + 33).min(255)) as u8);
+        seq.push(((line + 33).min(255)) as u8);
+        seq
+    }
+}
 
 /// Result of handling tab editing input
 pub enum TabEditResult {
@@ -319,9 +378,23 @@ pub fn screen_to_cell(state: &WindowState, x: f32, y: f32) -> Option<(usize, usi
     Some((col, line))
 }
 
-/// Handle mouse press for terminal selection
+/// Handle mouse press for terminal selection or mouse reporting
 /// Returns true if the press was handled (was in terminal area)
+#[allow(dead_code)]
 pub fn handle_terminal_mouse_press(state: &mut WindowState, x: f32, y: f32, now: Instant) -> bool {
+    handle_terminal_mouse_button(state, x, y, now, MOUSE_BUTTON_LEFT, true)
+}
+
+/// Handle mouse button press/release for any button
+/// Returns true if the event was handled (was in terminal area)
+pub fn handle_terminal_mouse_button(
+    state: &mut WindowState,
+    x: f32,
+    y: f32,
+    now: Instant,
+    button: u8,
+    pressed: bool,
+) -> bool {
     // Check if click is in tab bar area first
     let tab_bar_height = state.gpu.tab_bar.height() * state.scale_factor;
     if y < tab_bar_height {
@@ -332,49 +405,80 @@ pub fn handle_terminal_mouse_press(state: &mut WindowState, x: f32, y: f32, now:
         return false;
     };
 
-    // Determine click count for multi-click selection
-    let click_count = if let (Some(last_time), Some((last_col, last_line))) =
-        (state.last_selection_click_time, state.last_selection_click_pos)
-    {
-        let time_ok = now.duration_since(last_time) < MULTI_CLICK_THRESHOLD;
-        let pos_ok = col.abs_diff(last_col) <= MULTI_CLICK_DISTANCE
-                  && line.abs_diff(last_line) <= MULTI_CLICK_DISTANCE;
-
-        if time_ok && pos_ok {
-            (state.selection_click_count % 3) + 1
-        } else {
-            1
-        }
-    } else {
-        1
-    };
-
-    state.selection_click_count = click_count;
-    state.last_selection_click_time = Some(now);
-    state.last_selection_click_pos = Some((col, line));
-    state.mouse_pressed = true;
-
     // Get the active shell
     let tab_id = state.gpu.tab_bar.active_tab_id();
     let Some(tab_id) = tab_id else { return false };
     let Some(shell) = state.shells.get_mut(&tab_id) else { return false };
 
-    let point = Point::new(Line(line as i32), Column(col));
+    // Check if we should report mouse events to the terminal
+    if should_report_mouse(shell) {
+        let sgr = is_sgr_mouse_mode(shell);
+        let report_button = if !pressed && !sgr {
+            // In legacy mode, release is button 3
+            MOUSE_BUTTON_RELEASE
+        } else {
+            button
+        };
+        let seq = mouse_report(report_button, col, line, pressed, sgr);
+        shell.send_input(&seq);
 
-    // Selection type based on click count
-    let selection_type = match click_count {
-        1 => SelectionType::Simple,
-        2 => SelectionType::Semantic, // Word selection
-        3 => SelectionType::Lines,    // Line selection
-        _ => SelectionType::Simple,
-    };
+        // Track button state for drag reporting
+        if button == MOUSE_BUTTON_LEFT {
+            state.mouse_pressed = pressed;
+        }
 
-    shell.start_selection(point, selection_type);
+        state.dirty = true;
+        state.window.request_redraw();
+        return true;
+    }
 
-    // For semantic and lines selection, also set the end point immediately
-    // to show the full word/line
-    if click_count > 1 {
-        shell.update_selection(point);
+    // Local selection handling (mouse mode not enabled)
+    if button != MOUSE_BUTTON_LEFT {
+        return false; // Only left button for selection
+    }
+
+    if pressed {
+        // Determine click count for multi-click selection
+        let click_count = if let (Some(last_time), Some((last_col, last_line))) =
+            (state.last_selection_click_time, state.last_selection_click_pos)
+        {
+            let time_ok = now.duration_since(last_time) < MULTI_CLICK_THRESHOLD;
+            let pos_ok = col.abs_diff(last_col) <= MULTI_CLICK_DISTANCE
+                      && line.abs_diff(last_line) <= MULTI_CLICK_DISTANCE;
+
+            if time_ok && pos_ok {
+                (state.selection_click_count % 3) + 1
+            } else {
+                1
+            }
+        } else {
+            1
+        };
+
+        state.selection_click_count = click_count;
+        state.last_selection_click_time = Some(now);
+        state.last_selection_click_pos = Some((col, line));
+        state.mouse_pressed = true;
+
+        let point = Point::new(Line(line as i32), Column(col));
+
+        // Selection type based on click count
+        let selection_type = match click_count {
+            1 => SelectionType::Simple,
+            2 => SelectionType::Semantic, // Word selection
+            3 => SelectionType::Lines,    // Line selection
+            _ => SelectionType::Simple,
+        };
+
+        shell.start_selection(point, selection_type);
+
+        // For semantic and lines selection, also set the end point immediately
+        // to show the full word/line
+        if click_count > 1 {
+            shell.update_selection(point);
+        }
+    } else {
+        state.mouse_pressed = false;
     }
 
     state.dirty = true;
@@ -382,12 +486,8 @@ pub fn handle_terminal_mouse_press(state: &mut WindowState, x: f32, y: f32, now:
     true
 }
 
-/// Handle mouse move for terminal selection (dragging)
+/// Handle mouse move for terminal selection (dragging) or mouse motion reporting
 pub fn handle_terminal_mouse_move(state: &mut WindowState, x: f32, y: f32) {
-    if !state.mouse_pressed {
-        return;
-    }
-
     let Some((col, line)) = screen_to_cell(state, x, y) else {
         return;
     };
@@ -396,6 +496,28 @@ pub fn handle_terminal_mouse_move(state: &mut WindowState, x: f32, y: f32) {
     let Some(tab_id) = tab_id else { return };
     let Some(shell) = state.shells.get_mut(&tab_id) else { return };
 
+    // Check if we should report motion to terminal
+    if should_report_motion(shell, state.mouse_pressed) {
+        let sgr = is_sgr_mouse_mode(shell);
+        // Button code: 32 + button for motion with button, or just 35 for motion without
+        let button = if state.mouse_pressed {
+            MOUSE_BUTTON_MOTION + MOUSE_BUTTON_LEFT // 32 = motion with left button
+        } else {
+            MOUSE_BUTTON_MOTION + MOUSE_BUTTON_RELEASE // 35 = motion without button
+        };
+        let seq = mouse_report(button, col, line, true, sgr);
+        shell.send_input(&seq);
+
+        state.dirty = true;
+        state.window.request_redraw();
+        return;
+    }
+
+    // Local selection handling
+    if !state.mouse_pressed {
+        return;
+    }
+
     let point = Point::new(Line(line as i32), Column(col));
     shell.update_selection(point);
 
@@ -403,10 +525,68 @@ pub fn handle_terminal_mouse_move(state: &mut WindowState, x: f32, y: f32) {
     state.window.request_redraw();
 }
 
-/// Handle mouse release for terminal selection
-pub fn handle_terminal_mouse_release(state: &mut WindowState) {
+/// Handle mouse release for terminal selection or mouse reporting
+pub fn handle_terminal_mouse_release(state: &mut WindowState, x: f32, y: f32) {
+    let Some((col, line)) = screen_to_cell(state, x, y) else {
+        state.mouse_pressed = false;
+        return;
+    };
+
+    let tab_id = state.gpu.tab_bar.active_tab_id();
+    let Some(tab_id) = tab_id else {
+        state.mouse_pressed = false;
+        return;
+    };
+    let Some(shell) = state.shells.get_mut(&tab_id) else {
+        state.mouse_pressed = false;
+        return;
+    };
+
+    // Check if we should report the release to terminal
+    if should_report_mouse(shell) {
+        let sgr = is_sgr_mouse_mode(shell);
+        let button = if sgr {
+            MOUSE_BUTTON_LEFT // SGR mode sends button with release suffix 'm'
+        } else {
+            MOUSE_BUTTON_RELEASE // Legacy mode sends button 3 for release
+        };
+        let seq = mouse_report(button, col, line, false, sgr);
+        shell.send_input(&seq);
+    }
+
     state.mouse_pressed = false;
-    // Selection remains - user can copy with Cmd+C or similar
+    // Selection remains if we were doing local selection - user can copy with Cmd+C
+}
+
+/// Handle mouse scroll wheel for terminal scrollback or mouse reporting
+/// Returns true if the scroll was handled by mouse reporting
+pub fn handle_terminal_scroll(state: &mut WindowState, x: f32, y: f32, delta_y: f32) -> bool {
+    let Some((col, line)) = screen_to_cell(state, x, y) else {
+        return false;
+    };
+
+    let tab_id = state.gpu.tab_bar.active_tab_id();
+    let Some(tab_id) = tab_id else { return false };
+    let Some(shell) = state.shells.get_mut(&tab_id) else { return false };
+
+    // Check if we should report scroll to terminal
+    if should_report_mouse(shell) {
+        let sgr = is_sgr_mouse_mode(shell);
+        // Scroll up = 64, scroll down = 65
+        let button = if delta_y > 0.0 {
+            MOUSE_BUTTON_SCROLL_UP
+        } else {
+            MOUSE_BUTTON_SCROLL_DOWN
+        };
+        let seq = mouse_report(button, col, line, true, sgr);
+        shell.send_input(&seq);
+
+        state.dirty = true;
+        state.window.request_redraw();
+        return true;
+    }
+
+    false
 }
 
 /// Clear terminal selection (e.g., when user types or presses Escape)
