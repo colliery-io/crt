@@ -3,7 +3,6 @@
 //! Shared and per-window GPU resources for wgpu rendering.
 
 use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, TerminalVelloRenderer, BackgroundImagePipeline, BackgroundImageState};
-use vello::{Renderer, RendererOptions};
 
 /// Shared GPU resources across all windows
 pub struct SharedGpuState {
@@ -11,8 +10,9 @@ pub struct SharedGpuState {
     pub adapter: wgpu::Adapter,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
-    /// Shared Vello renderer - expensive to create, so we share one across all windows
-    pub vello_renderer: Renderer,
+    /// Shared Vello renderer - lazy loaded only when CSS effects need it
+    /// (rounded corners, gradients, shadows, etc.)
+    pub vello_renderer: Option<vello::Renderer>,
 }
 
 impl SharedGpuState {
@@ -39,14 +39,9 @@ impl SharedGpuState {
                 .expect("Failed to create device")
         });
 
-        // Create shared Vello renderer - expensive, so we share across all windows
-        let vello_renderer = Renderer::new(
-            &device,
-            RendererOptions {
-                pipeline_cache: None,
-                ..Default::default()
-            },
-        ).expect("Failed to create shared Vello renderer");
+        // Vello renderer is lazy-loaded only when CSS effects need it
+        // (rounded corners, gradients, shadows, complex paths)
+        let vello_renderer = None;
 
         Self {
             instance,
@@ -55,6 +50,27 @@ impl SharedGpuState {
             queue,
             vello_renderer,
         }
+    }
+
+    /// Get or create the Vello renderer (lazy initialization)
+    ///
+    /// Call this when you need advanced CSS effects like rounded corners,
+    /// gradients, or complex paths. The renderer is cached after first creation.
+    #[allow(dead_code)]
+    pub fn get_or_create_vello_renderer(&mut self) -> &mut vello::Renderer {
+        if self.vello_renderer.is_none() {
+            log::info!("Lazy-loading Vello renderer for advanced CSS effects");
+            self.vello_renderer = Some(
+                vello::Renderer::new(
+                    &self.device,
+                    vello::RendererOptions {
+                        pipeline_cache: None,
+                        ..Default::default()
+                    },
+                ).expect("Failed to create Vello renderer")
+            );
+        }
+        self.vello_renderer.as_mut().unwrap()
     }
 }
 

@@ -333,26 +333,38 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         }
     }
 
-    // Pass 6: Render tab bar shapes via vello
+    // Pass 6: Render tab bar shapes via RectRenderer (no Vello needed)
     {
+        // Recalculate layout if dirty
         state.gpu.tab_bar.prepare(&shared.device, &shared.queue);
 
-        // Render vello scene to texture using shared renderer
-        if let Err(e) = state.gpu.tab_bar.render_vello(&mut shared.vello_renderer, &shared.device, &shared.queue) {
-            log::warn!("Vello tab bar render error: {:?}", e);
-        }
+        // Render tab bar shapes directly via RectRenderer
+        state.gpu.rect_renderer.clear();
+        state.gpu.rect_renderer.update_screen_size(
+            &shared.queue,
+            state.gpu.config.width as f32,
+            state.gpu.config.height as f32,
+        );
+        state.gpu.tab_bar.render_shapes_to_rects(&mut state.gpu.rect_renderer);
 
-        // Composite vello texture onto frame
-        if let Some(vello_view) = state.gpu.tab_bar.vello_texture_view() {
-            composite_vello_texture(
-                &shared.device,
-                &mut encoder,
-                &frame_view,
-                vello_view,
-                state.gpu.config.width,
-                state.gpu.config.height,
-                state.gpu.tab_bar.height() * state.scale_factor,
-            );
+        if state.gpu.rect_renderer.instance_count() > 0 {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Tab Bar Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &frame_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            state.gpu.rect_renderer.render(&shared.queue, &mut pass);
         }
     }
 

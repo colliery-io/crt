@@ -59,7 +59,7 @@ pub struct GridRenderer {
 }
 
 impl GridRenderer {
-    const MAX_INSTANCES: usize = 64 * 1024;
+    const MAX_INSTANCES: usize = 32 * 1024;
 
     pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {

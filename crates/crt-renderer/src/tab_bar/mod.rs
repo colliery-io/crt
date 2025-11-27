@@ -330,3 +330,71 @@ impl TabBar {
 fn color_to_array(color: &crt_theme::Color) -> [f32; 4] {
     [color.r, color.g, color.b, color.a]
 }
+
+impl TabBar {
+    /// Render tab bar shapes using RectRenderer (sharp corners, no Vello needed)
+    ///
+    /// This is the lightweight path - call this instead of render_vello() when
+    /// you don't need rounded corners or complex effects.
+    pub fn render_shapes_to_rects(&self, rect_renderer: &mut crate::RectRenderer) {
+        let s = self.layout.scale_factor();
+        let bar_height = self.layout.height() * s;
+        let (screen_width, _) = self.layout.screen_size();
+
+        let tab_rects = self.layout.tab_rects();
+        let active_tab = self.state.active_tab_index();
+
+        // Tab bar background
+        let bar_bg = color_to_array(&self.theme.bar.background);
+        rect_renderer.push_rect(0.0, 0.0, screen_width, bar_height, bar_bg);
+
+        // Bottom border
+        let border_color = color_to_array(&self.theme.bar.border_color);
+        rect_renderer.push_rect(0.0, bar_height - s, screen_width, s, border_color);
+
+        // Draw individual tabs
+        for (i, rect) in tab_rects.iter().enumerate() {
+            let is_active = i == active_tab;
+            let bg_color = if is_active {
+                color_to_array(&self.theme.active.background)
+            } else {
+                color_to_array(&self.theme.tab.background)
+            };
+
+            // Tab background (sharp corners)
+            rect_renderer.push_rect(rect.x, rect.y, rect.width, rect.height, bg_color);
+
+            // Tab border (top and sides)
+            let border = color_to_array(&self.theme.bar.border_color);
+            // Top
+            rect_renderer.push_rect(rect.x, rect.y, rect.width, s, border);
+            // Left
+            rect_renderer.push_rect(rect.x, rect.y, s, rect.height, border);
+            // Right
+            rect_renderer.push_rect(rect.x + rect.width - s, rect.y, s, rect.height, border);
+
+            // Active tab accent line at bottom
+            if is_active {
+                let accent = color_to_array(&self.theme.active.accent);
+                let accent_height = 2.0 * s;
+                rect_renderer.push_rect(rect.x, rect.y + rect.height - accent_height, rect.width, accent_height, accent);
+            }
+        }
+
+        // Close buttons
+        for (i, rect) in tab_rects.iter().enumerate() {
+            let _is_active = i == active_tab;
+            let close_color = color_to_array(&self.theme.close.foreground);
+
+            // Simple X mark using two crossed rectangles
+            let cx = rect.close_x + self.theme.close.size * s * 0.5;
+            let cy = rect.y + rect.height * 0.5;
+            let size = self.theme.close.size * s * 0.3;
+            let thickness = s * 1.5;
+
+            // Draw X as two overlapping rectangles (simplified)
+            rect_renderer.push_rect(cx - size, cy - thickness * 0.5, size * 2.0, thickness, close_color);
+            rect_renderer.push_rect(cx - thickness * 0.5, cy - size, thickness, size * 2.0, close_color);
+        }
+    }
+}
