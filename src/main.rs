@@ -492,6 +492,7 @@ impl ApplicationHandler for App {
                             // Next match on Enter
                             if !state.search.matches.is_empty() {
                                 state.search.current_match = (state.search.current_match + 1) % state.search.matches.len();
+                                scroll_to_current_match(state);
                                 state.force_active_tab_redraw();
                                 state.window.request_redraw();
                             }
@@ -598,6 +599,7 @@ impl ApplicationHandler for App {
                                     // Next match
                                     state.search.current_match = (state.search.current_match + 1) % state.search.matches.len();
                                 }
+                                scroll_to_current_match(state);
                                 state.force_active_tab_redraw();
                                 state.window.request_redraw();
                             }
@@ -793,6 +795,49 @@ impl ApplicationHandler for App {
     }
 }
 
+/// Scroll terminal to make current search match visible
+fn scroll_to_current_match(state: &mut WindowState) {
+    if state.search.matches.is_empty() {
+        return;
+    }
+
+    let current_match = &state.search.matches[state.search.current_match];
+    let match_line = current_match.line;
+
+    // Get active shell
+    let active_tab_id = state.gpu.tab_bar.active_tab_id();
+    let shell = active_tab_id.and_then(|id| state.shells.get_mut(&id));
+    let Some(shell) = shell else { return };
+
+    let terminal = shell.terminal();
+    let screen_lines = terminal.screen_lines() as i32;
+    let display_offset = terminal.display_offset() as i32;
+
+    // Calculate viewport line (what line would the match be at in current viewport)
+    // viewport_line = grid_line + display_offset
+    let viewport_line = match_line + display_offset;
+
+    // If match is outside visible range (0 to screen_lines-1), scroll to center it
+    if viewport_line < 0 || viewport_line >= screen_lines {
+        // Target: put match roughly in the middle of the screen
+        let target_viewport_line = screen_lines / 2;
+        // New display_offset needed: match_line + new_offset = target_viewport_line
+        // new_offset = target_viewport_line - match_line
+        let new_offset = target_viewport_line - match_line;
+
+        // The scroll delta is the change in display_offset
+        // Positive delta scrolls up (increases display_offset)
+        let scroll_delta = new_offset - display_offset;
+
+        if scroll_delta != 0 {
+            shell.scroll(Scroll::Delta(scroll_delta));
+            if let Some(tab_id) = active_tab_id {
+                state.content_hashes.insert(tab_id, 0);
+            }
+        }
+    }
+}
+
 /// Update search matches based on current query
 fn update_search_matches(state: &mut WindowState) {
     state.search.matches.clear();
@@ -809,30 +854,29 @@ fn update_search_matches(state: &mut WindowState) {
     let Some(shell) = shell else { return };
 
     let terminal = shell.terminal();
-    let content = terminal.renderable_content();
-    let display_offset = terminal.display_offset() as i32;
 
-    // Collect line text and search for matches
-    let mut line_texts: std::collections::BTreeMap<i32, String> = std::collections::BTreeMap::new();
-    for cell in content.display_iter {
-        let viewport_line = cell.point.line.0 + display_offset;
-        line_texts.entry(viewport_line).or_default().push(cell.c);
-    }
+    // Get all lines including history
+    let all_lines = terminal.all_lines_text();
 
     // Search each line for the query (case-insensitive)
     let query_lower = query.to_lowercase();
-    for (viewport_line, line_text) in &line_texts {
+    for (line_idx, line_text) in &all_lines {
         let line_lower = line_text.to_lowercase();
         let mut start = 0;
         while let Some(pos) = line_lower[start..].find(&query_lower) {
             let match_start = start + pos;
             state.search.matches.push(SearchMatch {
-                line: *viewport_line as usize,
+                line: *line_idx,
                 start_col: match_start,
                 end_col: match_start + query.len(),
             });
             start = match_start + 1;
         }
+    }
+
+    // Scroll to first match if any found
+    if !state.search.matches.is_empty() {
+        scroll_to_current_match(state);
     }
 }
 

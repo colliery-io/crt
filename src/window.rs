@@ -128,8 +128,8 @@ pub struct WindowState {
 /// Search match position in terminal
 #[derive(Debug, Clone, Copy)]
 pub struct SearchMatch {
-    /// Line number (viewport-relative)
-    pub line: usize,
+    /// Line number (grid-relative: negative = history, 0+ = visible)
+    pub line: i32,
     /// Starting column
     pub start_col: usize,
     /// Ending column (exclusive)
@@ -373,7 +373,8 @@ impl WindowState {
             if self.search.active && !self.search.matches.is_empty() {
                 let highlight_style = &self.gpu.effect_pipeline.theme().highlight;
                 for (match_idx, search_match) in self.search.matches.iter().enumerate() {
-                    if search_match.line == viewport_line as usize
+                    // Compare against grid_line (search matches use grid-relative coordinates)
+                    if search_match.line == grid_line
                         && col >= search_match.start_col
                         && col < search_match.end_col
                     {

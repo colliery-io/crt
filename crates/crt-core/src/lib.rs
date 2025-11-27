@@ -235,6 +235,42 @@ impl Terminal {
         self.term.scroll_display(alacritty_terminal::grid::Scroll::Bottom);
     }
 
+    /// Get total number of lines including history
+    pub fn total_lines(&self) -> usize {
+        self.term.grid().total_lines()
+    }
+
+    /// Get history size (lines above visible area)
+    pub fn history_size(&self) -> usize {
+        self.term.grid().history_size()
+    }
+
+    /// Get all lines as text (history + visible), returns Vec of (line_index, text)
+    /// Line indices are relative to the grid: negative = history, 0+ = visible
+    pub fn all_lines_text(&self) -> Vec<(i32, String)> {
+        let grid = self.term.grid();
+        let history_size = grid.history_size() as i32;
+        let screen_lines = self.term.screen_lines() as i32;
+        let mut lines = Vec::new();
+
+        // History lines (negative indices, from oldest to newest)
+        for i in (0..history_size).rev() {
+            let line_idx = -(i as i32 + 1);
+            let row = &grid[alacritty_terminal::index::Line(line_idx)];
+            let text: String = row.into_iter().map(|cell| cell.c).collect();
+            lines.push((line_idx, text.trim_end().to_string()));
+        }
+
+        // Visible lines (0 to screen_lines-1)
+        for i in 0..screen_lines {
+            let row = &grid[alacritty_terminal::index::Line(i)];
+            let text: String = row.into_iter().map(|cell| cell.c).collect();
+            lines.push((i, text.trim_end().to_string()));
+        }
+
+        lines
+    }
+
     /// Check if bracketed paste mode is enabled
     pub fn bracketed_paste_enabled(&self) -> bool {
         self.term.mode().contains(TermMode::BRACKETED_PASTE)
