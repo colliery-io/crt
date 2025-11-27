@@ -137,18 +137,11 @@ install_binary() {
 
             cp -R "${tmp_dir}/crt.app" "/Applications/"
 
-            # Remove quarantine attribute
-            xattr -rd com.apple.quarantine "/Applications/crt.app" 2>/dev/null || true
-
-            # Also install CLI binary to install_dir for terminal access
-            if [ -f "${tmp_dir}/crt.app/Contents/MacOS/crt" ]; then
-                cp "${tmp_dir}/crt.app/Contents/MacOS/crt" "${install_dir}/crt"
-                chmod +x "${install_dir}/crt"
-            fi
+            # Remove quarantine attribute (requires sudo)
+            info "Removing quarantine attribute (may require password)..."
+            sudo xattr -rd com.apple.quarantine "/Applications/crt.app" 2>/dev/null || true
         else
-            # Fallback: just binary
-            cp "${tmp_dir}/crt" "${install_dir}/crt"
-            chmod +x "${install_dir}/crt"
+            error "App bundle not found in release archive"
         fi
     else
         # Linux: Install binary
@@ -296,7 +289,9 @@ main() {
 
     info "Installing crt v${version}"
     info "Platform: ${os}-${arch}"
-    info "Install directory: ${install_dir}"
+    if [ "$os" != "macos" ]; then
+        info "Install directory: ${install_dir}"
+    fi
     echo ""
 
     # Create temp directory
@@ -317,20 +312,19 @@ main() {
     echo ""
 
     if [ "$os" = "macos" ]; then
-        echo "  App installed to: /Applications/crt.app"
-        echo "  CLI installed to: ${install_dir}/crt"
-        echo "  Config directory: ~/.config/crt/"
+        echo "  App: /Applications/crt.app"
+        echo "  Config: ~/.config/crt/"
         echo ""
-        echo "Launch from Spotlight or Finder, or run 'crt' from terminal."
+        echo "Launch from Spotlight, Launchpad, or Finder."
     else
         echo "  Binary: ${install_dir}/crt"
         echo "  Config: ~/.config/crt/"
-    fi
-    echo ""
+        echo ""
 
-    # Check PATH
-    if ! check_path "$install_dir"; then
-        suggest_path "$install_dir"
+        # Check PATH (Linux only)
+        if ! check_path "$install_dir"; then
+            suggest_path "$install_dir"
+        fi
     fi
 }
 
