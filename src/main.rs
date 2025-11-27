@@ -24,8 +24,8 @@ use input::{
     TabEditResult, handle_tab_editing, handle_shell_input, handle_tab_click, handle_resize,
     handle_terminal_mouse_button, handle_terminal_mouse_move,
     handle_terminal_mouse_release, handle_terminal_scroll,
-    clear_terminal_selection, get_terminal_selection_text, get_clipboard_content, paste_to_terminal,
-    MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT,
+    clear_terminal_selection, get_terminal_selection_text, get_clipboard_content, set_clipboard_content,
+    paste_to_terminal, MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT,
 };
 use menu::MenuAction;
 use render::render_frame;
@@ -349,6 +349,13 @@ impl App {
                     }
                 }
             }
+            MenuAction::Copy => {
+                if let Some(state) = self.focused_window_mut() {
+                    if let Some(text) = get_terminal_selection_text(state) {
+                        set_clipboard_content(&text);
+                    }
+                }
+            }
             _ => log::info!("{:?} not yet implemented", action),
         }
     }
@@ -467,19 +474,7 @@ impl ApplicationHandler for App {
                         Key::Character(c) if c.as_str() == "c" => {
                             // Copy selection to clipboard
                             if let Some(text) = get_terminal_selection_text(state) {
-                                #[cfg(target_os = "macos")]
-                                {
-                                    use std::process::{Command, Stdio};
-                                    if let Ok(mut child) = Command::new("pbcopy")
-                                        .stdin(Stdio::piped())
-                                        .spawn()
-                                    {
-                                        if let Some(stdin) = child.stdin.as_mut() {
-                                            use std::io::Write;
-                                            let _ = stdin.write_all(text.as_bytes());
-                                        }
-                                    }
-                                }
+                                set_clipboard_content(&text);
                                 return;
                             }
                         }

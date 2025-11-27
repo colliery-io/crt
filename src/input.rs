@@ -610,25 +610,15 @@ pub fn get_terminal_selection_text(state: &WindowState) -> Option<String> {
 }
 
 /// Get clipboard content from system clipboard
-#[cfg(target_os = "macos")]
 pub fn get_clipboard_content() -> Option<String> {
-    use std::process::Command;
-    Command::new("pbpaste")
-        .output()
-        .ok()
-        .and_then(|output| {
-            if output.status.success() {
-                String::from_utf8(output.stdout).ok()
-            } else {
-                None
-            }
-        })
+    arboard::Clipboard::new().ok()?.get_text().ok()
 }
 
-#[cfg(not(target_os = "macos"))]
-pub fn get_clipboard_content() -> Option<String> {
-    // TODO: Implement for other platforms (xclip, wl-paste, etc.)
-    None
+/// Set clipboard content
+pub fn set_clipboard_content(text: &str) {
+    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+        let _ = clipboard.set_text(text.to_string());
+    }
 }
 
 /// Paste content to terminal with bracketed paste mode support

@@ -72,3 +72,4 @@ muda = { workspace = true }
 dirs = { workspace = true }
 toml = { workspace = true }
 serde = { workspace = true }
+arboard = "3.6.1"
