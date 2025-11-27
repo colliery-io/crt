@@ -17,7 +17,7 @@ use crate::{
     BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
     Color, GridEffect, LinearGradient, MatrixEffect, ParticleBehavior, ParticleEffect,
     ParticleShape, RainEffect, ShapeEffect, ShapeMotion, ShapeRotation, ShapeType,
-    StarDirection, StarfieldEffect, TextShadow, Theme,
+    SpriteEffect, SpriteMotion, SpritePosition, StarDirection, StarfieldEffect, TextShadow, Theme,
 };
 
 #[derive(Error, Debug)]
@@ -105,6 +105,50 @@ fn parse_named_color(name: &str) -> Option<Color> {
         "tomato" => (255, 99, 71),
         "orangered" => (255, 69, 0),
         "indianred" => (205, 92, 92),
+        "brown" => (165, 42, 42),
+        "darkred" => (139, 0, 0),
+        "firebrick" => (178, 34, 34),
+        "sienna" => (160, 82, 45),
+        "saddlebrown" => (139, 69, 19),
+        "chocolate" => (210, 105, 30),
+        "tan" => (210, 180, 140),
+        "beige" => (245, 245, 220),
+        "wheat" => (245, 222, 179),
+        "khaki" => (240, 230, 140),
+        "darkkhaki" => (189, 183, 107),
+        "goldenrod" => (218, 165, 32),
+        "darkgoldenrod" => (184, 134, 11),
+        "peru" => (205, 133, 63),
+        "burlywood" => (222, 184, 135),
+        "bisque" => (255, 228, 196),
+        "blanchedalmond" => (255, 235, 205),
+        "moccasin" => (255, 228, 181),
+        "navajowhite" => (255, 222, 173),
+        "peachpuff" => (255, 218, 185),
+        "mistyrose" => (255, 228, 225),
+        "lavenderblush" => (255, 240, 245),
+        "linen" => (250, 240, 230),
+        "oldlace" => (253, 245, 230),
+        "papayawhip" => (255, 239, 213),
+        "seashell" => (255, 245, 238),
+        "ivory" => (255, 255, 240),
+        "snow" => (255, 250, 250),
+        "floralwhite" => (255, 250, 240),
+        "ghostwhite" => (248, 248, 255),
+        "whitesmoke" => (245, 245, 245),
+        "honeydew" => (240, 255, 240),
+        "mintcream" => (245, 255, 250),
+        "azure" => (240, 255, 255),
+        "aliceblue" => (240, 248, 255),
+        "lavender" => (230, 230, 250),
+        "lightsteelblue" => (176, 196, 222),
+        "lightslategray" | "lightslategrey" => (119, 136, 153),
+        "slategray" | "slategrey" => (112, 128, 144),
+        "darkslategray" | "darkslategrey" => (47, 79, 79),
+        "dimgray" | "dimgrey" => (105, 105, 105),
+        "darkgray" | "darkgrey" => (169, 169, 169),
+        "lightgray" | "lightgrey" => (211, 211, 211),
+        "gainsboro" => (220, 220, 220),
         "transparent" => return Some(Color::rgba(0.0, 0.0, 0.0, 0.0)),
         _ => return None,
     };
@@ -285,6 +329,18 @@ pub fn parse_background_size(value: &str) -> BackgroundSize {
         "contain" => BackgroundSize::Contain,
         "auto" | "auto auto" => BackgroundSize::Auto,
         _ => {
+            // Try to parse as percentage (e.g., "30%" for canvas-relative)
+            if value.ends_with('%') {
+                if let Ok(pct) = value.trim_end_matches('%').parse::<f32>() {
+                    return BackgroundSize::CanvasPercent(pct);
+                }
+            }
+            // Try to parse as scale factor (e.g., "2x" or "0.5x" for image-relative)
+            if value.ends_with('x') {
+                if let Ok(scale) = value.trim_end_matches('x').parse::<f32>() {
+                    return BackgroundSize::ImageScale(scale);
+                }
+            }
             // Try to parse as fixed dimensions (e.g., "100px 200px")
             let parts: Vec<&str> = value.split_whitespace().collect();
             if parts.len() >= 2 {
@@ -292,6 +348,12 @@ pub fn parse_background_size(value: &str) -> BackgroundSize {
                 let h = parts[1].trim_end_matches("px").parse().unwrap_or(0);
                 if w > 0 && h > 0 {
                     return BackgroundSize::Fixed(w, h);
+                }
+            }
+            // Single value in pixels
+            if value.ends_with("px") {
+                if let Ok(px) = value.trim_end_matches("px").parse::<u32>() {
+                    return BackgroundSize::Fixed(px, px);
                 }
             }
             BackgroundSize::Cover
@@ -1082,6 +1144,73 @@ fn apply_backdrop_properties(
 
     if shape.enabled {
         theme.shape = Some(shape);
+    }
+
+    // Parse sprite effect
+    let mut sprite = theme.sprite.take().unwrap_or(SpriteEffect {
+        enabled: false,
+        ..Default::default()
+    });
+
+    let has_sprite_props = custom.keys().any(|k| k.starts_with("--sprite-"));
+
+    if let Some(v) = custom.get("--sprite-path") {
+        // Strip quotes if present
+        let path = v.trim();
+        let path = if (path.starts_with('"') && path.ends_with('"'))
+            || (path.starts_with('\'') && path.ends_with('\'')) {
+            &path[1..path.len()-1]
+        } else {
+            path
+        };
+        sprite.path = Some(path.to_string());
+    }
+    if let Some(v) = custom.get("--sprite-frame-width") {
+        sprite.frame_width = v.parse().unwrap_or(64);
+    }
+    if let Some(v) = custom.get("--sprite-frame-height") {
+        sprite.frame_height = v.parse().unwrap_or(64);
+    }
+    if let Some(v) = custom.get("--sprite-columns") {
+        sprite.columns = v.parse().unwrap_or(1);
+    }
+    if let Some(v) = custom.get("--sprite-rows") {
+        sprite.rows = v.parse().unwrap_or(1);
+    }
+    if let Some(v) = custom.get("--sprite-frame-count") {
+        sprite.frame_count = Some(v.parse().unwrap_or(1));
+    }
+    if let Some(v) = custom.get("--sprite-fps") {
+        sprite.fps = v.parse().unwrap_or(12.0);
+    }
+    if let Some(v) = custom.get("--sprite-scale") {
+        sprite.scale = v.parse().unwrap_or(1.0);
+    }
+    if let Some(v) = custom.get("--sprite-opacity") {
+        sprite.opacity = v.parse().unwrap_or(1.0);
+    }
+    if let Some(v) = custom.get("--sprite-motion") {
+        if let Some(m) = SpriteMotion::from_str(v.trim()) {
+            sprite.motion = m;
+        }
+    }
+    if let Some(v) = custom.get("--sprite-motion-speed") {
+        sprite.motion_speed = v.parse().unwrap_or(1.0);
+    }
+    if let Some(v) = custom.get("--sprite-position") {
+        if let Some(p) = SpritePosition::from_str(v.trim()) {
+            sprite.position = p;
+        }
+    }
+
+    if let Some(v) = custom.get("--sprite-enabled") {
+        sprite.enabled = v.trim() == "true";
+    } else if has_sprite_props && sprite.path.is_some() {
+        sprite.enabled = true;
+    }
+
+    if sprite.enabled {
+        theme.sprite = Some(sprite);
     }
 
     Ok(())

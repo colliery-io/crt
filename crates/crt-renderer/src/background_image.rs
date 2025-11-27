@@ -316,37 +316,55 @@ impl BackgroundImageState {
         let screen_aspect = screen_width / screen_height;
         let img_aspect = img_width / img_height;
 
-        let (scale_x, scale_y) = match self.config.size {
+        // Calculate the display size of the image in normalized screen coordinates (0-1)
+        // norm_w/norm_h represent what fraction of the screen the image should occupy
+        let (norm_w, norm_h) = match self.config.size {
             BackgroundSize::Cover => {
-                if screen_aspect > img_aspect {
-                    // Screen is wider - fit width, crop height
-                    (1.0, img_aspect / screen_aspect)
-                } else {
-                    // Screen is taller - fit height, crop width
-                    (screen_aspect / img_aspect, 1.0)
-                }
+                // Fill screen completely, may crop
+                (1.0, 1.0)
             }
             BackgroundSize::Contain => {
+                // Fit within screen, maintaining aspect ratio
                 if screen_aspect > img_aspect {
-                    // Screen is wider - fit height, letterbox width
-                    (screen_aspect / img_aspect, 1.0)
+                    // Screen is wider than image - fit height
+                    let h = 1.0;
+                    let w = img_aspect / screen_aspect;
+                    (w, h)
                 } else {
-                    // Screen is taller - fit width, letterbox height
-                    (1.0, img_aspect / screen_aspect)
+                    // Screen is taller than image - fit width
+                    let w = 1.0;
+                    let h = screen_aspect / img_aspect;
+                    (w, h)
                 }
             }
             BackgroundSize::Auto => {
-                // Original size relative to screen
-                (screen_width / img_width, screen_height / img_height)
+                // Original pixel size, doesn't scale with window
+                let w = img_width / screen_width;
+                let h = img_height / screen_height;
+                (w, h)
             }
-            BackgroundSize::Fixed(w, h) => {
-                // Fixed pixel dimensions relative to screen
-                (screen_width / w as f32, screen_height / h as f32)
+            BackgroundSize::Fixed(fw, fh) => {
+                // Fixed pixel dimensions
+                let w = fw as f32 / screen_width;
+                let h = fh as f32 / screen_height;
+                (w, h)
+            }
+            BackgroundSize::CanvasPercent(pct) => {
+                // Percentage of canvas width, maintain aspect ratio
+                let w = pct / 100.0;
+                let h = w * screen_aspect / img_aspect;
+                (w, h)
+            }
+            BackgroundSize::ImageScale(scale) => {
+                // Scale relative to original image size
+                let w = (img_width * scale) / screen_width;
+                let h = (img_height * scale) / screen_height;
+                (w, h)
             }
         };
 
-        // Calculate offset based on position
-        let (offset_x, offset_y) = match self.config.position {
+        // Calculate position anchor (0-1 range)
+        let (anchor_x, anchor_y) = match self.config.position {
             BackgroundPosition::Center => (0.5, 0.5),
             BackgroundPosition::TopLeft => (0.0, 0.0),
             BackgroundPosition::Top => (0.5, 0.0),
@@ -359,12 +377,32 @@ impl BackgroundImageState {
             BackgroundPosition::Percent(x, y) => (x, y),
         };
 
-        // Convert position to UV offset based on scale
-        // When scale > 1, we need to shift to center the portion being shown
-        let uv_offset_x = offset_x * (1.0 - 1.0 / scale_x).max(0.0);
-        let uv_offset_y = offset_y * (1.0 - 1.0 / scale_y).max(0.0);
+        // For Cover mode, use the original UV scaling logic
+        if matches!(self.config.size, BackgroundSize::Cover) {
+            let (scale_x, scale_y) = if screen_aspect > img_aspect {
+                (1.0, img_aspect / screen_aspect)
+            } else {
+                (screen_aspect / img_aspect, 1.0)
+            };
+            let uv_offset_x = anchor_x * (1.0 - 1.0 / scale_x).max(0.0);
+            let uv_offset_y = anchor_y * (1.0 - 1.0 / scale_y).max(0.0);
+            return [1.0 / scale_x, 1.0 / scale_y, uv_offset_x, uv_offset_y];
+        }
 
-        [1.0 / scale_x, 1.0 / scale_y, uv_offset_x, uv_offset_y]
+        // For other modes: UV scale is inverse of normalized size
+        // If image takes up 30% of screen (norm_w = 0.3), UV scale = 1/0.3 = 3.33
+        // This means UV goes from 0 to 3.33, but we only show 0-1 portion
+        let uv_scale_x = 1.0 / norm_w;
+        let uv_scale_y = 1.0 / norm_h;
+
+        // Offset to position the image
+        // At anchor (0,0) = top-left: offset = 0
+        // At anchor (0.5,0.5) = center: offset centers the visible portion
+        // At anchor (1,1) = bottom-right: offset moves to end
+        let uv_offset_x = -anchor_x * (uv_scale_x - 1.0);
+        let uv_offset_y = -anchor_y * (uv_scale_y - 1.0);
+
+        [uv_scale_x, uv_scale_y, uv_offset_x, uv_offset_y]
     }
 
     /// Get opacity

@@ -1,0 +1,109 @@
+/* WH40K Adeptus Mechanicus Theme - Servo Skull */
+
+:terminal {
+    /* White/cream background like parchment */
+    background: linear-gradient(to bottom, #f5f5f0, #e8e8e0);
+    color: #1a1a1a;
+
+    /* Adeptus Mechanicus cog logo watermark */
+    background-image: url("wh40k/admech-logo.png");
+    background-size: 30%;
+    background-position: center;
+    background-repeat: no-repeat;
+    --background-opacity: 0.1;
+
+    cursor-color: #cc0000;
+}
+
+/* ANSI 16-color palette - Adeptus Mechanicus colors */
+:terminal::palette {
+    /* Normal colors - Mars red, black iron, brass */
+    --color-0: #1a1a1a;   /* black - dark iron */
+    --color-1: #8b0000;   /* red - Mars red */
+    --color-2: #4a6741;   /* green - camo green */
+    --color-3: #8b7355;   /* yellow - bronze/tan */
+    --color-4: #2f4f4f;   /* blue - dark slate */
+    --color-5: #722f37;   /* magenta - wine/maroon */
+    --color-6: #5f9ea0;   /* cyan - cadet blue */
+    --color-7: #3a3a3a;   /* white - dark for contrast */
+
+    /* Bright colors */
+    --color-8: #4a4a4a;   /* bright black - iron gray */
+    --color-9: #cc0000;   /* bright red - Mars bright */
+    --color-10: #6b8e23;  /* bright green - olive */
+    --color-11: #8b7355;  /* bright yellow - bronze */
+    --color-12: #4682b4;  /* bright blue - steel blue */
+    --color-13: #8b4513;  /* bright magenta - saddle brown */
+    --color-14: #5f9ea0;  /* bright cyan - cadet */
+    --color-15: #2a2a2a;  /* bright white - dark for contrast */
+
+    /* Extended 256-color palette for powerlevel10k */
+    /* Greens -> muted military greens (prompt char) */
+    --color-46: #4a6741;  /* bright green -> camo green */
+
+    /* Blues -> dark slate/iron */
+    --color-33: #2f4f4f;  /* blue -> dark slate */
+
+    /* Cyans -> cadet/teal */
+    --color-37: #5f9ea0;  /* cyan -> cadet blue */
+
+    /* Purples -> wine/maroon */
+    --color-134: #722f37; /* purple -> mechanicus wine */
+
+    /* Yellows/golds -> bronze/tan (directories, common in prompts) */
+    --color-178: #8b7355; /* gold -> bronze */
+    --color-179: #9a8264;
+    --color-180: #a99173; /* tan -> bronze */
+    --color-184: #8b7355;
+    --color-190: #6b8e23; /* yellow-green -> olive */
+    --color-214: #8b4513; /* orange -> saddle brown */
+    --color-220: #8b7355; /* gold -> bronze */
+    --color-226: #8b7355; /* yellow -> bronze (directory path) */
+    --color-227: #9a8264;
+    --color-228: #a99173;
+    --color-229: #b8a082;
+
+    /* Grayscale -> iron-tinted grays (dark for contrast on cream) */
+    --color-232: #1a1a1a;
+    --color-233: #1f1f1f;
+    --color-234: #242424;
+    --color-235: #292929;
+    --color-236: #2e2e2e;
+    --color-237: #333333;
+    --color-238: #383838;
+    --color-239: #3d3d3d;
+    --color-240: #424242;
+    --color-241: #474747;
+    --color-242: #4c4c4c;
+    --color-243: #515151; /* gray (common in prompts) */
+    --color-244: #565656; /* gray for frame */
+    --color-245: #5b5b5b;
+    --color-246: #606060;
+    --color-247: #656565;
+    --color-248: #6a6a6a;
+    --color-249: #6f6f6f;
+    --color-250: #747474;
+    --color-251: #797979;
+    --color-252: #7e7e7e;
+    --color-253: #838383;
+    --color-254: #888888;
+    --color-255: #2a2a2a; /* white -> dark for contrast on cream bg */
+}
+
+:terminal::backdrop {
+    /* 25-frame sprite sheet (5x5 grid, 512x512 per frame) */
+    /* Animated servo skull in bottom-right corner */
+    --sprite-enabled: true;
+    --sprite-path: "wh40k/servo-skull-transparent.png";
+    --sprite-frame-width: 512;
+    --sprite-frame-height: 512;
+    --sprite-columns: 5;
+    --sprite-rows: 5;
+    --sprite-frame-count: 25;
+    --sprite-fps: 9;
+    --sprite-scale: 1.0;
+    --sprite-opacity: 1.0;
+    --sprite-motion: none;
+    --sprite-motion-speed: 0;
+    --sprite-position: bottom-right;
+}

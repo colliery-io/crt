@@ -232,17 +232,22 @@ impl Default for LinearGradient {
 }
 
 /// Background image sizing mode (CSS background-size)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum BackgroundSize {
     /// Scale to cover the entire area, may crop
     #[default]
     Cover,
     /// Scale to fit within area, may show background color
     Contain,
-    /// Original size
+    /// Original pixel size (does not scale with window)
     Auto,
     /// Fixed dimensions (width, height in pixels)
     Fixed(u32, u32),
+    /// Percentage of canvas width (scales with window, maintains aspect ratio)
+    CanvasPercent(f32),
+    /// Scale relative to original image size (1.0 = original, 0.5 = half, 2.0 = double)
+    /// Does not scale with window resize
+    ImageScale(f32),
 }
 
 /// Background image positioning (CSS background-position)
@@ -737,6 +742,136 @@ impl Default for ShapeEffect {
     }
 }
 
+/// Motion behavior for sprite effect
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum SpriteMotion {
+    #[default]
+    None,
+    Bounce,
+    Scroll,
+    Float,
+    Orbit,
+}
+
+impl SpriteMotion {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "none" => Some(Self::None),
+            "bounce" => Some(Self::Bounce),
+            "scroll" => Some(Self::Scroll),
+            "float" => Some(Self::Float),
+            "orbit" => Some(Self::Orbit),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Bounce => "bounce",
+            Self::Scroll => "scroll",
+            Self::Float => "float",
+            Self::Orbit => "orbit",
+        }
+    }
+}
+
+/// Static position for sprite effect
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum SpritePosition {
+    #[default]
+    Center,
+    TopLeft,
+    Top,
+    TopRight,
+    Left,
+    Right,
+    BottomLeft,
+    Bottom,
+    BottomRight,
+}
+
+impl SpritePosition {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().replace(['-', '_'], " ").trim() {
+            "center" => Some(Self::Center),
+            "top left" | "topleft" => Some(Self::TopLeft),
+            "top" => Some(Self::Top),
+            "top right" | "topright" => Some(Self::TopRight),
+            "left" => Some(Self::Left),
+            "right" => Some(Self::Right),
+            "bottom left" | "bottomleft" => Some(Self::BottomLeft),
+            "bottom" => Some(Self::Bottom),
+            "bottom right" | "bottomright" => Some(Self::BottomRight),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Center => "center",
+            Self::TopLeft => "top-left",
+            Self::Top => "top",
+            Self::TopRight => "top-right",
+            Self::Left => "left",
+            Self::Right => "right",
+            Self::BottomLeft => "bottom-left",
+            Self::Bottom => "bottom",
+            Self::BottomRight => "bottom-right",
+        }
+    }
+}
+
+/// Backdrop sprite effect (animated sprite sheet)
+#[derive(Debug, Clone)]
+pub struct SpriteEffect {
+    pub enabled: bool,
+    /// Path to sprite sheet image
+    pub path: Option<String>,
+    /// Width of each frame in pixels
+    pub frame_width: u32,
+    /// Height of each frame in pixels
+    pub frame_height: u32,
+    /// Number of columns in sprite sheet
+    pub columns: u32,
+    /// Number of rows in sprite sheet
+    pub rows: u32,
+    /// Total frame count (defaults to columns * rows)
+    pub frame_count: Option<u32>,
+    /// Animation frames per second
+    pub fps: f32,
+    /// Display scale
+    pub scale: f32,
+    /// Opacity (0.0-1.0)
+    pub opacity: f32,
+    /// Motion type
+    pub motion: SpriteMotion,
+    /// Motion speed multiplier
+    pub motion_speed: f32,
+    /// Static position (used when motion is None)
+    pub position: SpritePosition,
+}
+
+impl Default for SpriteEffect {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            path: None,
+            frame_width: 64,
+            frame_height: 64,
+            columns: 1,
+            rows: 1,
+            frame_count: None,
+            fps: 12.0,
+            scale: 1.0,
+            opacity: 1.0,
+            motion: SpriteMotion::None,
+            motion_speed: 1.0,
+            position: SpritePosition::Center,
+        }
+    }
+}
+
 /// Selection appearance
 #[derive(Debug, Clone, Copy)]
 pub struct SelectionStyle {
@@ -919,6 +1054,7 @@ pub struct Theme {
     pub particles: Option<ParticleEffect>,
     pub matrix: Option<MatrixEffect>,
     pub shape: Option<ShapeEffect>,
+    pub sprite: Option<SpriteEffect>,
 
     // Tab styling
     pub tabs: TabTheme,
@@ -961,6 +1097,7 @@ impl Theme {
             particles: None,
             matrix: None,
             shape: None,
+            sprite: None,
             tabs: TabTheme::default(),
         }
     }
@@ -986,6 +1123,7 @@ impl Theme {
             particles: None,
             matrix: None,
             shape: None,
+            sprite: None,
             tabs: TabTheme::default(),
         }
     }

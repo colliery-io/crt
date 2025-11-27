@@ -28,6 +28,7 @@ pub mod particles;
 pub mod rain;
 pub mod renderer;
 pub mod shape;
+pub mod sprite;
 pub mod starfield;
 
 pub use grid::GridEffect;
@@ -37,6 +38,7 @@ pub use particles::ParticleEffect;
 pub use rain::RainEffect;
 pub use renderer::EffectsRenderer;
 pub use shape::ShapeEffect;
+pub use sprite::SpriteEffect;
 pub use starfield::StarfieldEffect;
 
 use vello::kurbo::{Rect, Vec2};

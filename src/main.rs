@@ -19,7 +19,7 @@ use std::time::Instant;
 
 use config::Config;
 use crt_core::{ShellTerminal, Size, Scroll};
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, GridEffect, StarfieldEffect, RainEffect, ParticleEffect, MatrixEffect, ShapeEffect, EffectConfig};
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, GridEffect, StarfieldEffect, RainEffect, ParticleEffect, MatrixEffect, ShapeEffect, SpriteEffect, EffectConfig};
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
 use input::{
@@ -186,6 +186,7 @@ impl App {
         effects_renderer.add_effect(Box::new(ParticleEffect::new()));
         effects_renderer.add_effect(Box::new(MatrixEffect::new()));
         effects_renderer.add_effect(Box::new(ShapeEffect::new()));
+        effects_renderer.add_effect(Box::new(SpriteEffect::new()));
         // Configure effects from theme
         configure_effects_from_theme(&mut effects_renderer, &theme);
 
@@ -732,6 +733,33 @@ fn configure_effects_from_theme(effects_renderer: &mut EffectsRenderer, theme: &
         config.insert("shape-motion", shape.motion.as_str().to_string());
         config.insert("shape-motion-speed", shape.motion_speed.to_string());
         config.insert("shape-polygon-sides", shape.polygon_sides.to_string());
+    }
+
+    // Sprite effect configuration from theme
+    if let Some(ref sprite) = theme.sprite {
+        config.insert("sprite-enabled", if sprite.enabled { "true" } else { "false" });
+        if let Some(ref path) = sprite.path {
+            config.insert("sprite-path", path.clone());
+        }
+        config.insert("sprite-frame-width", sprite.frame_width.to_string());
+        config.insert("sprite-frame-height", sprite.frame_height.to_string());
+        config.insert("sprite-columns", sprite.columns.to_string());
+        config.insert("sprite-rows", sprite.rows.to_string());
+        if let Some(count) = sprite.frame_count {
+            config.insert("sprite-frame-count", count.to_string());
+        }
+        config.insert("sprite-fps", sprite.fps.to_string());
+        config.insert("sprite-scale", sprite.scale.to_string());
+        config.insert("sprite-opacity", sprite.opacity.to_string());
+        config.insert("sprite-motion", sprite.motion.as_str().to_string());
+        config.insert("sprite-motion-speed", sprite.motion_speed.to_string());
+        config.insert("sprite-position", sprite.position.as_str().to_string());
+        // Set base directory for relative paths (from theme directory or cwd)
+        if let Some(ref bg) = theme.background_image {
+            if let Some(ref base_dir) = bg.base_dir {
+                config.insert("sprite-base-dir", base_dir.display().to_string());
+            }
+        }
     }
 
     effects_renderer.configure(&config);
