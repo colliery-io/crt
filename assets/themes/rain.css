@@ -1,0 +1,95 @@
+/* Rain Theme - Rainy day terminal */
+
+:terminal {
+    /* Typography */
+    font-family: "MesloLGS NF", "Fira Code", monospace;
+    font-size: 14;
+    line-height: 1.4;
+    font-bold: "MesloLGS NF Bold";
+    font-italic: "MesloLGS NF Italic";
+    font-bold-italic: "MesloLGS NF Bold Italic";
+    ligatures: true;
+
+    /* Base colors - muted blue-gray */
+    color: #c0d0e0;
+    background: linear-gradient(to bottom, #1a2030, #0a1020);
+    cursor-color: #6090c0;
+
+    /* Subtle text glow */
+    text-shadow: 0 0 6px rgba(100, 150, 200, 0.3);
+}
+
+:terminal::selection {
+    background: #304060;
+    color: #ffffff;
+}
+
+:terminal::highlight {
+    background: #405070;
+    color: #ffffff;
+}
+
+:terminal::backdrop {
+    /* Rain effect - gentle rain with slight wind */
+    --rain-enabled: true;
+    --rain-color: rgba(150, 180, 220, 0.6);
+    --rain-density: 200;
+    --rain-speed: 1.2;
+    --rain-angle: 10;
+    --rain-length: 25;
+    --rain-thickness: 1.5;
+    --rain-glow-radius: 2;
+    --rain-glow-intensity: 0.3;
+}
+
+/* ANSI 16-color palette - cool tones */
+:terminal::palette {
+    /* Normal colors */
+    --color-0: #1a2030;   /* black */
+    --color-1: #cc6666;   /* red */
+    --color-2: #66aa88;   /* green */
+    --color-3: #ccaa66;   /* yellow */
+    --color-4: #6688cc;   /* blue */
+    --color-5: #aa66aa;   /* magenta */
+    --color-6: #66aaaa;   /* cyan */
+    --color-7: #c0c0c0;   /* white */
+
+    /* Bright colors */
+    --color-8: #404050;   /* bright black */
+    --color-9: #dd8888;   /* bright red */
+    --color-10: #88ccaa;  /* bright green */
+    --color-11: #ddcc88;  /* bright yellow */
+    --color-12: #88aadd;  /* bright blue */
+    --color-13: #cc88cc;  /* bright magenta */
+    --color-14: #88cccc;  /* bright cyan */
+    --color-15: #e0e0e0;  /* bright white */
+}
+
+/* Tab bar styling */
+:terminal::tab-bar {
+    background: #1a2030;
+    border-color: #304050;
+    height: 36px;
+    padding: 4px;
+}
+
+:tab {
+    background: #253040;
+    color: #8090a0;
+    border-radius: 4px;
+    min-width: 80px;
+    max-width: 200px;
+}
+
+:tab.active {
+    background: #304050;
+    color: #6090c0;
+    accent-color: #6090c0;
+    text-shadow: 0 0 8px rgba(96, 144, 192, 0.5);
+}
+
+:terminal::tab-close {
+    color: #606070;
+    --hover-background: #cc6666;
+    --hover-color: #ffffff;
+}

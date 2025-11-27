@@ -19,7 +19,7 @@ use std::time::Instant;
 
 use config::Config;
 use crt_core::{ShellTerminal, Size, Scroll};
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, GridEffect, StarfieldEffect, EffectConfig};
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, GridEffect, StarfieldEffect, RainEffect, EffectConfig};
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
 use input::{
@@ -177,11 +177,12 @@ impl App {
         let mut effect_pipeline = EffectPipeline::new(&shared.device, format);
         effect_pipeline.set_theme(theme.clone());
 
-        // Backdrop effects renderer (grid, starfield, etc.)
+        // Backdrop effects renderer (grid, starfield, rain, etc.)
         let mut effects_renderer = EffectsRenderer::new(&shared.device, shared.vello_renderer_arc(), format);
         // Add effects (disabled by default, enabled via CSS)
         effects_renderer.add_effect(Box::new(GridEffect::new()));
         effects_renderer.add_effect(Box::new(StarfieldEffect::new()));
+        effects_renderer.add_effect(Box::new(RainEffect::new()));
         // Configure effects from theme
         configure_effects_from_theme(&mut effects_renderer, &theme);
 
@@ -626,6 +627,26 @@ fn configure_effects_from_theme(effects_renderer: &mut EffectsRenderer, theme: &
         config.insert("starfield-twinkle-speed", starfield.twinkle_speed.to_string());
         config.insert("starfield-min-size", starfield.min_size.to_string());
         config.insert("starfield-max-size", starfield.max_size.to_string());
+    }
+
+    // Rain effect configuration from theme
+    if let Some(ref rain) = theme.rain {
+        config.insert("rain-enabled", if rain.enabled { "true" } else { "false" });
+        let c = rain.color;
+        config.insert("rain-color", format!(
+            "rgba({}, {}, {}, {})",
+            (c.r * 255.0) as u8,
+            (c.g * 255.0) as u8,
+            (c.b * 255.0) as u8,
+            c.a
+        ));
+        config.insert("rain-density", rain.density.to_string());
+        config.insert("rain-speed", rain.speed.to_string());
+        config.insert("rain-angle", rain.angle.to_string());
+        config.insert("rain-length", rain.length.to_string());
+        config.insert("rain-thickness", rain.thickness.to_string());
+        config.insert("rain-glow-radius", rain.glow_radius.to_string());
+        config.insert("rain-glow-intensity", rain.glow_intensity.to_string());
     }
 
     effects_renderer.configure(&config);

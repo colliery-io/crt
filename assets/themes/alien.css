@@ -1,0 +1,124 @@
+/* Alien Theme - Weyland-Yutani MU/TH/UR 6000 */
+
+:terminal {
+    /* Typography */
+    font-family: "MesloLGS NF", "Fira Code", monospace;
+    font-size: 14;
+    line-height: 1.5;
+    ligatures: true;
+
+    /* Amber phosphor CRT */
+    color: #ffb000;
+    background: #0a0800;
+    cursor-color: #ffb000;
+
+    /* CRT phosphor glow */
+    text-shadow: 0 0 8px rgba(255, 176, 0, 0.6);
+}
+
+:terminal::selection {
+    background: #ffb000;
+    color: #0a0800;
+}
+
+:terminal::highlight {
+    background: #ff3300;
+    color: #0a0800;
+}
+
+:terminal::backdrop {
+    /* No grid - authentic CRT look */
+    --grid-enabled: false;
+}
+
+/* ANSI palette - amber monochrome with danger red */
+:terminal::palette {
+    --color-0: #0a0800;   /* black - CRT off */
+    --color-1: #ff3300;   /* red - ALERT */
+    --color-2: #ffb000;   /* green -> amber */
+    --color-3: #ffb000;   /* yellow -> amber */
+    --color-4: #aa7700;   /* blue -> dark amber */
+    --color-5: #ffcc44;   /* magenta -> light amber */
+    --color-6: #ddaa00;   /* cyan -> amber variant */
+    --color-7: #ffb000;   /* white -> amber */
+
+    --color-8: #332800;   /* bright black - dim amber */
+    --color-9: #ff5533;   /* bright red - bright alert */
+    --color-10: #ffcc44;  /* bright green -> bright amber */
+    --color-11: #ffcc44;  /* bright yellow */
+    --color-12: #cc9922;  /* bright blue -> medium amber */
+    --color-13: #ffdd66;  /* bright magenta -> pale amber */
+    --color-14: #eebb33;  /* bright cyan -> amber */
+    --color-15: #ffdd88;  /* bright white -> pale amber */
+
+    /* Extended - all amber shades */
+    --color-226: #ffb000;
+    --color-227: #ffcc44;
+    --color-228: #ffdd66;
+    --color-178: #ffb000;
+    --color-214: #ffaa00;
+    --color-220: #ffcc00;
+    --color-70: #ddaa00;
+    --color-37: #cc9922;
+    --color-31: #aa7700;
+
+    /* Reds for warnings/errors */
+    --color-196: #ff3300;
+    --color-160: #ff3300;
+    --color-124: #cc2200;
+
+    /* Grayscale -> amber scale */
+    --color-232: #0a0800;
+    --color-233: #110d00;
+    --color-234: #181200;
+    --color-235: #1f1700;
+    --color-236: #261c00;
+    --color-237: #2d2100;
+    --color-238: #342600;
+    --color-239: #3b2b00;
+    --color-240: #423000;
+    --color-241: #493500;
+    --color-242: #503a00;
+    --color-243: #573f00;
+    --color-244: #5e4400;
+    --color-245: #654900;
+    --color-246: #6c4e00;
+    --color-247: #735300;
+    --color-248: #7a5800;
+    --color-249: #815d00;
+    --color-250: #886200;
+    --color-251: #8f6700;
+    --color-252: #966c00;
+    --color-253: #9d7100;
+    --color-254: #a47600;
+    --color-255: #ab7b00;
+}
+
+/* Tab bar */
+:terminal::tab-bar {
+    background: #0a0800;
+    border-color: #332800;
+    height: 36px;
+    padding: 4px;
+}
+
+:tab {
+    background: #1a1400;
+    color: #665500;
+    border-radius: 0;
+    min-width: 80px;
+    max-width: 200px;
+}
+
+:tab.active {
+    background: #332800;
+    color: #ffb000;
+    accent-color: #ffb000;
+    text-shadow: 0 0 8px rgba(255, 176, 0, 0.9);
+}
+
+:terminal::tab-close {
+    color: #665500;
+    --hover-background: #ff3300;
+    --hover-color: #0a0800;
+}

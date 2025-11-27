@@ -23,11 +23,13 @@
 
 pub mod grid;
 pub mod motion;
+pub mod rain;
 pub mod renderer;
 pub mod starfield;
 
 pub use grid::GridEffect;
 pub use motion::MotionBehavior;
+pub use rain::RainEffect;
 pub use renderer::EffectsRenderer;
 pub use starfield::StarfieldEffect;
 

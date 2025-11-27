@@ -15,7 +15,7 @@ use lightningcss::printer::PrinterOptions;
 
 use crate::{
     BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
-    Color, GridEffect, LinearGradient, StarDirection, StarfieldEffect, TextShadow, Theme,
+    Color, GridEffect, LinearGradient, RainEffect, StarDirection, StarfieldEffect, TextShadow, Theme,
 };
 
 #[derive(Error, Debug)]
@@ -883,6 +883,51 @@ fn apply_backdrop_properties(
 
     if starfield.enabled {
         theme.starfield = Some(starfield);
+    }
+
+    // Parse rain effect properties
+    let mut rain = theme.rain.unwrap_or(RainEffect {
+        enabled: false,
+        ..Default::default()
+    });
+
+    let mut has_rain_props = false;
+
+    if let Some(c) = custom.get("--rain-color") {
+        rain.color = parse_color(c)?;
+        has_rain_props = true;
+    }
+    if let Some(v) = custom.get("--rain-density") {
+        rain.density = v.parse().unwrap_or(150);
+        has_rain_props = true;
+    }
+    if let Some(v) = custom.get("--rain-speed") {
+        rain.speed = v.parse().unwrap_or(1.0);
+    }
+    if let Some(v) = custom.get("--rain-angle") {
+        rain.angle = v.parse().unwrap_or(0.0);
+    }
+    if let Some(v) = custom.get("--rain-length") {
+        rain.length = v.parse().unwrap_or(20.0);
+    }
+    if let Some(v) = custom.get("--rain-thickness") {
+        rain.thickness = v.parse().unwrap_or(1.5);
+    }
+    if let Some(v) = custom.get("--rain-glow-radius") {
+        rain.glow_radius = v.parse().unwrap_or(0.0);
+    }
+    if let Some(v) = custom.get("--rain-glow-intensity") {
+        rain.glow_intensity = v.parse().unwrap_or(0.0);
+    }
+
+    if let Some(v) = custom.get("--rain-enabled") {
+        rain.enabled = v.trim() == "true";
+    } else if has_rain_props {
+        rain.enabled = true;
+    }
+
+    if rain.enabled {
+        theme.rain = Some(rain);
     }
 
     Ok(())

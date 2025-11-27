@@ -1,0 +1,98 @@
+/* Tron Legacy Theme - The Grid */
+
+:terminal {
+    /* Typography */
+    font-family: "MesloLGS NF", "Fira Code", monospace;
+    font-size: 14;
+    line-height: 1.4;
+    ligatures: true;
+
+    /* Circuit blue on black void */
+    color: #6fc3df;
+    background: linear-gradient(to bottom, #000000, #050510);
+    cursor-color: #ffffff;
+
+    /* Electric circuit glow */
+    text-shadow: 0 0 12px rgba(111, 195, 223, 0.7);
+}
+
+:terminal::selection {
+    background: #6fc3df;
+    color: #000000;
+}
+
+:terminal::highlight {
+    background: #df740c;
+    color: #000000;
+}
+
+:terminal::backdrop {
+    --grid-enabled: true;
+    --grid-color: rgba(111, 195, 223, 0.25);
+    --grid-spacing: 5;
+    --grid-line-width: 2.0;
+    --grid-perspective: 2.0;
+    --grid-horizon: 0.75;
+    --grid-animation-speed: 0.4;
+    --grid-glow-radius: 10;
+    --grid-glow-intensity: 0.7;
+    --grid-vanishing-spread: .5;
+    --grid-curved: true;
+}
+
+/* ANSI palette - The Grid */
+:terminal::palette {
+    --color-0: #000000;   /* black - the void */
+    --color-1: #df740c;   /* red - Clu orange */
+    --color-2: #6fc3df;   /* green -> circuit blue */
+    --color-3: #df740c;   /* yellow -> orange */
+    --color-4: #18c0e4;   /* blue - bright circuit */
+    --color-5: #df740c;   /* magenta -> orange */
+    --color-6: #6fc3df;   /* cyan - circuit */
+    --color-7: #ffffff;   /* white - identity disc */
+
+    --color-8: #1a1a2a;   /* bright black */
+    --color-9: #ff9933;   /* bright red - bright orange */
+    --color-10: #8fd3ef;  /* bright green -> light blue */
+    --color-11: #ff9933;  /* bright yellow -> orange */
+    --color-12: #40d0f4;  /* bright blue */
+    --color-13: #ff9933;  /* bright magenta -> orange */
+    --color-14: #8fd3ef;  /* bright cyan */
+    --color-15: #ffffff;  /* bright white */
+
+    /* Extended - circuit variations */
+    --color-226: #df740c;
+    --color-178: #ff9933;
+    --color-70: #6fc3df;
+    --color-37: #18c0e4;
+    --color-31: #40d0f4;
+}
+
+/* Tab bar */
+:terminal::tab-bar {
+    background: #000000;
+    border-color: #1a1a2a;
+    height: 36px;
+    padding: 4px;
+}
+
+:tab {
+    background: #0a0a15;
+    color: #3a6070;
+    border-radius: 0;
+    min-width: 80px;
+    max-width: 200px;
+}
+
+:tab.active {
+    background: #1a1a2a;
+    color: #6fc3df;
+    accent-color: #6fc3df;
+    text-shadow: 0 0 10px rgba(111, 195, 223, 0.9);
+}
+
+:terminal::tab-close {
+    color: #3a6070;
+    --hover-background: #df740c;
+    --hover-color: #000000;
+}

@@ -448,6 +448,36 @@ impl Default for StarfieldEffect {
     }
 }
 
+/// Backdrop rain effect (falling raindrops)
+#[derive(Debug, Clone, Copy)]
+pub struct RainEffect {
+    pub enabled: bool,
+    pub color: Color,
+    pub density: u32,
+    pub speed: f32,
+    pub angle: f32,
+    pub length: f32,
+    pub thickness: f32,
+    pub glow_radius: f32,
+    pub glow_intensity: f32,
+}
+
+impl Default for RainEffect {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            color: Color::rgba(0.59, 0.71, 0.86, 0.7), // Light blue-gray
+            density: 150,
+            speed: 1.0,
+            angle: 0.0,
+            length: 20.0,
+            thickness: 1.5,
+            glow_radius: 0.0,
+            glow_intensity: 0.0,
+        }
+    }
+}
+
 /// Selection appearance
 #[derive(Debug, Clone, Copy)]
 pub struct SelectionStyle {
@@ -626,6 +656,7 @@ pub struct Theme {
     pub text_shadow: Option<TextShadow>,
     pub grid: Option<GridEffect>,
     pub starfield: Option<StarfieldEffect>,
+    pub rain: Option<RainEffect>,
 
     // Tab styling
     pub tabs: TabTheme,
@@ -664,6 +695,7 @@ impl Theme {
             text_shadow: Some(TextShadow::default()),
             grid: Some(GridEffect::default()),
             starfield: None,
+            rain: None,
             tabs: TabTheme::default(),
         }
     }
@@ -685,6 +717,7 @@ impl Theme {
             text_shadow: None,
             grid: None,
             starfield: None,
+            rain: None,
             tabs: TabTheme::default(),
         }
     }
