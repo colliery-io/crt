@@ -281,9 +281,9 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
             .and_then(|id| state.shells.get(&id))
             .and_then(|shell| shell.terminal().renderable_content().selection);
 
-        // Collect all overlay rectangles
-        state.gpu.rect_renderer.clear();
-        state.gpu.rect_renderer.update_screen_size(
+        // Collect all overlay rectangles (uses separate renderer to avoid buffer conflicts with tab bar)
+        state.gpu.overlay_rect_renderer.clear();
+        state.gpu.overlay_rect_renderer.update_screen_size(
             &shared.queue,
             state.gpu.config.width as f32,
             state.gpu.config.height as f32,
@@ -301,7 +301,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
                 DecorationKind::Underline => {
                     // Underline: thin rect near bottom of cell
                     let underline_y = decoration.y + decoration.cell_height - 3.0;
-                    state.gpu.rect_renderer.push_rect(
+                    state.gpu.overlay_rect_renderer.push_rect(
                         decoration.x,
                         underline_y,
                         decoration.cell_width,
@@ -312,7 +312,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
                 DecorationKind::Strikethrough => {
                     // Strikethrough: thin rect at middle of cell
                     let strike_y = decoration.y + decoration.cell_height * 0.45;
-                    state.gpu.rect_renderer.push_rect(
+                    state.gpu.overlay_rect_renderer.push_rect(
                         decoration.x,
                         strike_y,
                         decoration.cell_width,
@@ -343,12 +343,12 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
                     }
                 };
 
-                state.gpu.rect_renderer.push_rect(rect_x, rect_y, rect_w, rect_h, cursor_color);
+                state.gpu.overlay_rect_renderer.push_rect(rect_x, rect_y, rect_w, rect_h, cursor_color);
             }
         }
 
         // Render all overlay rects directly to frame
-        if state.gpu.rect_renderer.instance_count() > 0 {
+        if state.gpu.overlay_rect_renderer.instance_count() > 0 {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Overlay Rect Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -365,7 +365,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
                 occlusion_query_set: None,
             });
 
-            state.gpu.rect_renderer.render(&shared.queue, &mut pass);
+            state.gpu.overlay_rect_renderer.render(&shared.queue, &mut pass);
         }
     }
 
@@ -452,7 +452,7 @@ fn render_selection_rects(state: &mut WindowState, selection: &SelectionRange) {
             let x = offset_x + padding + (min_col as f32 * cell_width);
             let num_cells = max_col - min_col + 1;
             let width = num_cells as f32 * cell_width;
-            state.gpu.rect_renderer.push_rect(x, y, width, line_height, selection_color);
+            state.gpu.overlay_rect_renderer.push_rect(x, y, width, line_height, selection_color);
         }
     } else {
         // Normal selection: spans from start point to end point
@@ -476,7 +476,7 @@ fn render_selection_rects(state: &mut WindowState, selection: &SelectionRange) {
             let x = offset_x + padding + (line_start_col as f32 * cell_width);
             let num_cells = (line_end_col - line_start_col + 1).min(500);
             let width = num_cells as f32 * cell_width;
-            state.gpu.rect_renderer.push_rect(x, y, width, line_height, selection_color);
+            state.gpu.overlay_rect_renderer.push_rect(x, y, width, line_height, selection_color);
         }
     }
 }

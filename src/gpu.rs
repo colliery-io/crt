@@ -99,8 +99,12 @@ pub struct WindowGpuState {
     // Terminal vello renderer for cursor and selection
     pub terminal_vello: TerminalVelloRenderer,
 
-    // Rect renderer for cell backgrounds
+    // Rect renderer for cell backgrounds and tab bar shapes
     pub rect_renderer: RectRenderer,
+
+    // Separate rect renderer for overlays (cursor, selection, underlines)
+    // to avoid buffer conflicts with tab bar rendering
+    pub overlay_rect_renderer: RectRenderer,
 
     // Background image rendering (optional)
     pub background_image_pipeline: BackgroundImagePipeline,
