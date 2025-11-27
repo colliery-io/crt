@@ -366,12 +366,18 @@ impl Config {
 
     /// Get theme CSS content from ~/.config/crt/themes/{name}.css
     pub fn theme_css(&self) -> Option<String> {
+        self.theme_css_with_path().map(|(css, _)| css)
+    }
+
+    /// Get theme CSS content and the theme file's directory
+    /// Returns (css_content, theme_directory) for resolving relative paths
+    pub fn theme_css_with_path(&self) -> Option<(String, PathBuf)> {
         if let Some(themes_dir) = Self::themes_dir() {
             let theme_path = themes_dir.join(format!("{}.css", self.theme.name));
             match std::fs::read_to_string(&theme_path) {
                 Ok(css) => {
                     log::info!("Loaded theme from {:?}", theme_path);
-                    return Some(css);
+                    return Some((css, themes_dir));
                 }
                 Err(_) => {
                     log::warn!(

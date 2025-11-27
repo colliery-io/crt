@@ -708,6 +708,7 @@ fn apply_terminal_properties(
 
         theme.background_image = Some(BackgroundImage {
             path: Some(url.clone()),
+            base_dir: None, // Set by Theme::from_css_with_base
             size,
             position,
             repeat,

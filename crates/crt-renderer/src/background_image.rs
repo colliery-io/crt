@@ -282,10 +282,12 @@ impl BackgroundImageState {
         queue: &wgpu::Queue,
         config: &BackgroundImage,
     ) -> Result<Self, String> {
-        let path = config.path.as_ref()
+        // Use resolved_path() to handle relative paths against theme directory
+        let path = config.resolved_path()
             .ok_or_else(|| "No background image path specified".to_string())?;
 
-        let image = LoadedImage::from_path(path)?;
+        log::debug!("Loading background image from: {:?}", path);
+        let image = LoadedImage::from_path(&path)?;
         let texture = BackgroundTexture::new(device, queue, &image);
 
         Ok(Self {
@@ -378,8 +380,9 @@ mod tests {
     #[test]
     fn test_uv_transform_cover_wide_screen() {
         // Create a mock config for testing
-        let config = BackgroundImage {
+        let _config = BackgroundImage {
             path: None,
+            base_dir: None,
             size: BackgroundSize::Cover,
             position: BackgroundPosition::Center,
             repeat: BackgroundRepeat::NoRepeat,

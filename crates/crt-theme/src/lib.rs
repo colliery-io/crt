@@ -245,6 +245,8 @@ pub enum BackgroundRepeat {
 pub struct BackgroundImage {
     /// Path to image file (relative to theme file or absolute)
     pub path: Option<String>,
+    /// Base directory for resolving relative paths (typically the theme directory)
+    pub base_dir: Option<std::path::PathBuf>,
     /// How to size the image
     pub size: BackgroundSize,
     /// Where to position the image
@@ -259,6 +261,7 @@ impl BackgroundImage {
     pub fn new(path: impl Into<String>) -> Self {
         Self {
             path: Some(path.into()),
+            base_dir: None,
             size: BackgroundSize::Cover,
             position: BackgroundPosition::Center,
             repeat: BackgroundRepeat::NoRepeat,
@@ -268,6 +271,26 @@ impl BackgroundImage {
 
     pub fn has_image(&self) -> bool {
         self.path.is_some()
+    }
+
+    /// Get the resolved path, handling relative paths against base_dir
+    pub fn resolved_path(&self) -> Option<std::path::PathBuf> {
+        let path_str = self.path.as_ref()?;
+        let path = std::path::Path::new(path_str);
+
+        // If absolute, return as-is
+        if path.is_absolute() {
+            return Some(path.to_path_buf());
+        }
+
+        // If relative, resolve against base_dir
+        if let Some(base) = &self.base_dir {
+            let resolved = base.join(path);
+            return Some(resolved);
+        }
+
+        // No base_dir, return as-is (will likely fail to load)
+        Some(path.to_path_buf())
     }
 }
 
@@ -540,10 +563,22 @@ impl Theme {
         parser::parse_theme(css)
     }
 
+    /// Load theme from CSS string with base directory for resolving relative paths
+    pub fn from_css_with_base(css: &str, base_dir: impl AsRef<Path>) -> Result<Self, parser::ThemeParseError> {
+        let mut theme = parser::parse_theme(css)?;
+        // Set base_dir on background_image if present
+        if let Some(ref mut bg) = theme.background_image {
+            bg.base_dir = Some(base_dir.as_ref().to_path_buf());
+        }
+        Ok(theme)
+    }
+
     /// Load theme from CSS file
     pub fn from_css_file(path: impl AsRef<Path>) -> Result<Self, Box<dyn std::error::Error>> {
-        let css = std::fs::read_to_string(path)?;
-        Ok(parser::parse_theme(&css)?)
+        let path_ref = path.as_ref();
+        let css = std::fs::read_to_string(path_ref)?;
+        let base_dir = path_ref.parent().unwrap_or(Path::new("."));
+        Ok(Self::from_css_with_base(&css, base_dir)?)
     }
 
     /// Convert theme to GPU-ready uniforms

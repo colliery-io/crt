@@ -307,8 +307,8 @@ impl App {
     }
 
     fn load_theme(&self) -> Theme {
-        match self.config.theme_css() {
-            Some(css) => Theme::from_css(&css).unwrap_or_else(|e| {
+        match self.config.theme_css_with_path() {
+            Some((css, base_dir)) => Theme::from_css_with_base(&css, &base_dir).unwrap_or_else(|e| {
                 log::warn!("Failed to parse theme: {:?}", e);
                 Theme::default()
             }),
