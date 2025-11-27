@@ -106,4 +106,10 @@ pub struct WindowGpuState {
     pub background_image_pipeline: BackgroundImagePipeline,
     pub background_image_state: Option<BackgroundImageState>,
     pub background_image_bind_group: Option<wgpu::BindGroup>,
+
+    // Intermediate text texture for glow effect
+    // Text is rendered here first, then composited with Gaussian blur
+    pub text_texture: wgpu::Texture,
+    pub text_texture_view: wgpu::TextureView,
+    pub composite_bind_group: wgpu::BindGroup,
 }

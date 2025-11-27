@@ -10,6 +10,7 @@ mod gpu;
 mod input;
 mod menu;
 mod render;
+mod watcher;
 mod window;
 
 use std::collections::HashMap;
@@ -63,6 +64,7 @@ struct App {
     config: Config,
     modifiers: Modifiers,
     pending_new_window: bool,
+    config_watcher: Option<watcher::ConfigWatcher>,
     #[cfg(target_os = "macos")]
     menu: Option<Menu>,
     #[cfg(target_os = "macos")]
@@ -71,13 +73,17 @@ struct App {
 
 impl App {
     fn new() -> Self {
+        let config = Config::load();
+        let config_watcher = watcher::ConfigWatcher::new();
+
         Self {
             windows: HashMap::new(),
             shared_gpu: None,
             focused_window: None,
-            config: Config::load(),
+            config,
             modifiers: Modifiers::default(),
             pending_new_window: false,
+            config_watcher,
             #[cfg(target_os = "macos")]
             menu: None,
             #[cfg(target_os = "macos")]
@@ -208,6 +214,27 @@ impl App {
             (None, None)
         };
 
+        // Create intermediate text texture for glow effect
+        let text_texture = shared.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Text Texture"),
+            size: wgpu::Extent3d {
+                width: size.width,
+                height: size.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let text_texture_view = text_texture.create_view(&Default::default());
+        let composite_bind_group = effect_pipeline.composite.create_bind_group(
+            &shared.device,
+            &text_texture_view,
+        );
+
         let gpu = WindowGpuState {
             surface,
             config: surface_config,
@@ -222,6 +249,9 @@ impl App {
             background_image_pipeline,
             background_image_state,
             background_image_bind_group,
+            text_texture,
+            text_texture_view,
+            composite_bind_group,
         };
 
         // Create initial shell
@@ -474,6 +504,51 @@ impl App {
             state.gpu.tab_bar.select_tab_index(index);
             state.force_active_tab_redraw();
             state.window.request_redraw();
+        }
+    }
+
+    /// Reload config from disk and apply changes
+    fn reload_config(&mut self) {
+        log::info!("Reloading config...");
+        let new_config = Config::load();
+
+        // Check if theme changed
+        let theme_changed = new_config.theme.name != self.config.theme.name;
+
+        self.config = new_config;
+
+        // Reload theme if it changed
+        if theme_changed {
+            self.reload_theme();
+        }
+
+        // Apply other config changes to all windows
+        for state in self.windows.values_mut() {
+            // Force redraw
+            state.dirty = true;
+            for hash in state.content_hashes.values_mut() {
+                *hash = 0;
+            }
+        }
+    }
+
+    /// Reload theme CSS and apply to all windows
+    fn reload_theme(&mut self) {
+        log::info!("Reloading theme...");
+        let theme = self.load_theme();
+
+        for state in self.windows.values_mut() {
+            // Update effect pipeline with new theme
+            state.gpu.effect_pipeline.set_theme(theme.clone());
+
+            // Update tab bar theme
+            state.gpu.tab_bar.set_theme(theme.tabs.clone());
+
+            // Force full redraw
+            state.dirty = true;
+            for hash in state.content_hashes.values_mut() {
+                *hash = 0;
+            }
         }
     }
 }
@@ -913,6 +988,18 @@ impl ApplicationHandler for App {
                 if let Some(action) = menu_id_to_action(event.id(), ids) {
                     self.handle_menu_action(action, event_loop);
                 }
+            }
+        }
+
+        // Check for config/theme file changes - collect events first to avoid borrow issues
+        let events: Vec<_> = self.config_watcher.as_mut()
+            .map(|w| std::iter::from_fn(|| w.poll()).collect())
+            .unwrap_or_default();
+
+        for event in events {
+            match event {
+                watcher::ConfigEvent::ConfigChanged => self.reload_config(),
+                watcher::ConfigEvent::ThemeChanged => self.reload_theme(),
             }
         }
 

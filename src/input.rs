@@ -421,6 +421,30 @@ pub fn handle_resize(
     state.gpu.config.height = new_height;
     state.gpu.surface.configure(&shared.device, &state.gpu.config);
 
+    // Recreate text texture for glow effect (must match new size)
+    let text_texture = shared.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Text Texture"),
+        size: wgpu::Extent3d {
+            width: new_width,
+            height: new_height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: state.gpu.config.format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let text_texture_view = text_texture.create_view(&Default::default());
+    let composite_bind_group = state.gpu.effect_pipeline.composite.create_bind_group(
+        &shared.device,
+        &text_texture_view,
+    );
+    state.gpu.text_texture = text_texture;
+    state.gpu.text_texture_view = text_texture_view;
+    state.gpu.composite_bind_group = composite_bind_group;
+
     state.gpu.grid_renderer.update_screen_size(
         &shared.queue,
         new_width as f32,

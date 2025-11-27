@@ -1,0 +1,55 @@
+#!/bin/bash
+# Post-installation script for crt
+# This runs after the PKG installs files
+
+# Get the user who initiated the install (works for GUI installs)
+if [ -n "$USER" ]; then
+    INSTALL_USER="$USER"
+elif [ -n "$SUDO_USER" ]; then
+    INSTALL_USER="$SUDO_USER"
+else
+    INSTALL_USER=$(stat -f '%Su' /dev/console)
+fi
+
+USER_HOME=$(eval echo ~$INSTALL_USER)
+CONFIG_DIR="$USER_HOME/.config/crt"
+ASSETS_DIR="/Applications/crt.app/Contents/Resources/assets"
+
+echo "Setting up crt configuration for user: $INSTALL_USER"
+
+# Create config directory structure
+sudo -u "$INSTALL_USER" mkdir -p "$CONFIG_DIR/themes"
+sudo -u "$INSTALL_USER" mkdir -p "$CONFIG_DIR/fonts"
+
+# Always update default_config.toml (reference for upgrades)
+if [ -f "$ASSETS_DIR/config.toml" ]; then
+    sudo -u "$INSTALL_USER" cp "$ASSETS_DIR/config.toml" "$CONFIG_DIR/default_config.toml"
+fi
+
+# Only create config.toml if it doesn't exist
+if [ ! -f "$CONFIG_DIR/config.toml" ]; then
+    if [ -f "$ASSETS_DIR/config.toml" ]; then
+        sudo -u "$INSTALL_USER" cp "$ASSETS_DIR/config.toml" "$CONFIG_DIR/config.toml"
+    fi
+fi
+
+# Always overwrite default themes
+if [ -d "$ASSETS_DIR/themes" ]; then
+    for theme in "$ASSETS_DIR/themes/"*.css; do
+        if [ -f "$theme" ]; then
+            sudo -u "$INSTALL_USER" cp "$theme" "$CONFIG_DIR/themes/"
+        fi
+    done
+fi
+
+# Copy fonts
+if [ -d "$ASSETS_DIR/fonts" ]; then
+    for font in "$ASSETS_DIR/fonts/"*.ttf "$ASSETS_DIR/fonts/"*.otf; do
+        if [ -f "$font" ]; then
+            sudo -u "$INSTALL_USER" cp "$font" "$CONFIG_DIR/fonts/"
+        fi
+    done
+fi
+
+echo "crt configuration installed to: $CONFIG_DIR"
+exit 0

@@ -5,17 +5,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Tab bar position
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum TabPosition {
-    #[default]
-    Top,
-    Bottom,
-    Left,
-    Right,
-}
-
 /// Shell configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -79,8 +68,6 @@ pub struct WindowConfig {
     pub title: String,
     /// Start in fullscreen mode
     pub fullscreen: bool,
-    /// Tab bar position
-    pub tab_position: TabPosition,
 }
 
 impl Default for WindowConfig {
@@ -90,7 +77,6 @@ impl Default for WindowConfig {
             rows: 24,
             title: "CRT Terminal".to_string(),
             fullscreen: false,
-            tab_position: TabPosition::default(),
         }
     }
 }
@@ -373,305 +359,29 @@ impl Config {
         }
     }
 
-    /// Save config to file (creates directory if needed)
-    pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let Some(dir) = Self::config_dir() else {
-            return Err("Could not determine config directory".into());
-        };
-
-        std::fs::create_dir_all(&dir)?;
-
-        let path = dir.join("config.toml");
-        let contents = toml::to_string_pretty(self)?;
-        std::fs::write(&path, contents)?;
-
-        log::info!("Saved config to {:?}", path);
-        Ok(())
-    }
-
-    /// Get shell program (or default to login shell)
-    pub fn shell_program(&self) -> String {
-        if let Some(ref program) = self.shell.program {
-            return program.clone();
-        }
-
-        // Try to get user's login shell from SHELL env var
-        if let Ok(shell) = std::env::var("SHELL") {
-            return shell;
-        }
-
-        // Fallback to /bin/zsh on macOS, /bin/bash elsewhere
-        #[cfg(target_os = "macos")]
-        {
-            "/bin/zsh".to_string()
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            "/bin/bash".to_string()
-        }
-    }
-
     /// Get the themes directory path (~/.config/crt/themes)
     pub fn themes_dir() -> Option<PathBuf> {
         Self::config_dir().map(|p| p.join("themes"))
     }
 
-    /// Get theme CSS content
-    /// Tries to load from ~/.config/crt/themes/{name}.css first,
-    /// falls back to embedded defaults for "synthwave" and "minimal"
+    /// Get theme CSS content from ~/.config/crt/themes/{name}.css
     pub fn theme_css(&self) -> Option<String> {
-        // Try to load from themes directory first
         if let Some(themes_dir) = Self::themes_dir() {
             let theme_path = themes_dir.join(format!("{}.css", self.theme.name));
-            if let Ok(css) = std::fs::read_to_string(&theme_path) {
-                log::info!("Loaded theme from {:?}", theme_path);
-                return Some(css);
+            match std::fs::read_to_string(&theme_path) {
+                Ok(css) => {
+                    log::info!("Loaded theme from {:?}", theme_path);
+                    return Some(css);
+                }
+                Err(_) => {
+                    log::warn!(
+                        "Theme '{}' not found at {:?}. Install themes to ~/.config/crt/themes/",
+                        self.theme.name,
+                        theme_path
+                    );
+                }
             }
         }
-
-        // Fall back to embedded defaults
-        match self.theme.name.as_str() {
-            "synthwave" => {
-                log::info!("Using embedded synthwave theme");
-                Some(BUILTIN_SYNTHWAVE_THEME.to_string())
-            }
-            "minimal" => {
-                log::info!("Using embedded minimal theme");
-                Some(BUILTIN_MINIMAL_THEME.to_string())
-            }
-            _ => {
-                log::warn!("Theme '{}' not found in ~/.config/crt/themes/", self.theme.name);
-                None
-            }
-        }
+        None
     }
-}
-
-/// Builtin synthwave theme CSS
-const BUILTIN_SYNTHWAVE_THEME: &str = r#"/* Synthwave Theme - The Extra AF Terminal Experience */
-
-:terminal {
-    /* Typography */
-    font-family: "MesloLGS NF", "Fira Code", monospace;
-    font-size: 14;
-    line-height: 1.5;
-    font-bold: "MesloLGS NF Bold";
-    font-italic: "MesloLGS NF Italic";
-    font-bold-italic: "MesloLGS NF Bold Italic";
-    ligatures: true;
-
-    /* Base colors - teal text like synthwave */
-    color: #61e2fe;
-    background: linear-gradient(to bottom, #1a0a2e, #16213e);
-    cursor-color: #00ffff;
-
-    /* Text glow effect - strong teal glow */
-    text-shadow: 0 0 20px rgba(97, 226, 254, 1.0);
-}
-
-:terminal::selection {
-    background: #44475a;
-    color: #f8f8f2;
-}
-
-:terminal::highlight {
-    background: #e6db74;
-    color: #1a1a1a;
-}
-
-:terminal::backdrop {
-    /* Perspective grid */
-    --grid-enabled: true;
-    --grid-color: rgba(255, 0, 255, 0.3);
-    --grid-spacing: 8;
-    --grid-line-width: 0.02;
-    --grid-perspective: 2;
-    --grid-horizon: 0.35;
-    --grid-animation-speed: 0.5;
-}
-
-/* ANSI 16-color palette */
-:terminal::palette {
-    /* Normal colors */
-    --color-0: #0d0d0d;   /* black */
-    --color-1: #ff5555;   /* red */
-    --color-2: #50fa7b;   /* green */
-    --color-3: #f1fa8c;   /* yellow */
-    --color-4: #bd93f9;   /* blue */
-    --color-5: #ff79c6;   /* magenta */
-    --color-6: #8be9fd;   /* cyan */
-    --color-7: #f8f8f2;   /* white */
-
-    /* Bright colors */
-    --color-8: #4d4d4d;   /* bright black */
-    --color-9: #ff6e6e;   /* bright red */
-    --color-10: #69ff94;  /* bright green */
-    --color-11: #ffffa5;  /* bright yellow */
-    --color-12: #d6acff;  /* bright blue */
-    --color-13: #ff92df;  /* bright magenta */
-    --color-14: #a4ffff;  /* bright cyan */
-    --color-15: #ffffff;  /* bright white */
-}
-
-/* Tab bar styling */
-:terminal::tab-bar {
-    background: #1a0a2e;
-    border-color: #4a3a5e;
-    height: 36px;
-    padding: 4px;
-}
-
-:tab {
-    background: #2a1a3e;
-    color: #8888aa;
-    border-radius: 4px;
-    min-width: 80px;
-    max-width: 200px;
-}
-
-:tab.active {
-    background: #3a2a4e;
-    color: #ffd700;
-    accent-color: #ffd700;
-    text-shadow: 0 0 15px rgba(255, 215, 0, 0.9);
-}
-
-:terminal::tab-close {
-    color: #666688;
-    --hover-background: #ff5555;
-    --hover-color: #ffffff;
-}
-"#;
-
-/// Builtin minimal theme CSS
-const BUILTIN_MINIMAL_THEME: &str = r#"/* Minimal Theme - Clean and simple */
-
-:terminal {
-    /* Typography */
-    font-family: "MesloLGS NF", "Fira Code", monospace;
-    font-size: 14;
-    line-height: 1.5;
-    ligatures: true;
-
-    /* Base colors - clean white on dark */
-    color: #c8c8c8;
-    background: #1a1a1a;
-    cursor-color: #ffffff;
-}
-
-:terminal::selection {
-    background: #44475a;
-    color: #f8f8f2;
-}
-
-:terminal::highlight {
-    background: #e6db74;
-    color: #1a1a1a;
-}
-
-:terminal::backdrop {
-    /* No grid effect */
-    --grid-enabled: false;
-}
-
-/* ANSI 16-color palette */
-:terminal::palette {
-    /* Normal colors */
-    --color-0: #0d0d0d;   /* black */
-    --color-1: #ff5555;   /* red */
-    --color-2: #50fa7b;   /* green */
-    --color-3: #f1fa8c;   /* yellow */
-    --color-4: #bd93f9;   /* blue */
-    --color-5: #ff79c6;   /* magenta */
-    --color-6: #8be9fd;   /* cyan */
-    --color-7: #f8f8f2;   /* white */
-
-    /* Bright colors */
-    --color-8: #4d4d4d;   /* bright black */
-    --color-9: #ff6e6e;   /* bright red */
-    --color-10: #69ff94;  /* bright green */
-    --color-11: #ffffa5;  /* bright yellow */
-    --color-12: #d6acff;  /* bright blue */
-    --color-13: #ff92df;  /* bright magenta */
-    --color-14: #a4ffff;  /* bright cyan */
-    --color-15: #ffffff;  /* bright white */
-}
-
-/* Tab bar styling */
-:terminal::tab-bar {
-    background: #1a1a1a;
-    border-color: #333333;
-    height: 36px;
-    padding: 4px;
-}
-
-:tab {
-    background: #2a2a2a;
-    color: #888888;
-    border-radius: 4px;
-    min-width: 80px;
-    max-width: 200px;
-}
-
-:tab.active {
-    background: #3a3a3a;
-    color: #ffffff;
-    accent-color: #ffffff;
-}
-
-:terminal::tab-close {
-    color: #666666;
-    --hover-background: #ff5555;
-    --hover-color: #ffffff;
-}
-"#;
-
-/// Generate a default config file with comments
-pub fn generate_default_config() -> String {
-    r#"# CRT Terminal Configuration
-# Location: ~/.config/crt/config.toml
-
-[shell]
-# Shell program to run (default: uses $SHELL environment variable)
-# program = "/bin/zsh"
-# args = ["-l"]  # Login shell
-# working_directory = "~"
-
-[font]
-# Font family (for future system font support)
-family = "MesloLGS NF"
-# Base font size in points
-size = 14.0
-# Line height multiplier
-line_height = 1.5
-
-[window]
-# Initial terminal size
-columns = 80
-rows = 24
-# Window title
-title = "CRT Terminal"
-# Start in fullscreen
-fullscreen = false
-# Tab bar position (top, bottom, left, right)
-tab_position = "top"
-
-[theme]
-# Theme name - looks for ~/.config/crt/themes/{name}.css
-# Falls back to embedded "synthwave" or "minimal" if file not found
-name = "synthwave"
-
-# Keybindings - you can customize or add new bindings
-# Supported modifiers: "super" (Cmd on macOS), "shift", "control", "alt"
-# Supported actions: new_tab, close_tab, next_tab, prev_tab,
-#                    select_tab1-9, increase_font_size, decrease_font_size,
-#                    reset_font_size, toggle_fullscreen, copy, paste, quit
-
-# Example: Override Cmd+T to do something else
-# [[keybindings.bindings]]
-# key = "t"
-# mods = ["super"]
-# action = "new_tab"
-"#
-    .to_string()
 }

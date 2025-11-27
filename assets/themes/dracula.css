@@ -1,0 +1,47 @@
+/* Dracula Theme - Dark and elegant */
+
+:terminal {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 14;
+    line-height: 1.3;
+
+    color: #f8f8f2;
+    background: linear-gradient(to bottom, #282a36, #1e1f29);
+    cursor-color: #f8f8f2;
+}
+
+:terminal::selection {
+    background: #44475a;
+    color: #f8f8f2;
+}
+
+:terminal::highlight {
+    background: #ffb86c;
+    color: #282a36;
+}
+
+:terminal::backdrop {
+    --grid-enabled: false;
+}
+
+:terminal::palette {
+    /* Normal colors */
+    --color-0: #21222c;   /* black */
+    --color-1: #ff5555;   /* red */
+    --color-2: #50fa7b;   /* green */
+    --color-3: #f1fa8c;   /* yellow */
+    --color-4: #bd93f9;   /* blue/purple */
+    --color-5: #ff79c6;   /* magenta/pink */
+    --color-6: #8be9fd;   /* cyan */
+    --color-7: #f8f8f2;   /* white */
+
+    /* Bright colors */
+    --color-8: #6272a4;   /* bright black (comment) */
+    --color-9: #ff6e6e;   /* bright red */
+    --color-10: #69ff94;  /* bright green */
+    --color-11: #ffffa5;  /* bright yellow */
+    --color-12: #d6acff;  /* bright blue/purple */
+    --color-13: #ff92df;  /* bright magenta/pink */
+    --color-14: #a4ffff;  /* bright cyan */
+    --color-15: #ffffff;  /* bright white */
+}

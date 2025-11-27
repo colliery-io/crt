@@ -1,0 +1,143 @@
+# CRT Terminal Configuration
+# Location: ~/.config/crt/config.toml
+#
+# This file shows all available configuration options with their default values.
+# Uncomment and modify any setting to customize your terminal.
+
+# =============================================================================
+# Shell Configuration
+# =============================================================================
+[shell]
+# Shell program to run. If not specified, uses $SHELL environment variable,
+# falling back to /bin/zsh on macOS or /bin/bash on Linux.
+# program = "/bin/zsh"
+
+# Arguments to pass to the shell program
+# args = ["-l"]  # -l for login shell
+
+# Working directory to start in. If not specified, uses user's home directory.
+# working_directory = "/path/to/directory"
+
+# =============================================================================
+# Font Configuration
+# =============================================================================
+[font]
+# Font family names in order of preference (fallback chain).
+# The first available font will be used.
+# Fonts are loaded from ~/.config/crt/fonts/ first, then system fonts.
+family = [
+    "MesloLGS NF",
+    "JetBrains Mono",
+    "Fira Code",
+    "SF Mono",
+    "Menlo",
+]
+
+# Base font size in points
+size = 14.0
+
+# Line height multiplier (1.0 = no extra spacing, 1.5 = 50% extra)
+line_height = 1.5
+
+# =============================================================================
+# Window Configuration
+# =============================================================================
+[window]
+# Initial terminal size in characters
+columns = 80
+rows = 24
+
+# Window title
+title = "CRT Terminal"
+
+# Start in fullscreen mode
+fullscreen = false
+
+# =============================================================================
+# Theme Configuration
+# =============================================================================
+[theme]
+# Theme name - looks for ~/.config/crt/themes/{name}.css
+# Available themes: "synthwave", "minimal"
+# You can create custom themes by adding CSS files to ~/.config/crt/themes/
+name = "synthwave"
+
+# =============================================================================
+# Cursor Configuration
+# =============================================================================
+[cursor]
+# Cursor shape: "block", "bar", or "underline"
+style = "block"
+
+# Whether the cursor blinks
+blink = true
+
+# Blink interval in milliseconds
+blink_interval_ms = 530
+
+# =============================================================================
+# Bell Configuration
+# =============================================================================
+[bell]
+# Enable visual bell (screen flash on bell character)
+visual = true
+
+# Flash duration in milliseconds
+flash_duration_ms = 100
+
+# Flash intensity (0.0 to 1.0)
+flash_intensity = 0.3
+
+# =============================================================================
+# Keybindings Configuration
+# =============================================================================
+# Customize keyboard shortcuts. Each binding requires:
+#   - key: The key to press (e.g., "t", "w", "1", "equal", "minus")
+#   - mods: List of modifiers ["super"] for Cmd on macOS, ["control"], ["shift"], ["alt"]
+#   - action: The action to perform (see list below)
+#
+# Available actions:
+#   - new_tab: Open a new tab
+#   - close_tab: Close the current tab
+#   - next_tab: Switch to the next tab
+#   - prev_tab: Switch to the previous tab
+#   - select_tab1 through select_tab9: Switch to tab 1-9
+#   - increase_font_size: Make text larger
+#   - decrease_font_size: Make text smaller
+#   - reset_font_size: Reset to default font size
+#   - toggle_fullscreen: Toggle fullscreen mode
+#   - copy: Copy selected text to clipboard
+#   - paste: Paste from clipboard
+#   - quit: Quit the application
+
+[keybindings]
+bindings = [
+    # Tab management
+    { key = "t", mods = ["super"], action = "new_tab" },
+    { key = "w", mods = ["super"], action = "close_tab" },
+    { key = "[", mods = ["super", "shift"], action = "prev_tab" },
+    { key = "]", mods = ["super", "shift"], action = "next_tab" },
+
+    # Tab selection (Cmd+1 through Cmd+9)
+    { key = "1", mods = ["super"], action = "select_tab1" },
+    { key = "2", mods = ["super"], action = "select_tab2" },
+    { key = "3", mods = ["super"], action = "select_tab3" },
+    { key = "4", mods = ["super"], action = "select_tab4" },
+    { key = "5", mods = ["super"], action = "select_tab5" },
+    { key = "6", mods = ["super"], action = "select_tab6" },
+    { key = "7", mods = ["super"], action = "select_tab7" },
+    { key = "8", mods = ["super"], action = "select_tab8" },
+    { key = "9", mods = ["super"], action = "select_tab9" },
+
+    # Font size controls
+    { key = "equal", mods = ["super"], action = "increase_font_size" },
+    { key = "minus", mods = ["super"], action = "decrease_font_size" },
+    { key = "0", mods = ["super"], action = "reset_font_size" },
+
+    # Clipboard
+    { key = "c", mods = ["super"], action = "copy" },
+    { key = "v", mods = ["super"], action = "paste" },
+
+    # Application
+    { key = "q", mods = ["super"], action = "quit" },
+]

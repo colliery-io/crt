@@ -38,28 +38,27 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     return out;
 }
 
-// Tighter 25-sample (5x5) Gaussian blur for subtle glow
+// 324-sample (18x18) Gaussian blur for smooth glow effect
 fn sample_blur(uv: vec2<f32>, radius: f32) -> f32 {
     let texel_size = 1.0 / params.screen_size;
-    // Clamp radius to prevent overly spread blur
-    let effective_radius = min(radius, 8.0);
+    let effective_radius = min(radius, 50.0);
     let sigma = effective_radius / 3.0;
 
     var total = 0.0;
     var weight_sum = 0.0;
 
-    // 5x5 grid: -2 to 2
-    let samples = 2i;
+    // 18x18 grid: -8 to 9 (using 9 for 18 total)
+    let samples = 8i;
     for (var x = -samples; x <= samples; x++) {
         for (var y = -samples; y <= samples; y++) {
-            // Tighter sampling - divide by 8 instead of 4
+            // Spread samples evenly across the radius
             let offset = vec2<f32>(f32(x), f32(y)) * texel_size * (effective_radius / 8.0);
             let dist = length(vec2<f32>(f32(x), f32(y)));
             let w = exp(-(dist * dist) / (2.0 * sigma * sigma));
 
             let sample_color = textureSample(text_texture, text_sampler, uv + offset);
-            let luminance = dot(sample_color.rgb, vec3<f32>(0.299, 0.587, 0.114));
-            total += luminance * w;
+            // Use alpha channel for glow source (text has alpha where glyphs are)
+            total += sample_color.a * w;
             weight_sum += w;
         }
     }
@@ -69,24 +68,27 @@ fn sample_blur(uv: vec2<f32>, radius: f32) -> f32 {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Start with transparent - we're blending onto the background
+    // Sample the text texture (contains colored glyphs)
+    let text = textureSample(text_texture, text_sampler, in.uv);
+    let text_alpha = text.a;
+
+    // Start with transparent
     var color = vec3<f32>(0.0, 0.0, 0.0);
     var alpha = 0.0;
 
-    // Glow effect (if enabled)
+    // Glow effect (if enabled) - render glow behind text
     if params.glow_intensity > 0.0 {
         let blur = sample_blur(in.uv, params.glow_radius);
-        // Boost intensity to compensate for tighter blur
-        let glow_alpha = blur * params.glow_intensity * 1.5;
-        color = mix(color, params.glow_color.rgb, min(glow_alpha, 1.0));
-        alpha = max(alpha, min(glow_alpha, 0.9));
+        let glow_alpha = blur * params.glow_intensity * 2.0;
+        color = params.glow_color.rgb;
+        alpha = min(glow_alpha, 0.8);
     }
 
-    // Text
-    let text = textureSample(text_texture, text_sampler, in.uv);
-    let text_luminance = dot(text.rgb, vec3<f32>(0.299, 0.587, 0.114));
-    color = mix(color, params.text_color.rgb, text_luminance);
-    alpha = max(alpha, text_luminance);
+    // Blend text on top (preserving original colors from texture)
+    if text_alpha > 0.01 {
+        color = mix(color, text.rgb, text_alpha);
+        alpha = max(alpha, text_alpha);
+    }
 
     return vec4<f32>(color, alpha);
 }

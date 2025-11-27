@@ -1,0 +1,44 @@
+/* Minimal Theme - Clean and simple */
+
+:terminal {
+    font-family: monospace;
+    font-size: 14;
+    line-height: 1.3;
+
+    color: #c8c8c8;
+    background: linear-gradient(to bottom, #1a1a1a, #1a1a1a);
+    cursor-color: #ffffff;
+}
+
+:terminal::selection {
+    background: #44475a;
+    color: #f8f8f2;
+}
+
+:terminal::highlight {
+    background: #e6db74;
+    color: #1a1a1a;
+}
+
+:terminal::backdrop {
+    --grid-enabled: false;
+}
+
+:terminal::palette {
+    --color-0: #0d0d0d;
+    --color-1: #ff5555;
+    --color-2: #50fa7b;
+    --color-3: #f1fa8c;
+    --color-4: #bd93f9;
+    --color-5: #ff79c6;
+    --color-6: #8be9fd;
+    --color-7: #f8f8f2;
+    --color-8: #4d4d4d;
+    --color-9: #ff6e6e;
+    --color-10: #69ff94;
+    --color-11: #ffffa5;
+    --color-12: #d6acff;
+    --color-13: #ff92df;
+    --color-14: #a4ffff;
+    --color-15: #ffffff;
+}

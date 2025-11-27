@@ -1,27 +1,37 @@
 //! Font loading and discovery
 //!
-//! Uses fontdb to find system fonts by family name with fallback support.
+//! Loads fonts from ~/.config/crt/fonts/ first, then falls back to system fonts.
 
-use crate::config::FontConfig;
+use crate::config::{Config, FontConfig};
 use crt_renderer::FontVariants;
 use fontdb::{Database, Family, Query, Style, Weight};
+use std::path::PathBuf;
 use std::sync::OnceLock;
-
-// Embedded fonts as fallback
-const EMBEDDED_REGULAR: &[u8] = include_bytes!("../assets/fonts/MesloLGS-NF-Regular.ttf");
-const EMBEDDED_BOLD: &[u8] = include_bytes!("../assets/fonts/MesloLGS-NF-Bold.ttf");
-const EMBEDDED_ITALIC: &[u8] = include_bytes!("../assets/fonts/MesloLGS-NF-Italic.ttf");
-const EMBEDDED_BOLD_ITALIC: &[u8] = include_bytes!("../assets/fonts/MesloLGS-NF-BoldItalic.ttf");
 
 /// Global font database (loaded once)
 static FONT_DB: OnceLock<Database> = OnceLock::new();
+
+/// Get the fonts directory path (~/.config/crt/fonts)
+fn fonts_dir() -> Option<PathBuf> {
+    Config::config_dir().map(|p| p.join("fonts"))
+}
 
 /// Get or initialize the font database
 fn font_db() -> &'static Database {
     FONT_DB.get_or_init(|| {
         let mut db = Database::new();
+
+        // Load fonts from config directory first
+        if let Some(fonts_path) = fonts_dir() {
+            if fonts_path.exists() {
+                db.load_fonts_dir(&fonts_path);
+                log::info!("Loaded fonts from {:?}", fonts_path);
+            }
+        }
+
+        // Then load system fonts as fallback
         db.load_system_fonts();
-        log::info!("Loaded {} system fonts", db.faces().count());
+        log::info!("Font database initialized with {} fonts", db.faces().count());
         db
     })
 }
@@ -65,24 +75,45 @@ fn load_font_from_families(families: &[String], weight: Weight, style: Style) ->
     None
 }
 
-/// Load font variants based on config, falling back to embedded fonts
+/// Load font variants based on config
+///
+/// Looks for fonts in:
+/// 1. ~/.config/crt/fonts/ (installed by installer)
+/// 2. System fonts
+///
+/// Falls back to MesloLGS NF from config dir, then any available monospace font.
 pub fn load_font_variants(config: &FontConfig) -> FontVariants {
     // Try to load regular font from config families
     let regular = load_font_from_families(&config.family, Weight::NORMAL, Style::Normal)
-        .unwrap_or_else(|| {
-            log::info!("Using embedded font (no system font found)");
-            EMBEDDED_REGULAR.to_vec()
-        });
+        .or_else(|| {
+            // Fallback: try MesloLGS NF from config fonts dir
+            log::info!("Configured font not found, trying MesloLGS NF");
+            load_font("MesloLGS NF", Weight::NORMAL, Style::Normal)
+        })
+        .or_else(|| {
+            // Last resort: try common system monospace fonts
+            log::warn!("MesloLGS NF not found - install fonts to ~/.config/crt/fonts/");
+            load_font_from_families(
+                &["Menlo", "Monaco", "Consolas", "DejaVu Sans Mono"]
+                    .iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                Weight::NORMAL,
+                Style::Normal,
+            )
+        })
+        .expect("No suitable font found. Please install fonts to ~/.config/crt/fonts/");
 
-    // Try to load bold/italic variants from same family
+    // Try to load bold/italic variants from same family, fall back to regular
     let bold = load_font_from_families(&config.family, Weight::BOLD, Style::Normal)
-        .unwrap_or_else(|| EMBEDDED_BOLD.to_vec());
+        .or_else(|| load_font("MesloLGS NF", Weight::BOLD, Style::Normal))
+        .unwrap_or_else(|| regular.clone());
 
     let italic = load_font_from_families(&config.family, Weight::NORMAL, Style::Italic)
-        .unwrap_or_else(|| EMBEDDED_ITALIC.to_vec());
+        .or_else(|| load_font("MesloLGS NF", Weight::NORMAL, Style::Italic))
+        .unwrap_or_else(|| regular.clone());
 
     let bold_italic = load_font_from_families(&config.family, Weight::BOLD, Style::Italic)
-        .unwrap_or_else(|| EMBEDDED_BOLD_ITALIC.to_vec());
+        .or_else(|| load_font("MesloLGS NF", Weight::BOLD, Style::Italic))
+        .unwrap_or_else(|| regular.clone());
 
     FontVariants::new(regular)
         .with_bold(bold)

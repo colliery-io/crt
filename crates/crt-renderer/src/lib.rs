@@ -31,7 +31,6 @@ use wgpu::util::DeviceExt;
 /// Background pipeline - renders gradient + animated grid
 pub struct BackgroundPipeline {
     pipeline: wgpu::RenderPipeline,
-    bind_group_layout: wgpu::BindGroupLayout,
     uniform_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     theme: Theme,
@@ -118,7 +117,6 @@ impl BackgroundPipeline {
 
         Self {
             pipeline,
-            bind_group_layout,
             uniform_buffer,
             bind_group,
             theme,

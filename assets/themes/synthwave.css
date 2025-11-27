@@ -1,0 +1,93 @@
+/* Synthwave Theme - The Extra AF Terminal Experience - DEBUG */
+
+:terminal {
+    /* Typography */
+    font-family: "MesloLGS NF", "Fira Code", monospace;
+    font-size: 14;
+    line-height: 1.5;
+    font-bold: "MesloLGS NF Bold";
+    font-italic: "MesloLGS NF Italic";
+    font-bold-italic: "MesloLGS NF Bold Italic";
+    ligatures: true;
+
+    /* Base colors - teal text like synthwave.rs example */
+    color: #61e2fe;
+    background: linear-gradient(to bottom, #1a0a2e, #16213e);
+    cursor-color: #00ffff;
+
+    /* Text glow effect - strong teal glow */
+    text-shadow: 0 0 20px rgba(97, 226, 254, 1.0);
+}
+
+:terminal::selection {
+    background: #44475a;
+    color: #f8f8f2;
+}
+
+:terminal::highlight {
+    background: #e6db74;
+    color: #1a1a1a;
+}
+
+:terminal::backdrop {
+    /* Perspective grid */
+    --grid-enabled: true;
+    --grid-color: rgba(255, 0, 255, 0.3);
+    --grid-spacing: 8;
+    --grid-line-width: 0.02;
+    --grid-perspective: 2;
+    --grid-horizon: 0.35;
+    --grid-animation-speed: 0.5;
+}
+
+/* ANSI 16-color palette */
+:terminal::palette {
+    /* Normal colors */
+    --color-0: #0d0d0d;   /* black */
+    --color-1: #ff5555;   /* red */
+    --color-2: #50fa7b;   /* green */
+    --color-3: #f1fa8c;   /* yellow */
+    --color-4: #bd93f9;   /* blue */
+    --color-5: #ff79c6;   /* magenta */
+    --color-6: #8be9fd;   /* cyan */
+    --color-7: #f8f8f2;   /* white */
+
+    /* Bright colors */
+    --color-8: #4d4d4d;   /* bright black */
+    --color-9: #ff6e6e;   /* bright red */
+    --color-10: #69ff94;  /* bright green */
+    --color-11: #ffffa5;  /* bright yellow */
+    --color-12: #d6acff;  /* bright blue */
+    --color-13: #ff92df;  /* bright magenta */
+    --color-14: #a4ffff;  /* bright cyan */
+    --color-15: #ffffff;  /* bright white */
+}
+
+/* Tab bar styling */
+:terminal::tab-bar {
+    background: #1a0a2e;
+    border-color: #4a3a5e;
+    height: 36px;
+    padding: 4px;
+}
+
+:tab {
+    background: #2a1a3e;
+    color: #8888aa;
+    border-radius: 4px;
+    min-width: 80px;
+    max-width: 200px;
+}
+
+:tab.active {
+    background: #3a2a4e;
+    color: #ffd700;
+    accent-color: #ffd700;
+    text-shadow: 0 0 15px rgba(255, 215, 0, 0.9);
+}
+
+:terminal::tab-close {
+    color: #666688;
+    --hover-background: #ff5555;
+    --hover-color: #ffffff;
+}

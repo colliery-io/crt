@@ -5,16 +5,6 @@
 use crate::gpu::SharedGpuState;
 use crate::window::{ContextMenuItem, WindowState, DecorationKind};
 use crt_core::SelectionRange;
-use std::sync::OnceLock;
-
-/// Cached blit pipeline for compositing vello textures
-static BLIT_PIPELINE: OnceLock<BlitPipeline> = OnceLock::new();
-
-struct BlitPipeline {
-    pipeline: wgpu::RenderPipeline,
-    sampler: wgpu::Sampler,
-    bind_group_layout: wgpu::BindGroupLayout,
-}
 
 /// Render a single frame for a window
 pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
@@ -216,10 +206,56 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         }
     }
 
-    // Pass 4: Render terminal text directly to frame
+    // Pass 4: Render terminal text to intermediate texture (for glow effect)
     {
+        // Clear the text texture first
+        let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Clear Text Texture Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &state.gpu.text_texture_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        drop(pass);
+
+        // Render terminal text to the texture
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Terminal Text Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &state.gpu.text_texture_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        state.gpu.grid_renderer.render(&shared.queue, &mut pass);
+    }
+
+    // Pass 4.5: Composite text texture onto frame with Gaussian blur glow
+    {
+        state.gpu.effect_pipeline.composite.update_uniforms(
+            &shared.queue,
+            state.gpu.config.width as f32,
+            state.gpu.config.height as f32,
+        );
+
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Text Composite Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &frame_view,
                 resolve_target: None,
@@ -234,7 +270,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
             occlusion_query_set: None,
         });
 
-        state.gpu.grid_renderer.render(&shared.queue, &mut pass);
+        state.gpu.effect_pipeline.composite.render(&mut pass, &state.gpu.composite_bind_group);
     }
 
     // Pass 5: Render cursor, selection, underlines, strikethroughs via RectRenderer
@@ -666,189 +702,6 @@ fn render_search_bar(
     });
 
     state.gpu.tab_title_renderer.render(&shared.queue, &mut pass);
-}
-
-/// Simple blit shader for compositing vello textures
-const BLIT_SHADER: &str = r#"
-struct VertexOutput {
-    @builtin(position) position: vec4<f32>,
-    @location(0) uv: vec2<f32>,
-};
-
-@vertex
-fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
-    // Full-screen triangle
-    var positions = array<vec2<f32>, 3>(
-        vec2<f32>(-1.0, -1.0),
-        vec2<f32>(3.0, -1.0),
-        vec2<f32>(-1.0, 3.0),
-    );
-    var uvs = array<vec2<f32>, 3>(
-        vec2<f32>(0.0, 1.0),
-        vec2<f32>(2.0, 1.0),
-        vec2<f32>(0.0, -1.0),
-    );
-
-    var out: VertexOutput;
-    out.position = vec4<f32>(positions[vertex_index], 0.0, 1.0);
-    out.uv = uvs[vertex_index];
-    return out;
-}
-
-@group(0) @binding(0) var t_source: texture_2d<f32>;
-@group(0) @binding(1) var s_source: sampler;
-
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let color = textureSample(t_source, s_source, in.uv);
-    // Pre-multiplied alpha blending will be handled by the blend state
-    return color;
-}
-"#;
-
-fn get_or_init_blit_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> &'static BlitPipeline {
-    BLIT_PIPELINE.get_or_init(|| {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Blit Shader"),
-            source: wgpu::ShaderSource::Wgsl(BLIT_SHADER.into()),
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Blit Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Blit Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Blit Pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
-
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Blit Sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
-
-        BlitPipeline {
-            pipeline,
-            sampler,
-            bind_group_layout,
-        }
-    })
-}
-
-/// Composite vello-rendered texture onto the framebuffer
-///
-/// When `target_height` equals `screen_height`, does a full-screen blit.
-/// When `target_height` is smaller, restricts rendering to the top portion.
-fn composite_vello_texture(
-    device: &wgpu::Device,
-    encoder: &mut wgpu::CommandEncoder,
-    frame_view: &wgpu::TextureView,
-    vello_view: &wgpu::TextureView,
-    screen_width: u32,
-    screen_height: u32,
-    target_height: f32,
-) {
-    // Get or create the blit pipeline
-    // Note: We use Rgba8Unorm as source format, destination format from surface
-    let blit = get_or_init_blit_pipeline(device, wgpu::TextureFormat::Bgra8UnormSrgb);
-
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("Vello Blit Bind Group"),
-        layout: &blit.bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(vello_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::Sampler(&blit.sampler),
-            },
-        ],
-    });
-
-    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("Vello Composite Pass"),
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: frame_view,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Load,
-                store: wgpu::StoreOp::Store,
-            },
-            depth_slice: None,
-        })],
-        depth_stencil_attachment: None,
-        timestamp_writes: None,
-        occlusion_query_set: None,
-    });
-
-    // Use viewport to restrict rendering when target is smaller than screen
-    let is_partial = (target_height as u32) < screen_height;
-    if is_partial {
-        pass.set_viewport(
-            0.0,
-            0.0,
-            screen_width as f32,
-            target_height,
-            0.0,
-            1.0,
-        );
-    }
-
-    pass.set_pipeline(&blit.pipeline);
-    pass.set_bind_group(0, &bind_group, &[]);
-    pass.draw(0..3, 0..1);
 }
 
 /// Render bell flash overlay (semi-transparent white flash)
