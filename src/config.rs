@@ -143,6 +143,28 @@ impl Default for CursorConfig {
     }
 }
 
+/// Bell configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BellConfig {
+    /// Enable visual bell (screen flash)
+    pub visual: bool,
+    /// Flash duration in milliseconds
+    pub flash_duration_ms: u64,
+    /// Flash intensity (0.0 to 1.0)
+    pub flash_intensity: f32,
+}
+
+impl Default for BellConfig {
+    fn default() -> Self {
+        Self {
+            visual: true,
+            flash_duration_ms: 100,
+            flash_intensity: 0.3,
+        }
+    }
+}
+
 /// Keybinding action
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -306,6 +328,7 @@ pub struct Config {
     pub window: WindowConfig,
     pub theme: ThemeConfig,
     pub cursor: CursorConfig,
+    pub bell: BellConfig,
     pub keybindings: KeybindingsConfig,
 }
 

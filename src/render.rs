@@ -28,10 +28,21 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
                 state.dirty = true;
             }
 
-            if let Some(title) = shell.check_title_change() {
+            // Check for terminal events (title changes and bell)
+            let (title, bell) = shell.check_events();
+            if let Some(title) = title {
                 state.gpu.tab_bar.set_tab_title(tab_id, title);
             }
+            if bell {
+                state.bell.trigger();
+                log::debug!("Bell triggered");
+            }
         }
+    }
+
+    // Keep redrawing while bell flash is active
+    if state.bell.is_active() {
+        state.dirty = true;
     }
 
     // Force re-renders during first 60 frames
@@ -270,6 +281,12 @@ pub fn render_frame(state: &mut WindowState, shared: &SharedGpuState) {
     // Pass 8: Render search bar overlay (if search is active)
     if state.search.active {
         render_search_bar(state, shared, &mut encoder, &frame_view);
+    }
+
+    // Pass 9: Render bell flash overlay (if bell was triggered)
+    let flash_intensity = state.bell.flash_intensity();
+    if flash_intensity > 0.0 {
+        render_bell_flash(state, shared, &mut encoder, &frame_view, flash_intensity);
     }
 
     shared.queue.submit(std::iter::once(encoder.finish()));
@@ -691,4 +708,53 @@ fn composite_vello_texture(
     pass.set_pipeline(&blit.pipeline);
     pass.set_bind_group(0, &bind_group, &[]);
     pass.draw(0..3, 0..1);
+}
+
+/// Render bell flash overlay (semi-transparent white flash)
+fn render_bell_flash(
+    state: &mut WindowState,
+    shared: &SharedGpuState,
+    encoder: &mut wgpu::CommandEncoder,
+    frame_view: &wgpu::TextureView,
+    intensity: f32,
+) {
+    // Use rect_renderer to draw a full-screen semi-transparent white rectangle
+    state.gpu.rect_renderer.clear();
+    state.gpu.rect_renderer.update_screen_size(
+        &shared.queue,
+        state.gpu.config.width as f32,
+        state.gpu.config.height as f32,
+    );
+
+    // Flash color: white with fading alpha based on intensity
+    // Intensity already includes the configured max value
+    let flash_color = [1.0, 1.0, 1.0, intensity];
+
+    // Cover the entire screen
+    state.gpu.rect_renderer.push_rect(
+        0.0,
+        0.0,
+        state.gpu.config.width as f32,
+        state.gpu.config.height as f32,
+        flash_color,
+    );
+
+    // Render flash overlay
+    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("Bell Flash Render Pass"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: frame_view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+            depth_slice: None,
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    });
+
+    state.gpu.rect_renderer.render(&shared.queue, &mut pass);
 }

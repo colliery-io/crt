@@ -346,21 +346,33 @@ impl ShellTerminal {
     /// Check for title change and return it, preserving other events
     /// Returns the title string from the most recent Title event
     pub fn check_title_change(&self) -> Option<String> {
+        let (title, _) = self.check_events();
+        title
+    }
+
+    /// Check for terminal events and return title changes and bell triggers
+    /// Returns (Option<title>, bell_triggered)
+    pub fn check_events(&self) -> (Option<String>, bool) {
         let events = self.terminal.take_events();
         let mut title = None;
-        let mut other_events = Vec::new();
+        let mut bell = false;
+
+        if !events.is_empty() {
+            log::debug!("Terminal events: {:?}", events);
+        }
 
         for event in events {
             match event {
                 Event::Title(t) => title = Some(t),
-                other => other_events.push(other),
+                Event::Bell => {
+                    log::debug!("Bell event received from terminal");
+                    bell = true;
+                }
+                _ => {} // Ignore other events
             }
         }
 
-        // Put back non-title events (they may trigger redraws)
-        // Note: This is a bit awkward but necessary to not lose events
-        // In practice, other events are less critical for our use case
-        title
+        (title, bell)
     }
 
     /// Start a new selection at the given point
@@ -432,6 +444,24 @@ mod tests {
         let mut term = Terminal::new(Size::new(80, 24));
         term.process_input(b"Hello, World!");
         // Text should be in the grid now
+    }
+
+    #[test]
+    fn bell_event_triggered() {
+        use alacritty_terminal::event::Event;
+
+        let mut term = Terminal::new(Size::new(80, 24));
+
+        // Clear any existing events
+        term.take_events();
+
+        // Send BEL character (0x07)
+        term.process_input(b"\x07");
+
+        // Check for Bell event
+        let events = term.take_events();
+        let has_bell = events.iter().any(|e| matches!(e, Event::Bell));
+        assert!(has_bell, "Expected Bell event, got: {:?}", events);
     }
 
     #[test]

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crt_core::{AnsiColor, CellFlags, ShellTerminal, Size};
 use crt_renderer::GlyphStyle;
@@ -123,6 +123,76 @@ pub struct WindowState {
     pub hovered_url_index: Option<usize>,
     // Search state
     pub search: SearchState,
+    // Bell state for visual flash
+    pub bell: BellState,
+}
+
+/// Bell visual flash state
+#[derive(Debug, Clone)]
+pub struct BellState {
+    /// When the bell was triggered (None if not active)
+    pub triggered_at: Option<Instant>,
+    /// Duration of the visual flash
+    pub flash_duration: Duration,
+    /// Flash intensity multiplier (from config)
+    pub intensity: f32,
+    /// Whether visual bell is enabled
+    pub enabled: bool,
+}
+
+impl Default for BellState {
+    fn default() -> Self {
+        Self {
+            triggered_at: None,
+            flash_duration: Duration::from_millis(100),
+            intensity: 0.3,
+            enabled: true,
+        }
+    }
+}
+
+impl BellState {
+    /// Create from config
+    pub fn from_config(config: &crate::config::BellConfig) -> Self {
+        Self {
+            triggered_at: None,
+            flash_duration: Duration::from_millis(config.flash_duration_ms),
+            intensity: config.flash_intensity,
+            enabled: config.visual,
+        }
+    }
+
+    /// Trigger the bell (start visual flash)
+    pub fn trigger(&mut self) {
+        if self.enabled {
+            self.triggered_at = Some(Instant::now());
+        }
+    }
+
+    /// Get the current flash intensity (0.0 = no flash, up to configured intensity)
+    pub fn flash_intensity(&self) -> f32 {
+        if !self.enabled {
+            return 0.0;
+        }
+        match self.triggered_at {
+            Some(triggered) => {
+                let elapsed = triggered.elapsed();
+                if elapsed >= self.flash_duration {
+                    0.0
+                } else {
+                    // Fade out linearly, scaled by intensity
+                    let progress = 1.0 - (elapsed.as_secs_f32() / self.flash_duration.as_secs_f32());
+                    progress * self.intensity
+                }
+            }
+            None => 0.0,
+        }
+    }
+
+    /// Check if flash is still active
+    pub fn is_active(&self) -> bool {
+        self.flash_intensity() > 0.0
+    }
 }
 
 /// Search match position in terminal
