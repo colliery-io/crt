@@ -2,6 +2,10 @@
 //!
 //! Keyboard and mouse input processing for terminal and tab bar.
 
+mod commands;
+
+pub use commands::{Command, SelectionMode};
+
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 

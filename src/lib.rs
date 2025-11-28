@@ -13,3 +13,8 @@
 //! cargo run --example synthwave
 //! cargo run --example font_rendering
 //! ```
+
+// Input command types (side-effect-free representations of user actions)
+#[path = "input/commands.rs"]
+mod commands;
+pub use commands::{Command, SelectionMode};
