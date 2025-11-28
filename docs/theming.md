@@ -253,6 +253,8 @@ Effects are rendered behind the terminal content.
 }
 ```
 
+See [How to Create a Sprite Sheet from a GIF](how-to/create-sprite-from-gif.md) for creating sprite sheets from animated GIFs.
+
 ### CRT Post-Processing Effect
 
 Applies authentic CRT monitor effects as a post-processing pass.
