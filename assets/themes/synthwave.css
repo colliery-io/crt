@@ -7,8 +7,8 @@
     ligatures: true;
 
     /* Gold neon text on deep purple */
-    color: #ffd700;
-    background: linear-gradient(to bottom, #1a0a20, #2a1030);
+    color: #61e2fe;
+    background: linear-gradient(to bottom, #080118, #0e0820);
     cursor-color: #ff00ff;
 
     /* Neon glow */
@@ -29,25 +29,24 @@
     /* Subtle magenta perspective grid */
     --grid-enabled: true;
     --grid-color: rgba(255, 0, 255, 0.2);
-    --grid-spacing: 8;
-    --grid-line-width: 1.5;
-    --grid-perspective: 2.5;
+    --grid-spacing: 6;
+    --grid-line-width: 2.5;
+    --grid-perspective: 3.5;
     --grid-horizon: 0.8;
-    --grid-animation-speed: 0.4;
-    --grid-glow-radius: 6;
-    --grid-glow-intensity: 0.3;
-    --grid-vanishing-spread: 0.25;
-    --grid-curved: true;
+    --grid-animation-speed: 0.2;
+    --grid-glow-radius: 7;
+    --grid-glow-intensity: 0.8;
+    --grid-vanishing-spread: 0.3;
+    --grid-curved: false;
 
-    /* Subtle CRT for retro feel - disabled due to redraw issues
-    --crt-enabled: true;
+
+    /* --crt-enabled: true;
     --crt-scanline-intensity: 0.03;
     --crt-scanline-frequency: 1.0;
     --crt-curvature: 0.01;
     --crt-vignette: 0.2;
     --crt-chromatic-aberration: 0.05;
-    --crt-flicker: 0.0;
-    */
+    --crt-flicker: 0.0; */
 }
 
 /* Synthwave neon palette */
