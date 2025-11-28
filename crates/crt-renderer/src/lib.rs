@@ -16,6 +16,7 @@ pub mod shaders;
 pub mod sprite_renderer;
 pub mod tab_bar;
 pub mod terminal_vello;
+pub mod traits;
 
 pub use background_image::{BackgroundImageState, BackgroundTexture, LoadedImage, ImageFrame};
 pub use effects::{BackdropEffect, EffectConfig, EffectsRenderer, GridEffect, MatrixEffect, MotionBehavior, ParticleEffect, Position, RainEffect, ShapeEffect, SpriteEffect, StarfieldEffect};
@@ -25,6 +26,11 @@ pub use grid_renderer::GridRenderer;
 pub use rect_renderer::RectRenderer;
 pub use tab_bar::{TabBar, Tab, TabRect, EditState, TabBarState, TabLayout, VelloTabBarRenderer};
 pub use terminal_vello::{TerminalVelloRenderer, CursorShape, CursorState};
+pub use traits::{
+    BackdropRenderer, CellContent, Color, ContextMenuItem, CursorInfo,
+    CursorShape as TraitCursorShape, GridPosition, Rect, SearchHighlight, SelectionRange,
+    TabRenderInfo, TextRenderer, UiRenderer,
+};
 
 use bytemuck::cast_slice;
 use crt_theme::Theme;
