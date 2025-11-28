@@ -3,8 +3,12 @@
 //! Keyboard and mouse input processing for terminal and tab bar.
 
 mod commands;
+mod keyboard;
+mod url_detection;
 
 pub use commands::{Command, SelectionMode};
+pub use keyboard::{is_app_shortcut, key_to_terminal_bytes, shortcut_to_command, Modifiers};
+pub use url_detection::{detect_url_at_column, detect_urls, url_at_column, url_index_at_column, UrlMatch};
 
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
