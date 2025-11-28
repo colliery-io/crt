@@ -5,6 +5,8 @@
 
 mod selection;
 mod tab_state;
+mod ui_state;
 
 pub use selection::{selection_to_ranges, LineRange, SelectionMode, SelectionState};
 pub use tab_state::{TabId, TabInfo, TabState};
+pub use ui_state::{BellState, ContextMenuState, SearchMatch, SearchState, UiState};
