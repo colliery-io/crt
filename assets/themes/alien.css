@@ -61,23 +61,89 @@
     --color-14: #eebb33;  /* bright cyan -> amber */
     --color-15: #ffdd88;  /* bright white -> pale amber */
 
-    /* Extended - all amber shades */
-    --color-226: #ffb000;
-    --color-227: #ffcc44;
-    --color-228: #ffdd66;
-    --color-178: #ffb000;
-    --color-214: #ffaa00;
-    --color-220: #ffcc00;
-    --color-70: #ddaa00;
-    --color-37: #cc9922;
-    --color-31: #aa7700;
+    /* Extended 256-color palette - all amber/orange/yellow */
+    /* Maps LS_COLORS and other 256-color output to amber phosphor CRT */
 
-    /* Reds for warnings/errors */
-    --color-196: #ff3300;
-    --color-160: #ff3300;
-    --color-124: #cc2200;
+    /* Very dark amber (for dark blues, purples) */
+    --color-17: #1a1200;   /* dark blue -> very dark amber */
+    --color-57: #2a1f00;   /* purple -> dark amber */
+    --color-60: #332800;   /* dark slate -> dark amber */
+    --color-89: #3a2a00;   /* dark magenta -> dark amber */
 
-    /* Grayscale -> amber scale */
+    /* Dark amber (for teals, dark greens, dark cyans) */
+    --color-29: #443300;   /* dark teal -> dark amber */
+    --color-30: #4d3a00;   /* teal/cyan -> dark amber (directories) */
+    --color-33: #553f00;   /* blue -> dark amber */
+    --color-39: #5e4400;   /* cyan -> dark amber */
+    --color-45: #664900;   /* turquoise -> dark amber */
+
+    /* Medium amber (for greens, blues, cyans) */
+    --color-40: #775500;   /* green -> medium amber (archives) */
+    --color-41: #806000;   /* green -> medium amber (python) */
+    --color-49: #886500;   /* sea green -> medium amber */
+    --color-51: #906a00;   /* cyan -> medium amber */
+    --color-64: #997000;   /* olive -> medium amber */
+    --color-66: #8b6500;   /* dark cyan -> medium amber (fonts) */
+    --color-68: #946b00;   /* steel blue -> medium amber */
+    --color-73: #9d7000;   /* cyan -> medium amber */
+    --color-74: #a57500;   /* cyan -> medium amber */
+    --color-76: #a07200;   /* chartreuse -> medium amber */
+    --color-78: #aa7800;   /* green -> medium amber (csv) */
+    --color-81: #b08000;   /* sky blue -> amber (source code) */
+    --color-86: #b58500;   /* cyan -> amber */
+
+    /* Standard amber (main text colors) */
+    --color-97: #c09000;   /* purple -> amber (images) */
+    --color-99: #c59500;   /* purple -> amber (vector) */
+    --color-110: #cc9900;  /* light blue -> amber (headers) */
+    --color-111: #d19e00;  /* light blue -> amber (docs) */
+    --color-112: #d6a300;  /* light green -> amber (spreadsheets) */
+    --color-113: #dba800;  /* green -> amber */
+    --color-114: #e0ad00;  /* green -> amber (video) */
+    --color-115: #e5b200;  /* green -> amber */
+    --color-116: #eab700;  /* cyan -> amber */
+    --color-117: #efbc00;  /* light cyan -> amber (subtitles) */
+    --color-121: #f0be00;  /* light green -> amber */
+    --color-125: #cc8800;  /* magenta -> amber (css/html) */
+    --color-126: #d48e00;  /* magenta -> amber */
+    --color-127: #dc9400;  /* magenta -> amber */
+
+    /* Bright amber (for yellows, oranges) */
+    --color-136: #e8a800;  /* dark orange -> bright amber (audio lossless) */
+    --color-137: #eeae00;  /* dark orange -> bright amber (audio) */
+    --color-139: #f4b400;  /* mauve -> bright amber */
+    --color-141: #f6b800;  /* light purple -> bright amber (ebooks) */
+    --color-142: #f8bc00;  /* olive -> bright amber */
+    --color-155: #ffcc00;  /* light green -> bright amber (makefiles) */
+    --color-166: #ff9500;  /* orange -> orange (presentations) */
+    --color-168: #ff9900;  /* pink -> orange (terraform) */
+    --color-172: #ffa000;  /* orange -> orange (shell scripts) */
+    --color-178: #ffb000;  /* gold -> amber */
+    --color-184: #ffb800;  /* yellow -> amber */
+    --color-190: #ffc000;  /* yellow-green -> bright amber */
+    --color-192: #ffc800;  /* light green -> bright amber */
+
+    /* Very bright amber (for bright yellows, whites) */
+    --color-203: #ffa500;  /* light red -> orange */
+    --color-208: #ff8c00;  /* orange -> orange (executables) */
+    --color-213: #ffaa33;  /* pink -> light orange */
+    --color-214: #ffaa00;  /* orange -> orange */
+    --color-215: #ffb033;  /* light orange -> light orange */
+    --color-216: #ffb844;  /* light salmon -> light amber */
+    --color-219: #ffc055;  /* pink -> light amber */
+    --color-220: #ffcc00;  /* gold -> bright amber */
+    --color-222: #ffd000;  /* light gold -> bright amber */
+    --color-226: #ffb000;  /* yellow -> amber */
+    --color-227: #ffcc44;  /* light yellow -> light amber */
+    --color-228: #ffdd66;  /* pale yellow -> pale amber */
+
+    /* Reds/magentas for warnings/errors/alerts */
+    --color-196: #ff3300;  /* red -> ALERT red */
+    --color-197: #ff4400;  /* red -> alert red */
+    --color-160: #ff3300;  /* red -> alert red */
+    --color-124: #cc2200;  /* dark red -> dark alert */
+
+    /* Grayscale -> amber scale (for dim colors, backgrounds) */
     --color-232: #0a0800;
     --color-233: #110d00;
     --color-234: #181200;
@@ -102,6 +168,12 @@
     --color-253: #9d7100;
     --color-254: #a47600;
     --color-255: #ab7b00;
+
+    /* Special: keep black as black for backgrounds */
+    --color-0: #0a0800;
+    --color-3: #ffb000;   /* keep standard yellow -> amber */
+    --color-7: #ffb000;   /* white -> amber */
+    --color-11: #ffd000;  /* bright yellow -> bright amber */
 }
 
 /* Tab bar */
