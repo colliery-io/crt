@@ -110,6 +110,7 @@
     border-color: #332800;
     height: 36px;
     padding: 4px;
+    --content-padding: 8px;
 }
 
 :tab {

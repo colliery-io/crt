@@ -955,6 +955,8 @@ pub struct TabBarStyle {
     pub height: f32,
     /// Padding around tabs
     pub padding: f32,
+    /// Padding below tab bar (space before terminal content)
+    pub content_padding: f32,
 }
 
 impl Default for TabBarStyle {
@@ -964,6 +966,7 @@ impl Default for TabBarStyle {
             border_color: Color::from_hex(0x2a2a3e),
             height: 36.0,
             padding: 4.0,
+            content_padding: 4.0,
         }
     }
 }

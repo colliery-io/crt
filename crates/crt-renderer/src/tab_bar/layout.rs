@@ -34,6 +34,7 @@ impl TabRect {
 pub struct TabLayout {
     pub(crate) tab_rects: Vec<TabRect>,
     pub(crate) bar_height: f32,
+    pub(crate) content_padding: f32,
     pub(crate) screen_width: f32,
     pub(crate) screen_height: f32,
     pub(crate) scale_factor: f32,
@@ -51,6 +52,7 @@ impl TabLayout {
         Self {
             tab_rects: Vec::new(),
             bar_height: 36.0,
+            content_padding: 4.0,
             screen_width: 800.0,
             screen_height: 600.0,
             scale_factor: 1.0,
@@ -75,9 +77,15 @@ impl TabLayout {
     }
 
     /// Get the content offset (x, y) in logical pixels
-    /// Content starts below the tab bar
+    /// Content starts below the tab bar plus content padding
     pub fn content_offset(&self) -> (f32, f32) {
-        (0.0, self.bar_height)
+        (0.0, self.bar_height + self.content_padding)
+    }
+
+    /// Set content padding from theme
+    pub fn set_content_padding(&mut self, padding: f32) {
+        self.content_padding = padding;
+        self.dirty = true;
     }
 
     /// Update screen size (in physical pixels)

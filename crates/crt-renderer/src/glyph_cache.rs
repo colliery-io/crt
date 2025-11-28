@@ -177,6 +177,8 @@ pub struct GlyphCache {
     scale_context: ScaleContext,
     /// Font size in pixels
     font_size: f32,
+    /// Line height multiplier from theme (e.g., 1.3 or 1.5)
+    line_height_multiplier: f32,
     /// Cached cell width (monospace advance)
     cached_cell_width: f32,
     /// Cached line height
@@ -200,13 +202,14 @@ pub struct GlyphCache {
 }
 
 impl GlyphCache {
-    /// Create a new glyph cache with font variants
+    /// Create a new glyph cache with font variants and line height multiplier
     pub fn with_variants(
         device: &wgpu::Device,
         fonts: FontVariants,
         font_size: f32,
+        line_height_multiplier: f32,
     ) -> Result<Self, &'static str> {
-        Self::new_internal(device, fonts, font_size)
+        Self::new_internal(device, fonts, font_size, line_height_multiplier)
     }
 
     /// Create a new glyph cache with a single font (backwards compatible)
@@ -216,13 +219,14 @@ impl GlyphCache {
         font_size: f32,
     ) -> Result<Self, &'static str> {
         let fonts = FontVariants::new(font_data.to_vec());
-        Self::new_internal(device, fonts, font_size)
+        Self::new_internal(device, fonts, font_size, 1.5) // Default line height
     }
 
     fn new_internal(
         device: &wgpu::Device,
         fonts: FontVariants,
         font_size: f32,
+        line_height_multiplier: f32,
     ) -> Result<Self, &'static str> {
         // Get font metrics from regular variant
         let font = FontRef::from_index(&fonts.regular, 0).ok_or("Failed to load font")?;
@@ -256,12 +260,14 @@ impl GlyphCache {
         let descent = metrics.descent as f32 * scale;
         let line_gap = metrics.leading as f32 * scale;
 
-        // Line height includes ascent + |descent| + line gap + extra vertical padding
-        // Add vertical breathing room - Nerd Fonts with icons need more space
-        let vertical_padding = font_size * 0.7; // 70% extra vertical space for icon glyphs
-        let cached_line_height = ascent - descent + line_gap + vertical_padding;
+        // Line height is font_size * line_height_multiplier (from theme)
+        // This gives consistent spacing regardless of font metrics
+        let cached_line_height = font_size * line_height_multiplier;
 
-        // Baseline is where text sits - ascent from top of cell (with half the padding above)
+        // Baseline is where text sits - centered vertically with ascent bias
+        let cell_height = cached_line_height;
+        let glyph_height = ascent - descent;
+        let vertical_padding = cell_height - glyph_height;
         let baseline_offset = ascent + (vertical_padding * 0.5);
 
         // Get cell width using 'M' as reference
@@ -305,6 +311,7 @@ impl GlyphCache {
             fonts,
             scale_context,
             font_size,
+            line_height_multiplier,
             cached_cell_width,
             cached_line_height,
             baseline_offset,
@@ -522,11 +529,14 @@ impl GlyphCache {
 
             let ascent = metrics.ascent as f32 * scale;
             let descent = metrics.descent as f32 * scale;
-            let line_gap = metrics.leading as f32 * scale;
-            let vertical_padding = new_font_size * 0.7;
 
-            self.cached_line_height = ascent + descent.abs() + line_gap + vertical_padding;
-            self.baseline_offset = ascent + (vertical_padding / 2.0);
+            // Line height uses the stored multiplier (preserves theme setting during zoom)
+            self.cached_line_height = new_font_size * self.line_height_multiplier;
+
+            // Baseline is where text sits - centered vertically with ascent bias
+            let glyph_height = ascent - descent;
+            let vertical_padding = self.cached_line_height - glyph_height;
+            self.baseline_offset = ascent + (vertical_padding * 0.5);
 
             // Get cell width from glyph advance
             let glyph_id = font.charmap().map('M');

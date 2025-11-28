@@ -45,3 +45,31 @@
     --color-14: #93a1a1;  /* base1 (bright cyan) */
     --color-15: #fdf6e3;  /* base3 (bright white) */
 }
+
+/* Tab bar */
+:terminal::tab-bar {
+    background: #001f27;
+    border-color: #073642;
+    height: 36px;
+    padding: 4px;
+}
+
+:tab {
+    background: #002b36;
+    color: #586e75;
+    border-radius: 4px;
+    min-width: 80px;
+    max-width: 200px;
+}
+
+:tab.active {
+    background: #073642;
+    color: #93a1a1;
+    accent-color: #268bd2;
+}
+
+:terminal::tab-close {
+    color: #586e75;
+    --hover-background: #dc322f;
+    --hover-color: #fdf6e3;
+}

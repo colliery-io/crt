@@ -1,6 +1,11 @@
 /* WH40K Adeptus Mechanicus Theme - Servo Skull */
 
 :terminal {
+    /* Typography */
+    font-family: "MesloLGS NF", "Fira Code", monospace;
+    font-size: 14;
+    line-height: 1.4;
+
     /* White/cream background like parchment */
     background: linear-gradient(to bottom, #f5f5f0, #e8e8e0);
     color: #1a1a1a;
@@ -106,4 +111,42 @@
     --sprite-motion: none;
     --sprite-motion-speed: 0;
     --sprite-position: bottom-right;
+}
+
+:terminal::selection {
+    background: #8b0000;
+    color: #f5f5f0;
+}
+
+:terminal::highlight {
+    background: #cc0000;
+    color: #f5f5f0;
+}
+
+/* Tab bar - parchment style */
+:terminal::tab-bar {
+    background: #e8e8e0;
+    border-color: #8b7355;
+    height: 36px;
+    padding: 4px;
+}
+
+:tab {
+    background: #f0f0e8;
+    color: #5a5a5a;
+    border-radius: 0;
+    min-width: 80px;
+    max-width: 200px;
+}
+
+:tab.active {
+    background: #f5f5f0;
+    color: #1a1a1a;
+    accent-color: #8b0000;
+}
+
+:terminal::tab-close {
+    color: #5a5a5a;
+    --hover-background: #8b0000;
+    --hover-color: #f5f5f0;
 }

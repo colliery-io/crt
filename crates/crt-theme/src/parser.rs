@@ -616,6 +616,11 @@ fn extract_properties(rule: &lightningcss::rules::style::StyleRule) -> RulePrope
                     standard.insert("padding".to_string(), css_str);
                 }
             }
+            Property::AccentColor(color) => {
+                if let Ok(css_str) = color.to_css_string(opts()) {
+                    standard.insert("accent-color".to_string(), css_str);
+                }
+            }
             Property::Unparsed(unparsed) => {
                 // Handle unparsed properties as fallback
                 if let Ok(name) = unparsed.property_id.to_css_string(opts()) {
@@ -710,7 +715,7 @@ fn apply_properties(
             apply_backdrop_properties(theme, custom)?;
         }
         ":terminal::tab-bar" | "terminal::tab-bar" => {
-            apply_tab_bar_properties(theme, standard)?;
+            apply_tab_bar_properties(theme, standard, custom)?;
         }
         ":terminal::tab" | "terminal::tab" | ":tab" | "tab" => {
             apply_tab_properties(theme, standard)?;
@@ -1276,6 +1281,7 @@ fn apply_backdrop_properties(
 fn apply_tab_bar_properties(
     theme: &mut Theme,
     standard: &HashMap<String, String>,
+    custom: &HashMap<String, String>,
 ) -> Result<(), ThemeParseError> {
     if let Some(bg) = standard.get("background") {
         theme.tabs.bar.background = parse_color(bg)?;
@@ -1288,6 +1294,9 @@ fn apply_tab_bar_properties(
     }
     if let Some(v) = standard.get("padding") {
         theme.tabs.bar.padding = v.trim_end_matches("px").parse().unwrap_or(4.0);
+    }
+    if let Some(v) = custom.get("--content-padding") {
+        theme.tabs.bar.content_padding = v.trim_end_matches("px").parse().unwrap_or(4.0);
     }
     Ok(())
 }

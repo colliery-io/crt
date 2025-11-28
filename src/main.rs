@@ -149,8 +149,9 @@ impl App {
 
         // Initialize glyph caches with font variants from config
         let scaled_font_size = self.config.font.size * scale_factor;
+        let line_height_multiplier = self.config.font.line_height;
         let font_variants = font::load_font_variants(&self.config.font);
-        let mut glyph_cache = GlyphCache::with_variants(&shared.device, font_variants.clone(), scaled_font_size)
+        let mut glyph_cache = GlyphCache::with_variants(&shared.device, font_variants.clone(), scaled_font_size, line_height_multiplier)
             .expect("Failed to create glyph cache");
         glyph_cache.precache_ascii();
         glyph_cache.flush(&shared.queue);
@@ -164,9 +165,9 @@ impl App {
         output_grid_renderer.set_glyph_cache(&shared.device, &glyph_cache);
         output_grid_renderer.update_screen_size(&shared.queue, size.width as f32, size.height as f32);
 
-        // Tab bar uses same font at smaller size
+        // Tab bar uses same font at smaller size with fixed line height
         let tab_font_size = 12.0 * scale_factor;
-        let mut tab_glyph_cache = GlyphCache::with_variants(&shared.device, font_variants, tab_font_size)
+        let mut tab_glyph_cache = GlyphCache::with_variants(&shared.device, font_variants, tab_font_size, 1.3)
             .expect("Failed to create tab glyph cache");
         tab_glyph_cache.precache_ascii();
         tab_glyph_cache.flush(&shared.queue);

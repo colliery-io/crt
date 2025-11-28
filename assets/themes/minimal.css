@@ -42,3 +42,31 @@
     --color-14: #a4ffff;
     --color-15: #ffffff;
 }
+
+/* Tab bar */
+:terminal::tab-bar {
+    background: #141414;
+    border-color: #333333;
+    height: 36px;
+    padding: 4px;
+}
+
+:tab {
+    background: #1a1a1a;
+    color: #888888;
+    border-radius: 4px;
+    min-width: 80px;
+    max-width: 200px;
+}
+
+:tab.active {
+    background: #2a2a2a;
+    color: #ffffff;
+    accent-color: #888888;
+}
+
+:terminal::tab-close {
+    color: #666666;
+    --hover-background: #ff5555;
+    --hover-color: #ffffff;
+}

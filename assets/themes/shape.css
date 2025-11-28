@@ -2,7 +2,15 @@
 /* Bouncing heart with glow */
 
 :terminal {
-    background: #1a0a2e;
+    font-family: "MesloLGS NF", "Fira Code", monospace;
+    font-size: 14;
+    line-height: 1.4;
+
+    color: #f8f8f2;
+    background: linear-gradient(to bottom, #1a0a2e, #0f0520);
+    cursor-color: #ff79c6;
+
+    text-shadow: 0 0 8px rgba(255, 121, 198, 0.4);
 }
 
 :terminal::backdrop {
@@ -23,4 +31,57 @@
 :terminal::selection {
     background: #ff79c6;
     color: #1a0a2e;
+}
+
+:terminal::highlight {
+    background: #ffb86c;
+    color: #1a0a2e;
+}
+
+:terminal::palette {
+    --color-0: #1a0a2e;
+    --color-1: #ff5555;
+    --color-2: #50fa7b;
+    --color-3: #f1fa8c;
+    --color-4: #bd93f9;
+    --color-5: #ff79c6;
+    --color-6: #8be9fd;
+    --color-7: #f8f8f2;
+    --color-8: #4d4d4d;
+    --color-9: #ff6e6e;
+    --color-10: #69ff94;
+    --color-11: #ffffa5;
+    --color-12: #d6acff;
+    --color-13: #ff92df;
+    --color-14: #a4ffff;
+    --color-15: #ffffff;
+}
+
+/* Tab bar */
+:terminal::tab-bar {
+    background: #0f0520;
+    border-color: #3a2a4e;
+    height: 36px;
+    padding: 4px;
+}
+
+:tab {
+    background: #1a0a2e;
+    color: #6272a4;
+    border-radius: 4px;
+    min-width: 80px;
+    max-width: 200px;
+}
+
+:tab.active {
+    background: #2a1a3e;
+    color: #ff79c6;
+    accent-color: #ff79c6;
+    text-shadow: 0 0 10px rgba(255, 121, 198, 0.8);
+}
+
+:terminal::tab-close {
+    color: #6272a4;
+    --hover-background: #ff5555;
+    --hover-color: #f8f8f2;
 }

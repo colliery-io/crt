@@ -3,7 +3,15 @@
 /* Optional: --matrix-charset for custom characters (e.g., "ATGC" for DNA) */
 
 :terminal {
+    font-family: "MesloLGS NF", "Fira Code", monospace;
+    font-size: 14;
+    line-height: 1.4;
+
+    color: #00ff46;
     background: #0a0a0a;
+    cursor-color: #00ff46;
+
+    text-shadow: 0 0 8px rgba(0, 255, 70, 0.5);
 }
 
 :terminal::backdrop {
@@ -18,4 +26,57 @@
 :terminal::selection {
     background: #00ff46;
     color: #0a0a0a;
+}
+
+:terminal::highlight {
+    background: #88ff88;
+    color: #0a0a0a;
+}
+
+:terminal::palette {
+    --color-0: #0a0a0a;
+    --color-1: #ff5555;
+    --color-2: #00ff46;
+    --color-3: #88ff88;
+    --color-4: #00aa00;
+    --color-5: #44ff88;
+    --color-6: #00dd66;
+    --color-7: #00ff46;
+    --color-8: #1a1a1a;
+    --color-9: #ff6666;
+    --color-10: #44ff66;
+    --color-11: #aaffaa;
+    --color-12: #00cc00;
+    --color-13: #66ff99;
+    --color-14: #00ee77;
+    --color-15: #ccffcc;
+}
+
+/* Tab bar */
+:terminal::tab-bar {
+    background: #050505;
+    border-color: #003300;
+    height: 36px;
+    padding: 4px;
+}
+
+:tab {
+    background: #0a0a0a;
+    color: #006622;
+    border-radius: 0;
+    min-width: 80px;
+    max-width: 200px;
+}
+
+:tab.active {
+    background: #0f1a0f;
+    color: #00ff46;
+    accent-color: #00ff46;
+    text-shadow: 0 0 10px rgba(0, 255, 70, 0.8);
+}
+
+:terminal::tab-close {
+    color: #006622;
+    --hover-background: #ff5555;
+    --hover-color: #0a0a0a;
 }

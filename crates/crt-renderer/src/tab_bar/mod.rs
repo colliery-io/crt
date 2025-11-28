@@ -46,6 +46,7 @@ impl TabBar {
     /// Set the tab theme
     pub fn set_theme(&mut self, theme: TabTheme) {
         self.layout.set_bar_height(theme.bar.height);
+        self.layout.set_content_padding(theme.bar.content_padding);
         self.theme = theme;
         self.layout.mark_dirty();
     }
