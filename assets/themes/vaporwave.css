@@ -1,0 +1,110 @@
+/* Vaporwave Theme - Aesthetic dreams */
+
+:terminal {
+    font-family: "MesloLGS NF", "Fira Code", monospace;
+    font-size: 14;
+    line-height: 1.4;
+    ligatures: true;
+
+    color: #61e2fe;
+    background: linear-gradient(to bottom, #080118, #0e0820);
+    cursor-color: #fecb00;
+
+    text-shadow: 0 0 15px rgba(97, 226, 254, 0.25);
+}
+
+:terminal::selection {
+    background: #fa1999;
+    color: #200933;
+}
+
+:terminal::highlight {
+    background: #fecb00;
+    color: #200933;
+}
+
+:terminal::backdrop {
+    --grid-enabled: true;
+    --grid-color: rgba(250, 25, 153, 0.2);
+    --grid-spacing: 5;
+    --grid-line-width: 2.0;
+    --grid-perspective: 2.0;
+    --grid-horizon: 0.75;
+    --grid-animation-speed: 0.4;
+    --grid-glow-radius: 8;
+    --grid-glow-intensity: 0.5;
+    --grid-vanishing-spread: .5;
+    --grid-curved: false;
+}
+
+:terminal::palette {
+    --color-0: #080118;
+    --color-1: #fa1999;
+    --color-2: #61e2fe;
+    --color-3: #fecb00;
+    --color-4: #5800e2;
+    --color-5: #fa1999;
+    --color-6: #61e2fe;
+    --color-7: #fecb00;
+
+    --color-8: #b8960a;
+    --color-9: #ff4daa;
+    --color-10: #7eeaff;
+    --color-11: #ffda44;
+    --color-12: #7733ff;
+    --color-13: #ff66bb;
+    --color-14: #8eeeff;
+    --color-15: #ffeebb;
+
+    --color-226: #fecb00;
+    --color-178: #ffda44;
+    --color-70: #61e2fe;
+    --color-37: #7eeaff;
+    --color-31: #8eeeff;
+
+    /* Grayscale -> gold tones */
+    --color-240: #8a6f00;
+    --color-241: #957800;
+    --color-242: #a08100;
+    --color-243: #ab8a00;
+    --color-244: #b69300;
+    --color-245: #c19c00;
+    --color-246: #cca500;
+    --color-247: #d7ae00;
+    --color-248: #e2b700;
+    --color-249: #edc000;
+    --color-250: #f8c900;
+    --color-251: #fecb00;
+    --color-252: #fed633;
+    --color-253: #fee166;
+    --color-254: #ffec99;
+    --color-255: #fff7cc;
+}
+
+:terminal::tab-bar {
+    background: #080118;
+    border-color: #120428;
+    height: 36px;
+    padding: 4px;
+}
+
+:tab {
+    background: #0a011c;
+    color: #fecb00;
+    border-radius: 0;
+    min-width: 80px;
+    max-width: 200px;
+}
+
+:tab.active {
+    background: #120428;
+    color: #fecb00;
+    accent-color: #fa1999;
+    text-shadow: 0 0 10px rgba(254, 203, 0, 0.9);
+}
+
+:terminal::tab-close {
+    color: #fecb00;
+    --hover-background: #fa1999;
+    --hover-color: #200933;
+}
