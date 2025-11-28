@@ -4,7 +4,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, TerminalVelloRenderer, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, SpriteAnimationState};
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, TerminalVelloRenderer, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, SpriteAnimationState, CrtPipeline};
 
 /// Shared GPU resources across all windows
 pub struct SharedGpuState {
@@ -157,4 +157,12 @@ pub struct WindowGpuState {
     pub text_texture: wgpu::Texture,
     pub text_texture_view: wgpu::TextureView,
     pub composite_bind_group: wgpu::BindGroup,
+
+    // CRT post-processing (optional - scanlines, curvature, vignette)
+    pub crt_pipeline: CrtPipeline,
+    // Intermediate texture for CRT post-processing
+    // When CRT is enabled, everything renders here first, then CRT effect outputs to surface
+    pub crt_texture: Option<wgpu::Texture>,
+    pub crt_texture_view: Option<wgpu::TextureView>,
+    pub crt_bind_group: Option<wgpu::BindGroup>,
 }

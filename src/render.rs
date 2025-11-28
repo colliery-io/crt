@@ -104,6 +104,19 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     };
     let frame_view = frame.texture.create_view(&Default::default());
 
+    // Determine render target: CRT intermediate texture if enabled, otherwise surface directly
+    let crt_enabled = state.gpu.crt_pipeline.is_enabled();
+    // Take ownership of CRT view to avoid borrow conflicts
+    let crt_view_clone = state.gpu.crt_texture_view.as_ref().map(|_| {
+        // Create a new view from the texture each frame (cheap operation)
+        state.gpu.crt_texture.as_ref().unwrap().create_view(&Default::default())
+    });
+    let render_target: &wgpu::TextureView = if crt_enabled {
+        crt_view_clone.as_ref().unwrap_or(&frame_view)
+    } else {
+        &frame_view
+    };
+
     let mut encoder = shared.device.create_command_encoder(&Default::default());
 
     // Update effect uniforms
@@ -118,7 +131,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Background Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &frame_view,
+                view: render_target,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -139,7 +152,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Backdrop Effects Composite Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &frame_view,
+                view: render_target,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -173,7 +186,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Sprite Animation Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &frame_view,
+                view: render_target,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -223,7 +236,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Background Image Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &frame_view,
+                view: render_target,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -290,7 +303,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Background Rect Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &frame_view,
+                    view: render_target,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
@@ -313,7 +326,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Output Text Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &frame_view,
+                view: render_target,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -380,7 +393,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Text Composite Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &frame_view,
+                view: render_target,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -475,7 +488,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Overlay Rect Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &frame_view,
+                    view: render_target,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
@@ -510,7 +523,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Tab Bar Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &frame_view,
+                    view: render_target,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
@@ -528,22 +541,58 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     }
 
     // Pass 7: Render tab title text with glow
-    render_tab_titles(state, shared, &mut encoder, &frame_view);
+    render_tab_titles(state, shared, &mut encoder, render_target);
 
     // Pass 8: Render search bar overlay (if search is active)
     if state.search.active {
-        render_search_bar(state, shared, &mut encoder, &frame_view);
+        render_search_bar(state, shared, &mut encoder, render_target);
     }
 
     // Pass 9: Render bell flash overlay (if bell was triggered)
     let flash_intensity = state.bell.flash_intensity();
     if flash_intensity > 0.0 {
-        render_bell_flash(state, shared, &mut encoder, &frame_view, flash_intensity);
+        render_bell_flash(state, shared, &mut encoder, render_target, flash_intensity);
     }
 
     // Pass 10: Render context menu (if visible)
     if state.context_menu.visible {
-        render_context_menu(state, shared, &mut encoder, &frame_view);
+        render_context_menu(state, shared, &mut encoder, render_target);
+    }
+
+    // Final Pass: Apply CRT post-processing (if enabled)
+    if crt_enabled {
+        if let Some(bind_group) = &state.gpu.crt_bind_group {
+            // Update CRT uniforms
+            state.gpu.crt_pipeline.update_uniforms(
+                &shared.queue,
+                state.gpu.config.width as f32,
+                state.gpu.config.height as f32,
+            );
+
+            // Render from CRT intermediate texture to actual frame
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("CRT Post-Process Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &frame_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            state.gpu.crt_pipeline.render(&mut pass, bind_group);
+        }
+
+        // Keep redrawing for CRT flicker effect
+        if state.gpu.crt_pipeline.is_enabled() {
+            state.dirty = true;
+        }
     }
 
     shared.queue.submit(std::iter::once(encoder.finish()));

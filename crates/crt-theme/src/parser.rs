@@ -15,7 +15,7 @@ use lightningcss::printer::PrinterOptions;
 
 use crate::{
     BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
-    Color, GridEffect, LinearGradient, MatrixEffect, ParticleBehavior, ParticleEffect,
+    Color, CrtEffect, GridEffect, LinearGradient, MatrixEffect, ParticleBehavior, ParticleEffect,
     ParticleShape, RainEffect, ShapeEffect, ShapeMotion, ShapeRotation, ShapeType,
     SpriteEffect, SpriteMotion, SpritePosition, StarDirection, StarfieldEffect, TextShadow, Theme,
 };
@@ -1228,6 +1228,46 @@ fn apply_backdrop_properties(
 
     if sprite.enabled {
         theme.sprite = Some(sprite);
+    }
+
+    // Parse CRT post-processing effect properties
+    let mut crt = theme.crt.unwrap_or(CrtEffect {
+        enabled: false,
+        ..Default::default()
+    });
+
+    let has_crt_props = custom.keys().any(|k| k.starts_with("--crt-"));
+
+    if let Some(v) = custom.get("--crt-scanline-intensity") {
+        crt.scanline_intensity = v.parse().unwrap_or(0.15);
+    }
+    if let Some(v) = custom.get("--crt-scanline-frequency") {
+        crt.scanline_frequency = v.parse().unwrap_or(2.0);
+    }
+    if let Some(v) = custom.get("--crt-curvature") {
+        crt.curvature = v.parse().unwrap_or(0.02);
+    }
+    if let Some(v) = custom.get("--crt-vignette") {
+        crt.vignette = v.parse().unwrap_or(0.3);
+    }
+    if let Some(v) = custom.get("--crt-chromatic-aberration") {
+        crt.chromatic_aberration = v.parse().unwrap_or(0.0);
+    }
+    if let Some(v) = custom.get("--crt-bloom") {
+        crt.bloom = v.parse().unwrap_or(0.0);
+    }
+    if let Some(v) = custom.get("--crt-flicker") {
+        crt.flicker = v.parse().unwrap_or(0.0);
+    }
+
+    if let Some(v) = custom.get("--crt-enabled") {
+        crt.enabled = v.trim() == "true";
+    } else if has_crt_props {
+        crt.enabled = true;
+    }
+
+    if crt.enabled {
+        theme.crt = Some(crt);
     }
 
     Ok(())

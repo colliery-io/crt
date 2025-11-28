@@ -20,4 +20,7 @@ pub mod builtin {
 
     /// Rect shader - solid color rectangle rendering using instanced quads
     pub const RECT: &str = include_str!("rect.wgsl");
+
+    /// CRT post-processing shader - scanlines, curvature, vignette
+    pub const CRT: &str = include_str!("crt.wgsl");
 }

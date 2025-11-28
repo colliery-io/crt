@@ -822,6 +822,41 @@ impl SpritePosition {
     }
 }
 
+/// CRT post-processing effect (scanlines, curvature, vignette)
+#[derive(Debug, Clone, Copy)]
+pub struct CrtEffect {
+    pub enabled: bool,
+    /// Scanline intensity (0.0 = none, 1.0 = very dark lines)
+    pub scanline_intensity: f32,
+    /// Scanline frequency (lines per pixel height)
+    pub scanline_frequency: f32,
+    /// Screen curvature/barrel distortion (0.0 = flat, 0.1 = slight curve)
+    pub curvature: f32,
+    /// Vignette intensity (0.0 = none, 1.0 = strong darkening at edges)
+    pub vignette: f32,
+    /// Chromatic aberration strength (0.0 = none, higher = more RGB separation)
+    pub chromatic_aberration: f32,
+    /// Bloom/glow intensity for bright areas
+    pub bloom: f32,
+    /// Flicker intensity (0.0 = none, subtle screen flicker)
+    pub flicker: f32,
+}
+
+impl Default for CrtEffect {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            scanline_intensity: 0.15,
+            scanline_frequency: 2.0,
+            curvature: 0.02,
+            vignette: 0.3,
+            chromatic_aberration: 0.0,
+            bloom: 0.0,
+            flicker: 0.0,
+        }
+    }
+}
+
 /// Backdrop sprite effect (animated sprite sheet)
 #[derive(Debug, Clone)]
 pub struct SpriteEffect {
@@ -1055,6 +1090,7 @@ pub struct Theme {
     pub matrix: Option<MatrixEffect>,
     pub shape: Option<ShapeEffect>,
     pub sprite: Option<SpriteEffect>,
+    pub crt: Option<CrtEffect>,
 
     // Tab styling
     pub tabs: TabTheme,
@@ -1098,6 +1134,7 @@ impl Theme {
             matrix: None,
             shape: None,
             sprite: None,
+            crt: None,
             tabs: TabTheme::default(),
         }
     }
@@ -1124,6 +1161,7 @@ impl Theme {
             matrix: None,
             shape: None,
             sprite: None,
+            crt: None,
             tabs: TabTheme::default(),
         }
     }

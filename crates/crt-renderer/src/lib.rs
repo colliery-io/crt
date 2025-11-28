@@ -518,6 +518,209 @@ impl EffectPipeline {
     }
 }
 
+/// Uniform buffer for CRT post-processing shader
+/// Must match CrtParams struct in crt.wgsl (64 bytes, 16-byte aligned)
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct CrtUniforms {
+    pub screen_size: [f32; 2],       // 8 bytes
+    pub time: f32,                    // 4 bytes
+    pub scanline_intensity: f32,      // 4 bytes = 16 bytes
+    pub scanline_frequency: f32,      // 4 bytes
+    pub curvature: f32,               // 4 bytes
+    pub vignette: f32,                // 4 bytes
+    pub chromatic_aberration: f32,    // 4 bytes = 32 bytes
+    pub bloom: f32,                   // 4 bytes
+    pub flicker: f32,                 // 4 bytes
+    pub _pad: [f32; 6],               // 24 bytes = 64 bytes total
+}
+
+/// CRT post-processing pipeline - applies scanlines, curvature, vignette
+pub struct CrtPipeline {
+    pipeline: wgpu::RenderPipeline,
+    bind_group_layout: wgpu::BindGroupLayout,
+    uniform_buffer: wgpu::Buffer,
+    sampler: wgpu::Sampler,
+    start_time: std::time::Instant,
+    enabled: bool,
+    params: crt_theme::CrtEffect,
+}
+
+impl CrtPipeline {
+    pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("CRT Shader"),
+            source: wgpu::ShaderSource::Wgsl(builtin::CRT.into()),
+        });
+
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("CRT Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("CRT Pipeline Layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("CRT Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: target_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        let uniforms = CrtUniforms {
+            screen_size: [1.0, 1.0],
+            time: 0.0,
+            scanline_intensity: 0.0,
+            scanline_frequency: 2.0,
+            curvature: 0.0,
+            vignette: 0.0,
+            chromatic_aberration: 0.0,
+            bloom: 0.0,
+            flicker: 0.0,
+            _pad: [0.0; 6],
+        };
+
+        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("CRT Uniform Buffer"),
+            contents: cast_slice(&[uniforms]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("CRT Sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+
+        Self {
+            pipeline,
+            bind_group_layout,
+            uniform_buffer,
+            sampler,
+            start_time: std::time::Instant::now(),
+            enabled: false,
+            params: crt_theme::CrtEffect::default(),
+        }
+    }
+
+    /// Set CRT effect from theme
+    pub fn set_effect(&mut self, effect: Option<crt_theme::CrtEffect>) {
+        if let Some(crt) = effect {
+            self.enabled = crt.enabled;
+            self.params = crt;
+        } else {
+            self.enabled = false;
+        }
+    }
+
+    /// Check if CRT effect is enabled
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub fn create_bind_group(
+        &self,
+        device: &wgpu::Device,
+        input_texture_view: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("CRT Bind Group"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(input_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        })
+    }
+
+    pub fn update_uniforms(&self, queue: &wgpu::Queue, width: f32, height: f32) {
+        let time = self.start_time.elapsed().as_secs_f32();
+        let uniforms = CrtUniforms {
+            screen_size: [width, height],
+            time,
+            scanline_intensity: self.params.scanline_intensity,
+            scanline_frequency: self.params.scanline_frequency,
+            curvature: self.params.curvature,
+            vignette: self.params.vignette,
+            chromatic_aberration: self.params.chromatic_aberration,
+            bloom: self.params.bloom,
+            flicker: self.params.flicker,
+            _pad: [0.0; 6],
+        };
+        queue.write_buffer(&self.uniform_buffer, 0, cast_slice(&[uniforms]));
+    }
+
+    pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>, bind_group: &'a wgpu::BindGroup) {
+        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_bind_group(0, bind_group, &[]);
+        render_pass.draw(0..4, 0..1);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

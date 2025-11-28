@@ -31,8 +31,14 @@
 }
 
 :terminal::backdrop {
-    /* No additional effects */
-    --grid-enabled: false;
+    /* CRT post-processing effects - subtle */
+    --crt-enabled: true;
+    --crt-scanline-intensity: 0.08;
+    --crt-scanline-frequency: 1.0;
+    --crt-curvature: 0.015;
+    --crt-vignette: 0.2;
+    --crt-chromatic-aberration: 0.2;
+    --crt-flicker: 0.01;
 }
 
 /* ANSI palette - amber monochrome with danger red */

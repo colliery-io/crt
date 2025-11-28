@@ -19,7 +19,7 @@ use std::time::Instant;
 
 use config::Config;
 use crt_core::{ShellTerminal, Size, Scroll};
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, GridEffect, StarfieldEffect, RainEffect, ParticleEffect, MatrixEffect, ShapeEffect, SpriteEffect, EffectConfig, SpriteAnimationState, SpriteConfig, SpritePosition, SpriteMotion};
+use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, GridEffect, StarfieldEffect, RainEffect, ParticleEffect, MatrixEffect, ShapeEffect, SpriteEffect, EffectConfig, SpriteAnimationState, SpriteConfig, SpritePosition, SpriteMotion, CrtPipeline};
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
 use input::{
@@ -317,6 +317,32 @@ impl App {
             &text_texture_view,
         );
 
+        // CRT post-processing pipeline
+        let mut crt_pipeline = CrtPipeline::new(&shared.device, format);
+        crt_pipeline.set_effect(theme.crt);
+        let (crt_texture, crt_texture_view, crt_bind_group) = if crt_pipeline.is_enabled() {
+            log::info!("CRT effect enabled - creating intermediate texture");
+            let texture = shared.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("CRT Intermediate Texture"),
+                size: wgpu::Extent3d {
+                    width: size.width,
+                    height: size.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&Default::default());
+            let bind_group = crt_pipeline.create_bind_group(&shared.device, &view);
+            (Some(texture), Some(view), Some(bind_group))
+        } else {
+            (None, None, None)
+        };
+
         let gpu = WindowGpuState {
             surface,
             config: surface_config,
@@ -338,6 +364,10 @@ impl App {
             text_texture,
             text_texture_view,
             composite_bind_group,
+            crt_pipeline,
+            crt_texture,
+            crt_texture_view,
+            crt_bind_group,
         };
 
         // Create initial shell
