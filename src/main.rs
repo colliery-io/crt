@@ -10,6 +10,7 @@ mod gpu;
 mod input;
 mod menu;
 mod render;
+mod state;
 mod watcher;
 mod window;
 
