@@ -458,8 +458,8 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
                     );
                 }
                 DecorationKind::Strikethrough => {
-                    // Strikethrough: thin rect at middle of cell
-                    let strike_y = decoration.y + decoration.cell_height * 0.45;
+                    // Strikethrough: positioned at center of x-height using font metrics
+                    let strike_y = decoration.y + state.gpu.glyph_cache.strikethrough_offset();
                     state.gpu.overlay_rect_renderer.push_rect(
                         decoration.x,
                         strike_y,
