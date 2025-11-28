@@ -405,6 +405,9 @@ impl App {
             search: Default::default(),
             bell: window::BellState::from_config(&self.config.bell),
             context_menu: window::ContextMenu::default(),
+            // New testable state modules
+            tab_state: state::TabState::new(),
+            ui_state: state::UiState::new(),
         };
 
         self.windows.insert(window_id, window_state);

@@ -15,6 +15,7 @@ use winit::window::Window;
 
 use crate::gpu::{SharedGpuState, WindowGpuState};
 use crate::input::detect_urls_in_line;
+use crate::state::{TabId, TabState, UiState};
 
 /// Map alacritty_terminal AnsiColor to RGBA array using theme palette
 fn ansi_color_to_rgba(color: AnsiColor, palette: &AnsiPalette, default_color: [f32; 4]) -> [f32; 4] {
@@ -90,9 +91,9 @@ pub struct WindowState {
     pub window: Arc<Window>,
     pub gpu: WindowGpuState,
     // Map of tab_id -> shell (each window has its own tabs)
-    pub shells: HashMap<u64, ShellTerminal>,
+    pub shells: HashMap<TabId, ShellTerminal>,
     // Content hash to skip reshaping when unchanged (per tab)
-    pub content_hashes: HashMap<u64, u64>,
+    pub content_hashes: HashMap<TabId, u64>,
     // Window-specific sizing
     pub cols: usize,
     pub rows: usize,
@@ -105,7 +106,7 @@ pub struct WindowState {
     // Interaction state
     pub cursor_position: (f32, f32),
     pub last_click_time: Option<Instant>,
-    pub last_click_tab: Option<u64>,
+    pub last_click_tab: Option<TabId>,
     // Terminal selection state
     pub mouse_pressed: bool,
     pub selection_click_count: u8,
@@ -123,6 +124,12 @@ pub struct WindowState {
     pub bell: BellState,
     // Context menu state
     pub context_menu: ContextMenu,
+
+    // === New testable state modules (Phase 1 of migration) ===
+    /// Tab management state (testable, no GPU dependencies)
+    pub tab_state: TabState,
+    /// Aggregated UI state (testable, no GPU dependencies)
+    pub ui_state: UiState,
 }
 
 /// Bell visual flash state
