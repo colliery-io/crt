@@ -240,6 +240,7 @@ pub fn handle_shell_input(
     key: &Key,
     mod_pressed: bool,
     ctrl_pressed: bool,
+    alt_pressed: bool,
 ) -> bool {
     let tab_id = state.gpu.tab_bar.active_tab_id();
     let Some(tab_id) = tab_id else { return false };
@@ -256,8 +257,16 @@ pub fn handle_shell_input(
             input_sent = true;
         }
         Key::Named(NamedKey::Backspace) => {
-            shell.send_input(b"\x7f");
-            input_sent = true;
+            // macOS: Option+Backspace = Delete word backward
+            #[cfg(target_os = "macos")]
+            if alt_pressed {
+                shell.send_input(b"\x1b\x7f"); // ESC DEL = delete word backward
+                input_sent = true;
+            }
+            if !input_sent {
+                shell.send_input(b"\x7f");
+                input_sent = true;
+            }
         }
         Key::Named(NamedKey::Tab) => {
             shell.send_input(b"\t");
@@ -272,12 +281,46 @@ pub fn handle_shell_input(
             input_sent = true;
         }
         Key::Named(NamedKey::ArrowRight) => {
-            shell.send_input(b"\x1b[C");
-            input_sent = true;
+            // macOS: Cmd+Right = End of line, Option+Right = Word forward
+            #[cfg(target_os = "macos")]
+            if mod_pressed {
+                shell.send_input(b"\x1b[F"); // End
+                input_sent = true;
+            } else if alt_pressed {
+                shell.send_input(b"\x1bf"); // ESC f = forward word
+                input_sent = true;
+            }
+            #[cfg(target_os = "macos")]
+            if !input_sent {
+                shell.send_input(b"\x1b[C");
+                input_sent = true;
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                shell.send_input(b"\x1b[C");
+                input_sent = true;
+            }
         }
         Key::Named(NamedKey::ArrowLeft) => {
-            shell.send_input(b"\x1b[D");
-            input_sent = true;
+            // macOS: Cmd+Left = Home (beginning of line), Option+Left = Word backward
+            #[cfg(target_os = "macos")]
+            if mod_pressed {
+                shell.send_input(b"\x1b[H"); // Home
+                input_sent = true;
+            } else if alt_pressed {
+                shell.send_input(b"\x1bb"); // ESC b = backward word
+                input_sent = true;
+            }
+            #[cfg(target_os = "macos")]
+            if !input_sent {
+                shell.send_input(b"\x1b[D");
+                input_sent = true;
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                shell.send_input(b"\x1b[D");
+                input_sent = true;
+            }
         }
         Key::Named(NamedKey::Home) => {
             shell.send_input(b"\x1b[H");

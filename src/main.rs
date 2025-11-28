@@ -1090,7 +1090,8 @@ impl ApplicationHandler for App {
 
                 // Send to shell (clears selection on input)
                 let ctrl_pressed = self.modifiers.state().control_key();
-                if handle_shell_input(state, &event.logical_key, mod_pressed, ctrl_pressed) {
+                let alt_pressed = self.modifiers.state().alt_key();
+                if handle_shell_input(state, &event.logical_key, mod_pressed, ctrl_pressed, alt_pressed) {
                     clear_terminal_selection(state);
                 }
             }
