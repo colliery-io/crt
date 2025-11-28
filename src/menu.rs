@@ -5,7 +5,7 @@
 #[cfg(target_os = "macos")]
 use muda::{
     accelerator::{Accelerator, Code, Modifiers as AccelMods},
-    Menu, MenuItem, MenuId, PredefinedMenuItem, Submenu,
+    AboutMetadata, Menu, MenuItem, MenuId, PredefinedMenuItem, Submenu,
 };
 
 /// Menu action identifiers
@@ -71,6 +71,27 @@ pub struct MenuIds {
 #[cfg(target_os = "macos")]
 pub fn build_menu_bar() -> (Menu, MenuIds) {
     let menu = Menu::new();
+
+    // App menu (CRT)
+    let about_metadata = AboutMetadata {
+        name: Some("CRT".into()),
+        version: Some(env!("CARGO_PKG_VERSION").into()),
+        ..Default::default()
+    };
+    let app_menu = Submenu::with_items(
+        "CRT",
+        true,
+        &[
+            &PredefinedMenuItem::about(None, Some(about_metadata)),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::services(None),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::hide(None),
+            &PredefinedMenuItem::hide_others(None),
+            &PredefinedMenuItem::show_all(None),
+        ],
+    )
+    .unwrap();
 
     // Shell menu
     let new_tab = MenuItem::with_id(
@@ -308,6 +329,7 @@ pub fn build_menu_bar() -> (Menu, MenuIds) {
     ).unwrap();
 
     // Build the menu bar
+    menu.append(&app_menu).unwrap();
     menu.append(&shell_menu).unwrap();
     menu.append(&edit_menu).unwrap();
     menu.append(&view_menu).unwrap();
