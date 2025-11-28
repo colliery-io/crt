@@ -4,10 +4,15 @@
 
 mod commands;
 mod keyboard;
+mod mouse;
 mod url_detection;
 
 pub use commands::{Command, SelectionMode};
 pub use keyboard::{is_app_shortcut, key_to_terminal_bytes, shortcut_to_command, Modifiers};
+pub use mouse::{
+    cell_to_pixel, cell_to_pixel_center, determine_click_count, expand_to_line, expand_to_word,
+    is_in_grid, pixel_to_cell, pixel_to_cell_clamped, CellMetrics, SelectionRange,
+};
 pub use url_detection::{detect_url_at_column, detect_urls, url_at_column, url_index_at_column, UrlMatch};
 
 use std::sync::OnceLock;
