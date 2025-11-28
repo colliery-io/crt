@@ -1,5 +1,6 @@
 // CRT post-processing shader
 // Applies scanlines, screen curvature, vignette, and other CRT effects
+// Effects are scaled relative to a reference resolution for consistent appearance
 
 // Must match CrtUniforms in lib.rs (64 bytes total, 16-byte aligned)
 struct CrtParams {
@@ -12,9 +13,15 @@ struct CrtParams {
     chromatic_aberration: f32,     // 4 bytes = 32 bytes
     bloom: f32,                    // 4 bytes
     flicker: f32,                  // 4 bytes
-    _pad0: f32,                    // 4 bytes
+    reference_height: f32,         // 4 bytes - baseline resolution for scaling
     _pad1: f32,                    // 4 bytes = 48 bytes
     _pad2: vec4<f32>,              // 16 bytes = 64 bytes total
+}
+
+// Calculate scale factor for resolution-independent effects
+// Returns a factor where 1.0 = reference resolution, <1.0 = smaller, >1.0 = larger
+fn get_resolution_scale() -> f32 {
+    return params.screen_size.y / params.reference_height;
 }
 
 @group(0) @binding(0) var<uniform> params: CrtParams;
@@ -58,8 +65,12 @@ fn calc_vignette(uv: vec2<f32>, intensity: f32) -> f32 {
 }
 
 // Calculate scanline darkening
-fn calc_scanlines(uv: vec2<f32>, screen_height: f32, intensity: f32, frequency: f32) -> f32 {
-    let line = uv.y * screen_height * frequency;
+// Uses reference resolution to maintain consistent visual density across screen sizes
+fn calc_scanlines(uv: vec2<f32>, intensity: f32, frequency: f32) -> f32 {
+    // Scale frequency based on reference resolution so scanlines look the same
+    // regardless of actual window size. At reference_height, we get exactly
+    // reference_height * frequency scanline cycles.
+    let line = uv.y * params.reference_height * frequency;
     // Sine wave creates smooth scanline pattern
     let scanline = sin(line * 3.14159) * 0.5 + 0.5;
     // Return multiplier (1.0 = no darkening, lower = darker)
@@ -67,14 +78,18 @@ fn calc_scanlines(uv: vec2<f32>, screen_height: f32, intensity: f32, frequency: 
 }
 
 // Simple bloom/glow sampling
+// Radius is scaled relative to reference resolution for consistent visual blur
 fn sample_bloom(uv: vec2<f32>, radius: f32) -> vec3<f32> {
     let texel = 1.0 / params.screen_size;
+    // Scale radius based on resolution so bloom looks the same at any size
+    let scale = get_resolution_scale();
+    let scaled_radius = radius * scale;
     var bloom = vec3<f32>(0.0);
     let samples = 4;
 
     for (var x = -samples; x <= samples; x++) {
         for (var y = -samples; y <= samples; y++) {
-            let offset = vec2<f32>(f32(x), f32(y)) * texel * radius;
+            let offset = vec2<f32>(f32(x), f32(y)) * texel * scaled_radius;
             let sample_uv = uv + offset;
             if is_in_bounds(sample_uv) {
                 bloom += textureSample(input_texture, input_sampler, sample_uv).rgb;
@@ -102,9 +117,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     var color: vec3<f32>;
 
+    // Get resolution scale factor for resolution-independent effects
+    let res_scale = get_resolution_scale();
+
     // Chromatic aberration - separate RGB channels slightly
+    // Scale offset inversely with resolution so effect stays visually consistent
     if params.chromatic_aberration > 0.001 {
-        let offset = params.chromatic_aberration * 0.01;
+        let offset = params.chromatic_aberration * 0.01 / res_scale;
         let r = textureSample(input_texture, input_sampler, uv + vec2<f32>(offset, 0.0)).r;
         let g = textureSample(input_texture, input_sampler, uv).g;
         let b = textureSample(input_texture, input_sampler, uv - vec2<f32>(offset, 0.0)).b;
@@ -121,9 +140,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         color += bloom * params.bloom * 0.2;
     }
 
-    // Apply scanlines
+    // Apply scanlines (uses reference_height internally for resolution independence)
     if params.scanline_intensity > 0.001 {
-        let scanline = calc_scanlines(uv, params.screen_size.y, params.scanline_intensity, params.scanline_frequency);
+        let scanline = calc_scanlines(uv, params.scanline_intensity, params.scanline_frequency);
         color *= scanline;
     }
 

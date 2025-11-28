@@ -2,7 +2,10 @@
 //!
 //! Multi-pass rendering pipeline for terminal content and effects.
 
+use std::time::Instant;
+
 use crate::gpu::SharedGpuState;
+use crate::profiling::{self, FrameTiming, GridSnapshot};
 use crate::window::{ContextMenuItem, WindowState, DecorationKind};
 use crt_core::SelectionRange;
 
@@ -12,6 +15,8 @@ const VELLO_RESET_INTERVAL: u32 = 300;
 
 /// Render a single frame for a window
 pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
+    let frame_start = Instant::now();
+    let mut timing = FrameTiming::default();
     state.frame_count = state.frame_count.saturating_add(1);
 
     // Periodically reset vello renderer to clean up accumulated texture atlas resources
@@ -23,8 +28,10 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     }
 
     // Update backdrop effects animation (assume ~60fps for dt)
+    let update_start = Instant::now();
     let dt = 1.0 / 60.0;
     state.gpu.effects_renderer.update(dt);
+    timing.effects_us = update_start.elapsed().as_micros() as u64;
 
     // Keep redrawing if effects are animating
     if state.gpu.effects_renderer.has_enabled_effects() {
@@ -69,17 +76,26 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         }
     }
 
+    // Skip GPU rendering when window is occluded (minimized, hidden, or fully covered)
+    // PTY processing above still runs to keep shells responsive
+    if state.occluded {
+        return;
+    }
+
     // Update text buffer and get cursor/decoration info
+    let text_update_start = Instant::now();
     let update_result = if state.dirty {
         state.dirty = false;
         state.update_text_buffer(shared)
     } else {
         None
     };
+    timing.update_us = text_update_start.elapsed().as_micros() as u64;
 
     // Render backdrop effects to their intermediate texture (if any effects are enabled)
     // This must happen before we create our command encoder since Vello submits its own commands
     // NOTE: Memory stability depends on frame throttling in main.rs (see about_to_wait)
+    let effects_render_start = Instant::now();
     let effects_rendered = if state.gpu.effects_renderer.has_enabled_effects() {
         // Ensure Vello renderer is initialized
         shared.ensure_vello_renderer();
@@ -93,6 +109,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     } else {
         false
     };
+    timing.effects_us += effects_render_start.elapsed().as_micros() as u64;
 
     // Render
     let frame = match state.gpu.surface.get_current_texture() {
@@ -117,6 +134,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         &frame_view
     };
 
+    let render_start = Instant::now();
     let mut encoder = shared.device.create_command_encoder(&Default::default());
 
     // Update effect uniforms
@@ -446,8 +464,8 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
                     );
                 }
                 DecorationKind::Strikethrough => {
-                    // Strikethrough: thin rect at middle of cell
-                    let strike_y = decoration.y + decoration.cell_height * 0.45;
+                    // Strikethrough: positioned at center of x-height using font metrics
+                    let strike_y = decoration.y + state.gpu.glyph_cache.strikethrough_offset();
                     state.gpu.overlay_rect_renderer.push_rect(
                         decoration.x,
                         strike_y,
@@ -459,27 +477,38 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
             }
         }
 
-        // Add cursor (if visible after blink check)
+        // Add cursor (if visible after blink check AND terminal hasn't hidden it)
         if state.gpu.terminal_vello.cursor_visible() {
             if let Some(cursor) = &state.cached_render.cursor {
-                let cursor_color = state.gpu.terminal_vello.cursor_color();
-                let cursor_shape = state.gpu.terminal_vello.cursor_shape();
+                // Only render if terminal hasn't hidden the cursor (e.g., TUI apps hide it)
+                if cursor.visible {
+                    let cursor_color = state.gpu.terminal_vello.cursor_color();
 
-                let (rect_x, rect_y, rect_w, rect_h) = match cursor_shape {
-                    crt_renderer::CursorShape::Block => {
-                        (cursor.x, cursor.y, cursor.cell_width, cursor.cell_height)
-                    }
-                    crt_renderer::CursorShape::Bar => {
-                        // 2-pixel wide bar on the left
-                        (cursor.x, cursor.y, 2.0, cursor.cell_height)
-                    }
-                    crt_renderer::CursorShape::Underline => {
-                        // 2-pixel tall underline at the bottom
-                        (cursor.x, cursor.y + cursor.cell_height - 2.0, cursor.cell_width, 2.0)
-                    }
-                };
+                    // Use the terminal's requested cursor shape, not our configured shape
+                    let cursor_rect = match cursor.shape {
+                        crt_core::CursorShape::Block => {
+                            Some((cursor.x, cursor.y, cursor.cell_width, cursor.cell_height))
+                        }
+                        crt_core::CursorShape::Beam => {
+                            // 2-pixel wide bar on the left
+                            Some((cursor.x, cursor.y, 2.0, cursor.cell_height))
+                        }
+                        crt_core::CursorShape::Underline => {
+                            // 2-pixel tall underline at the bottom
+                            Some((cursor.x, cursor.y + cursor.cell_height - 2.0, cursor.cell_width, 2.0))
+                        }
+                        crt_core::CursorShape::HollowBlock => {
+                            // Hollow block - just the outline (we'll draw 4 rects for the border)
+                            // For now, render as a regular block - TODO: implement hollow
+                            Some((cursor.x, cursor.y, cursor.cell_width, cursor.cell_height))
+                        }
+                        crt_core::CursorShape::Hidden => None,
+                    };
 
-                state.gpu.overlay_rect_renderer.push_rect(rect_x, rect_y, rect_w, rect_h, cursor_color);
+                    if let Some((rect_x, rect_y, rect_w, rect_h)) = cursor_rect {
+                        state.gpu.overlay_rect_renderer.push_rect(rect_x, rect_y, rect_w, rect_h, cursor_color);
+                    }
+                }
             }
         }
 
@@ -595,8 +624,57 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         }
     }
 
+    timing.render_us = render_start.elapsed().as_micros() as u64;
     shared.queue.submit(std::iter::once(encoder.finish()));
+
+    let present_start = Instant::now();
     frame.present();
+    timing.present_us = present_start.elapsed().as_micros() as u64;
+
+    // Record frame timing for profiling
+    timing.total_us = frame_start.elapsed().as_micros() as u64;
+    profiling::record_frame(timing);
+
+    // Record grid snapshot for debugging (rate limited internally)
+    if profiling::is_enabled() {
+        if let Some(tab_id) = state.gpu.tab_bar.active_tab_id() {
+            if let Some(shell) = state.shells.get(&tab_id) {
+                let terminal = shell.terminal();
+                let cursor = terminal.cursor();
+                let size = terminal.size();
+
+                // Get visible lines content (only lines with index >= 0, i.e. visible area)
+                let all_lines = terminal.all_lines_text();
+                let visible_content: Vec<String> = all_lines
+                    .into_iter()
+                    .filter(|(idx, _)| *idx >= 0)
+                    .map(|(_, text)| text)
+                    .collect();
+
+                let cursor_shape_str = match cursor.shape {
+                    crt_core::CursorShape::Block => "Block",
+                    crt_core::CursorShape::Beam => "Beam",
+                    crt_core::CursorShape::Underline => "Underline",
+                    crt_core::CursorShape::HollowBlock => "HollowBlock",
+                    crt_core::CursorShape::Hidden => "Hidden",
+                };
+                let mode_visible = terminal.cursor_mode_visible();
+                let shape_str = format!("{} (mode:{})", cursor_shape_str, if mode_visible { "show" } else { "hide" });
+                let snapshot = GridSnapshot {
+                    columns: size.columns,
+                    lines: size.lines,
+                    cursor_col: cursor.point.column.0,
+                    cursor_line: cursor.point.line.0,
+                    cursor_visible: mode_visible,
+                    cursor_shape: shape_str,
+                    display_offset: terminal.display_offset(),
+                    history_size: terminal.history_size(),
+                    visible_content,
+                };
+                profiling::record_grid_snapshot(snapshot);
+            }
+        }
+    }
 }
 
 /// Render selection rectangles via RectRenderer (direct, no intermediate texture)

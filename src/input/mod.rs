@@ -2,6 +2,19 @@
 //!
 //! Keyboard and mouse input processing for terminal and tab bar.
 
+mod commands;
+mod keyboard;
+mod mouse;
+mod url_detection;
+
+pub use commands::{Command, SelectionMode};
+pub use keyboard::{is_app_shortcut, key_to_terminal_bytes, shortcut_to_command, Modifiers};
+pub use mouse::{
+    cell_to_pixel, cell_to_pixel_center, determine_click_count, expand_to_line, expand_to_word,
+    is_in_grid, pixel_to_cell, pixel_to_cell_clamped, CellMetrics, SelectionRange,
+};
+pub use url_detection::{detect_url_at_column, detect_urls, url_at_column, url_index_at_column, UrlMatch};
+
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -227,6 +240,7 @@ pub fn handle_shell_input(
     key: &Key,
     mod_pressed: bool,
     ctrl_pressed: bool,
+    alt_pressed: bool,
 ) -> bool {
     let tab_id = state.gpu.tab_bar.active_tab_id();
     let Some(tab_id) = tab_id else { return false };
@@ -243,8 +257,16 @@ pub fn handle_shell_input(
             input_sent = true;
         }
         Key::Named(NamedKey::Backspace) => {
-            shell.send_input(b"\x7f");
-            input_sent = true;
+            // macOS: Option+Backspace = Delete word backward
+            #[cfg(target_os = "macos")]
+            if alt_pressed {
+                shell.send_input(b"\x1b\x7f"); // ESC DEL = delete word backward
+                input_sent = true;
+            }
+            if !input_sent {
+                shell.send_input(b"\x7f");
+                input_sent = true;
+            }
         }
         Key::Named(NamedKey::Tab) => {
             shell.send_input(b"\t");
@@ -259,11 +281,69 @@ pub fn handle_shell_input(
             input_sent = true;
         }
         Key::Named(NamedKey::ArrowRight) => {
-            shell.send_input(b"\x1b[C");
-            input_sent = true;
+            // macOS: Cmd+Right = End of line, Option+Right = Word forward
+            #[cfg(target_os = "macos")]
+            if mod_pressed {
+                shell.send_input(b"\x1b[F"); // End
+                input_sent = true;
+            } else if alt_pressed {
+                shell.send_input(b"\x1bf"); // ESC f = forward word
+                input_sent = true;
+            }
+            #[cfg(target_os = "macos")]
+            if !input_sent {
+                shell.send_input(b"\x1b[C");
+                input_sent = true;
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                shell.send_input(b"\x1b[C");
+                input_sent = true;
+            }
         }
         Key::Named(NamedKey::ArrowLeft) => {
-            shell.send_input(b"\x1b[D");
+            // macOS: Cmd+Left = Home (beginning of line), Option+Left = Word backward
+            #[cfg(target_os = "macos")]
+            if mod_pressed {
+                shell.send_input(b"\x1b[H"); // Home
+                input_sent = true;
+            } else if alt_pressed {
+                shell.send_input(b"\x1bb"); // ESC b = backward word
+                input_sent = true;
+            }
+            #[cfg(target_os = "macos")]
+            if !input_sent {
+                shell.send_input(b"\x1b[D");
+                input_sent = true;
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                shell.send_input(b"\x1b[D");
+                input_sent = true;
+            }
+        }
+        Key::Named(NamedKey::Home) => {
+            shell.send_input(b"\x1b[H");
+            input_sent = true;
+        }
+        Key::Named(NamedKey::End) => {
+            shell.send_input(b"\x1b[F");
+            input_sent = true;
+        }
+        Key::Named(NamedKey::PageUp) => {
+            shell.send_input(b"\x1b[5~");
+            input_sent = true;
+        }
+        Key::Named(NamedKey::PageDown) => {
+            shell.send_input(b"\x1b[6~");
+            input_sent = true;
+        }
+        Key::Named(NamedKey::Insert) => {
+            shell.send_input(b"\x1b[2~");
+            input_sent = true;
+        }
+        Key::Named(NamedKey::Delete) => {
+            shell.send_input(b"\x1b[3~");
             input_sent = true;
         }
         Key::Named(NamedKey::Space) => {

@@ -15,9 +15,15 @@ use winit::window::Window;
 
 use crate::gpu::{SharedGpuState, WindowGpuState};
 use crate::input::detect_urls_in_line;
+use crate::state::{TabId, TabState, UiState};
 
 /// Map alacritty_terminal AnsiColor to RGBA array using theme palette
-fn ansi_color_to_rgba(color: AnsiColor, palette: &AnsiPalette, default_color: [f32; 4]) -> [f32; 4] {
+fn ansi_color_to_rgba(
+    color: AnsiColor,
+    palette: &AnsiPalette,
+    default_fg: [f32; 4],
+    default_bg: [f32; 4],
+) -> [f32; 4] {
     use crt_core::AnsiColor::*;
     use crt_core::NamedColor;
 
@@ -41,8 +47,9 @@ fn ansi_color_to_rgba(color: AnsiColor, palette: &AnsiPalette, default_color: [f
                 NamedColor::BrightMagenta => palette.bright_magenta,
                 NamedColor::BrightCyan => palette.bright_cyan,
                 NamedColor::BrightWhite => palette.bright_white,
-                // Foreground/Background use default
-                NamedColor::Foreground | NamedColor::Background => return default_color,
+                // Foreground/Background use their actual theme colors
+                NamedColor::Foreground => return default_fg,
+                NamedColor::Background => return default_bg,
                 // Dim variants use regular colors
                 NamedColor::DimBlack => palette.black,
                 NamedColor::DimRed => palette.red,
@@ -52,8 +59,8 @@ fn ansi_color_to_rgba(color: AnsiColor, palette: &AnsiPalette, default_color: [f
                 NamedColor::DimMagenta => palette.magenta,
                 NamedColor::DimCyan => palette.cyan,
                 NamedColor::DimWhite => palette.white,
-                // Cursor color
-                NamedColor::Cursor => return default_color,
+                // Cursor color - use foreground as default
+                NamedColor::Cursor => return default_fg,
                 // Bright foreground
                 NamedColor::BrightForeground => palette.bright_white,
                 NamedColor::DimForeground => palette.white,
@@ -90,9 +97,9 @@ pub struct WindowState {
     pub window: Arc<Window>,
     pub gpu: WindowGpuState,
     // Map of tab_id -> shell (each window has its own tabs)
-    pub shells: HashMap<u64, ShellTerminal>,
+    pub shells: HashMap<TabId, ShellTerminal>,
     // Content hash to skip reshaping when unchanged (per tab)
-    pub content_hashes: HashMap<u64, u64>,
+    pub content_hashes: HashMap<TabId, u64>,
     // Window-specific sizing
     pub cols: usize,
     pub rows: usize,
@@ -102,10 +109,12 @@ pub struct WindowState {
     // Rendering state
     pub dirty: bool,
     pub frame_count: u32,
+    /// Window is occluded (hidden, minimized, or fully covered)
+    pub occluded: bool,
     // Interaction state
     pub cursor_position: (f32, f32),
     pub last_click_time: Option<Instant>,
-    pub last_click_tab: Option<u64>,
+    pub last_click_tab: Option<TabId>,
     // Terminal selection state
     pub mouse_pressed: bool,
     pub selection_click_count: u8,
@@ -123,6 +132,12 @@ pub struct WindowState {
     pub bell: BellState,
     // Context menu state
     pub context_menu: ContextMenu,
+
+    // === New testable state modules (Phase 1 of migration) ===
+    /// Tab management state (testable, no GPU dependencies)
+    pub tab_state: TabState,
+    /// Aggregated UI state (testable, no GPU dependencies)
+    pub ui_state: UiState,
 }
 
 /// Bell visual flash state
@@ -336,6 +351,10 @@ pub struct CursorInfo {
     pub cell_width: f32,
     /// Cell height in pixels
     pub cell_height: f32,
+    /// Whether the cursor should be visible (false if terminal hid it via escape sequence)
+    pub visible: bool,
+    /// Cursor shape requested by the terminal/application
+    pub shape: crt_core::CursorShape,
 }
 
 /// Text decoration (underline, strikethrough, or background)
@@ -431,6 +450,8 @@ impl WindowState {
         // Cursor info
         let cursor = content.cursor;
         let cursor_point = cursor.point;
+        // Check cursor visibility via TermMode::SHOW_CURSOR (CSI ?25h/l)
+        let cursor_visible = terminal.cursor_mode_visible();
 
         // Compute cursor position (adjust for scroll offset)
         let cursor_viewport_line = cursor_point.line.0 + display_offset;
@@ -486,7 +507,7 @@ impl WindowState {
             };
 
             // Get foreground color
-            let mut fg_color = ansi_color_to_rgba(fg_ansi, palette, default_fg);
+            let mut fg_color = ansi_color_to_rgba(fg_ansi, palette, default_fg, default_bg);
 
             // Apply DIM flag by reducing alpha
             if flags.contains(CellFlags::DIM) {
@@ -494,7 +515,7 @@ impl WindowState {
             }
 
             // Get background color and add decoration if non-default
-            let bg_color = ansi_color_to_rgba(bg_ansi, palette, default_bg);
+            let bg_color = ansi_color_to_rgba(bg_ansi, palette, default_fg, default_bg);
             if bg_color != default_bg {
                 decorations.push(TextDecoration {
                     x,
@@ -618,14 +639,29 @@ impl WindowState {
                 y: cursor_y,
                 cell_width,
                 cell_height: line_height,
+                visible: cursor_visible,
+                shape: cursor.shape,
             },
             decorations,
         })
     }
 
-    /// Create a shell for a new tab
+    /// Create a shell for a new tab, optionally in the specified working directory
     pub fn create_shell_for_tab(&mut self, tab_id: u64) {
-        match ShellTerminal::new(Size::new(self.cols, self.rows)) {
+        self.create_shell_for_tab_with_cwd(tab_id, None);
+    }
+
+    /// Create a shell for a new tab with a specific working directory
+    pub fn create_shell_for_tab_with_cwd(&mut self, tab_id: u64, cwd: Option<std::path::PathBuf>) {
+        let size = Size::new(self.cols, self.rows);
+        let result = if let Some(dir) = cwd {
+            log::info!("Spawning shell in directory: {:?}", dir);
+            ShellTerminal::with_cwd(size, dir)
+        } else {
+            ShellTerminal::new(size)
+        };
+
+        match result {
             Ok(shell) => {
                 log::info!("Shell spawned for tab {}", tab_id);
                 self.shells.insert(tab_id, shell);
@@ -635,6 +671,13 @@ impl WindowState {
                 log::error!("Failed to spawn shell for tab {}: {}", tab_id, e);
             }
         }
+    }
+
+    /// Get the current working directory of the active tab's shell
+    pub fn active_shell_cwd(&self) -> Option<std::path::PathBuf> {
+        let tab_id = self.gpu.tab_bar.active_tab_id()?;
+        let shell = self.shells.get(&tab_id)?;
+        shell.working_directory()
     }
 
     /// Remove shell for a closed tab

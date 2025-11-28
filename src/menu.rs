@@ -5,7 +5,7 @@
 #[cfg(target_os = "macos")]
 use muda::{
     accelerator::{Accelerator, Code, Modifiers as AccelMods},
-    Menu, MenuItem, MenuId, PredefinedMenuItem, Submenu,
+    AboutMetadata, Menu, MenuItem, MenuId, PredefinedMenuItem, Submenu,
 };
 
 /// Menu action identifiers
@@ -28,6 +28,7 @@ pub enum MenuAction {
     IncreaseFontSize,
     DecreaseFontSize,
     ResetFontSize,
+    ToggleProfiling,
     // Window menu
     Minimize,
     NextTab,
@@ -60,6 +61,7 @@ pub struct MenuIds {
     pub increase_font: MenuId,
     pub decrease_font: MenuId,
     pub reset_font: MenuId,
+    pub toggle_profiling: MenuId,
     pub minimize: MenuId,
     pub next_tab: MenuId,
     pub prev_tab: MenuId,
@@ -69,6 +71,27 @@ pub struct MenuIds {
 #[cfg(target_os = "macos")]
 pub fn build_menu_bar() -> (Menu, MenuIds) {
     let menu = Menu::new();
+
+    // App menu (CRT)
+    let about_metadata = AboutMetadata {
+        name: Some("CRT".into()),
+        version: Some(env!("CARGO_PKG_VERSION").into()),
+        ..Default::default()
+    };
+    let app_menu = Submenu::with_items(
+        "CRT",
+        true,
+        &[
+            &PredefinedMenuItem::about(None, Some(about_metadata)),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::services(None),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::hide(None),
+            &PredefinedMenuItem::hide_others(None),
+            &PredefinedMenuItem::show_all(None),
+        ],
+    )
+    .unwrap();
 
     // Shell menu
     let new_tab = MenuItem::with_id(
@@ -187,6 +210,12 @@ pub fn build_menu_bar() -> (Menu, MenuIds) {
         true,
         Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit0)),
     );
+    let toggle_profiling = MenuItem::with_id(
+        "toggle_profiling",
+        "Start Profiling",
+        true,
+        Some(Accelerator::new(Some(AccelMods::SUPER | AccelMods::ALT), Code::KeyP)),
+    );
 
     let view_menu = Submenu::with_items(
         "View",
@@ -197,6 +226,8 @@ pub fn build_menu_bar() -> (Menu, MenuIds) {
             &increase_font,
             &decrease_font,
             &reset_font,
+            &PredefinedMenuItem::separator(),
+            &toggle_profiling,
         ],
     ).unwrap();
 
@@ -298,6 +329,7 @@ pub fn build_menu_bar() -> (Menu, MenuIds) {
     ).unwrap();
 
     // Build the menu bar
+    menu.append(&app_menu).unwrap();
     menu.append(&shell_menu).unwrap();
     menu.append(&edit_menu).unwrap();
     menu.append(&view_menu).unwrap();
@@ -318,6 +350,7 @@ pub fn build_menu_bar() -> (Menu, MenuIds) {
         increase_font: increase_font.id().clone(),
         decrease_font: decrease_font.id().clone(),
         reset_font: reset_font.id().clone(),
+        toggle_profiling: toggle_profiling.id().clone(),
         minimize: minimize.id().clone(),
         next_tab: next_tab.id().clone(),
         prev_tab: prev_tab.id().clone(),
@@ -353,6 +386,7 @@ pub fn menu_id_to_action(id: &MenuId, ids: &MenuIds) -> Option<MenuAction> {
     if *id == ids.increase_font { return Some(MenuAction::IncreaseFontSize); }
     if *id == ids.decrease_font { return Some(MenuAction::DecreaseFontSize); }
     if *id == ids.reset_font { return Some(MenuAction::ResetFontSize); }
+    if *id == ids.toggle_profiling { return Some(MenuAction::ToggleProfiling); }
     if *id == ids.minimize { return Some(MenuAction::Minimize); }
     if *id == ids.next_tab { return Some(MenuAction::NextTab); }
     if *id == ids.prev_tab { return Some(MenuAction::PrevTab); }

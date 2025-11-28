@@ -510,6 +510,22 @@ impl GlyphCache {
         self.cached_cell_width
     }
 
+    /// Get baseline offset from top of cell
+    pub fn baseline_offset(&self) -> f32 {
+        self.baseline_offset
+    }
+
+    /// Get strikethrough position from top of cell
+    /// Positioned at approximately the center of the x-height
+    pub fn strikethrough_offset(&self) -> f32 {
+        // Strikethrough should be at the center of x-height
+        // x-height is typically ~50% of ascent, center is at ~25% below top of ascent
+        // Since baseline_offset = ascent + padding/2, we go back up from baseline
+        // Using font_size as a proxy for ascent (typically ascent ≈ font_size * 0.8)
+        let approx_ascent = self.font_size * 0.8;
+        self.baseline_offset - approx_ascent * 0.35
+    }
+
     /// Update font size for zoom functionality
     ///
     /// This clears the glyph cache and recalculates metrics.

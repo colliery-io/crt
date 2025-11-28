@@ -11,11 +11,13 @@ pub mod background_image;
 pub mod effects;
 pub mod glyph_cache;
 pub mod grid_renderer;
+pub mod mock;
 pub mod rect_renderer;
 pub mod shaders;
 pub mod sprite_renderer;
 pub mod tab_bar;
 pub mod terminal_vello;
+pub mod traits;
 
 pub use background_image::{BackgroundImageState, BackgroundTexture, LoadedImage, ImageFrame};
 pub use effects::{BackdropEffect, EffectConfig, EffectsRenderer, GridEffect, MatrixEffect, MotionBehavior, ParticleEffect, Position, RainEffect, ShapeEffect, SpriteEffect, StarfieldEffect};
@@ -25,6 +27,12 @@ pub use grid_renderer::GridRenderer;
 pub use rect_renderer::RectRenderer;
 pub use tab_bar::{TabBar, Tab, TabRect, EditState, TabBarState, TabLayout, VelloTabBarRenderer};
 pub use terminal_vello::{TerminalVelloRenderer, CursorShape, CursorState};
+pub use traits::{
+    BackdropRenderer, CellContent, Color, ContextMenuItem, CursorInfo,
+    CursorShape as TraitCursorShape, GridPosition, Rect, SearchHighlight, SelectionRange,
+    TabRenderInfo, TextRenderer, UiRenderer,
+};
+pub use mock::{MockRenderer, RenderCall};
 
 use bytemuck::cast_slice;
 use crt_theme::Theme;
@@ -518,6 +526,9 @@ impl EffectPipeline {
     }
 }
 
+/// Reference height for resolution-independent CRT effects (1080p baseline)
+const CRT_REFERENCE_HEIGHT: f32 = 1080.0;
+
 /// Uniform buffer for CRT post-processing shader
 /// Must match CrtParams struct in crt.wgsl (64 bytes, 16-byte aligned)
 #[repr(C)]
@@ -532,7 +543,8 @@ pub struct CrtUniforms {
     pub chromatic_aberration: f32,    // 4 bytes = 32 bytes
     pub bloom: f32,                   // 4 bytes
     pub flicker: f32,                 // 4 bytes
-    pub _pad: [f32; 6],               // 24 bytes = 64 bytes total
+    pub reference_height: f32,        // 4 bytes - baseline resolution for scaling
+    pub _pad: [f32; 5],               // 20 bytes = 64 bytes total
 }
 
 /// CRT post-processing pipeline - applies scanlines, curvature, vignette
@@ -630,7 +642,8 @@ impl CrtPipeline {
             chromatic_aberration: 0.0,
             bloom: 0.0,
             flicker: 0.0,
-            _pad: [0.0; 6],
+            reference_height: CRT_REFERENCE_HEIGHT,
+            _pad: [0.0; 5],
         };
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -709,7 +722,8 @@ impl CrtPipeline {
             chromatic_aberration: self.params.chromatic_aberration,
             bloom: self.params.bloom,
             flicker: self.params.flicker,
-            _pad: [0.0; 6],
+            reference_height: CRT_REFERENCE_HEIGHT,
+            _pad: [0.0; 5],
         };
         queue.write_buffer(&self.uniform_buffer, 0, cast_slice(&[uniforms]));
     }

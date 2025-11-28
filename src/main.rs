@@ -8,8 +8,11 @@ mod config;
 mod font;
 mod gpu;
 mod input;
+mod managers;
 mod menu;
+pub mod profiling;
 mod render;
+mod state;
 mod watcher;
 mod window;
 
@@ -391,6 +394,7 @@ impl App {
             font_scale: 1.0,
             dirty: true,
             frame_count: 0,
+            occluded: false,
             cursor_position: (0.0, 0.0),
             last_click_time: None,
             last_click_tab: None,
@@ -404,6 +408,9 @@ impl App {
             search: Default::default(),
             bell: window::BellState::from_config(&self.config.bell),
             context_menu: window::ContextMenu::default(),
+            // New testable state modules
+            tab_state: state::TabState::new(),
+            ui_state: state::UiState::new(),
         };
 
         self.windows.insert(window_id, window_state);
@@ -443,10 +450,12 @@ impl App {
         match action {
             MenuAction::NewTab => {
                 if let Some(state) = self.focused_window_mut() {
+                    // Get current shell's working directory for the new tab
+                    let cwd = state.active_shell_cwd();
                     let tab_num = state.gpu.tab_bar.tab_count() + 1;
                     let tab_id = state.gpu.tab_bar.add_tab(format!("Terminal {}", tab_num));
                     state.gpu.tab_bar.select_tab_index(state.gpu.tab_bar.tab_count() - 1);
-                    state.create_shell_for_tab(tab_id);
+                    state.create_shell_for_tab_with_cwd(tab_id, cwd);
                     state.dirty = true;
                     state.window.request_redraw();
                 }
@@ -460,7 +469,8 @@ impl App {
                         if let Some(id) = state.gpu.tab_bar.active_tab_id() {
                             state.gpu.tab_bar.close_tab(id);
                             state.remove_shell_for_tab(id);
-                            state.dirty = true;
+                            // Force redraw of new active tab to clear stale cached render state
+                            state.force_active_tab_redraw();
                             state.window.request_redraw();
                         }
                         false
@@ -535,6 +545,16 @@ impl App {
                     }
                     state.force_active_tab_redraw();
                     state.window.request_redraw();
+                }
+            }
+            MenuAction::ToggleProfiling => {
+                let (enabled, path) = profiling::toggle();
+                if enabled {
+                    if let Some(p) = path {
+                        log::info!("Profiling started: {}", p.display());
+                    }
+                } else if let Some(p) = path {
+                    log::info!("Profiling stopped. Log: {}", p.display());
                 }
             }
             _ => log::info!("{:?} not yet implemented", action),
@@ -865,6 +885,13 @@ impl ApplicationHandler for App {
                 if focused { self.focused_window = Some(id); }
             }
 
+            WindowEvent::Occluded(occluded) => {
+                if let Some(state) = self.windows.get_mut(&id) {
+                    state.occluded = occluded;
+                    log::debug!("Window {:?} occluded: {}", id, occluded);
+                }
+            }
+
             WindowEvent::ModifiersChanged(m) => { self.modifiers = m; }
 
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
@@ -987,7 +1014,8 @@ impl ApplicationHandler for App {
                                 if let Some(tab_id) = state.gpu.tab_bar.active_tab_id() {
                                     state.gpu.tab_bar.close_tab(tab_id);
                                     state.remove_shell_for_tab(tab_id);
-                                    state.dirty = true;
+                                    // Force redraw of new active tab to clear stale cached render state
+                                    state.force_active_tab_redraw();
                                     state.window.request_redraw();
                                     return;
                                 }
@@ -1003,10 +1031,12 @@ impl ApplicationHandler for App {
                             return;
                         }
                         Key::Character(c) if c.as_str() == "t" => {
+                            // Get current shell's working directory for the new tab
+                            let cwd = state.active_shell_cwd();
                             let tab_num = state.gpu.tab_bar.tab_count() + 1;
                             let tab_id = state.gpu.tab_bar.add_tab(format!("Terminal {}", tab_num));
                             state.gpu.tab_bar.select_tab_index(state.gpu.tab_bar.tab_count() - 1);
-                            state.create_shell_for_tab(tab_id);
+                            state.create_shell_for_tab_with_cwd(tab_id, cwd);
                             state.dirty = true;
                             state.window.request_redraw();
                             return;
@@ -1074,7 +1104,8 @@ impl ApplicationHandler for App {
 
                 // Send to shell (clears selection on input)
                 let ctrl_pressed = self.modifiers.state().control_key();
-                if handle_shell_input(state, &event.logical_key, mod_pressed, ctrl_pressed) {
+                let alt_pressed = self.modifiers.state().alt_key();
+                if handle_shell_input(state, &event.logical_key, mod_pressed, ctrl_pressed, alt_pressed) {
                     clear_terminal_selection(state);
                 }
             }
@@ -1452,7 +1483,13 @@ fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn,crt=info")).init();
     log::info!("CRT Terminal starting");
 
+    // Initialize profiling (enabled via CRT_PROFILE=1)
+    profiling::init();
+
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
     event_loop.run_app(&mut App::new()).unwrap();
+
+    // Flush profiling data on exit
+    profiling::shutdown();
 }

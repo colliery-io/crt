@@ -21,11 +21,13 @@ pub use alacritty_terminal::term::{
 };
 pub use alacritty_terminal::index::{Column, Line, Point};
 pub use alacritty_terminal::vte::ansi::Color as AnsiColor;
+pub use alacritty_terminal::vte::ansi::CursorShape;
 pub use alacritty_terminal::vte::ansi::NamedColor;
 pub use alacritty_terminal::selection::{Selection, SelectionRange, SelectionType};
 pub use alacritty_terminal::index::Side;
 pub use alacritty_terminal::grid::Scroll;
 pub use alacritty_terminal::term::TermMode;
+pub use alacritty_terminal::event::Event as TerminalEvent;
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -253,6 +255,16 @@ impl Terminal {
         self.renderable_content().cursor
     }
 
+    /// Check if cursor should be visible (based on SHOW_CURSOR mode)
+    pub fn cursor_mode_visible(&self) -> bool {
+        self.term.mode().contains(TermMode::SHOW_CURSOR)
+    }
+
+    /// Get terminal mode flags
+    pub fn mode(&self) -> TermMode {
+        *self.term.mode()
+    }
+
     /// Take pending terminal events
     pub fn take_events(&self) -> Vec<Event> {
         self.event_proxy.take_events()
@@ -410,12 +422,25 @@ impl ShellTerminal {
         Ok(Self { terminal, pty })
     }
 
+    /// Create a new shell terminal with a specific working directory
+    pub fn with_cwd(size: Size, cwd: std::path::PathBuf) -> anyhow::Result<Self> {
+        let terminal = Terminal::new(size);
+        let pty = Pty::spawn_with_cwd(None, size.columns as u16, size.lines as u16, Some(cwd))?;
+
+        Ok(Self { terminal, pty })
+    }
+
     /// Create a new shell terminal with a specific shell
     pub fn with_shell(size: Size, shell: &str) -> anyhow::Result<Self> {
         let terminal = Terminal::new(size);
         let pty = Pty::spawn(Some(shell), size.columns as u16, size.lines as u16)?;
 
         Ok(Self { terminal, pty })
+    }
+
+    /// Get the current working directory of the shell process
+    pub fn working_directory(&self) -> Option<std::path::PathBuf> {
+        self.pty.working_directory()
     }
 
     /// Process any available PTY output through the terminal
