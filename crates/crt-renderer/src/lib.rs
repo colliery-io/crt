@@ -11,6 +11,7 @@ pub mod background_image;
 pub mod effects;
 pub mod glyph_cache;
 pub mod grid_renderer;
+pub mod mock;
 pub mod rect_renderer;
 pub mod shaders;
 pub mod sprite_renderer;
@@ -31,6 +32,7 @@ pub use traits::{
     CursorShape as TraitCursorShape, GridPosition, Rect, SearchHighlight, SelectionRange,
     TabRenderInfo, TextRenderer, UiRenderer,
 };
+pub use mock::{MockRenderer, RenderCall};
 
 use bytemuck::cast_slice;
 use crt_theme::Theme;
