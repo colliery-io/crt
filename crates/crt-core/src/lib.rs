@@ -21,11 +21,13 @@ pub use alacritty_terminal::term::{
 };
 pub use alacritty_terminal::index::{Column, Line, Point};
 pub use alacritty_terminal::vte::ansi::Color as AnsiColor;
+pub use alacritty_terminal::vte::ansi::CursorShape;
 pub use alacritty_terminal::vte::ansi::NamedColor;
 pub use alacritty_terminal::selection::{Selection, SelectionRange, SelectionType};
 pub use alacritty_terminal::index::Side;
 pub use alacritty_terminal::grid::Scroll;
 pub use alacritty_terminal::term::TermMode;
+pub use alacritty_terminal::event::Event as TerminalEvent;
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -251,6 +253,16 @@ impl Terminal {
     /// Get the cursor information
     pub fn cursor(&self) -> term::RenderableCursor {
         self.renderable_content().cursor
+    }
+
+    /// Check if cursor should be visible (based on SHOW_CURSOR mode)
+    pub fn cursor_mode_visible(&self) -> bool {
+        self.term.mode().contains(TermMode::SHOW_CURSOR)
+    }
+
+    /// Get terminal mode flags
+    pub fn mode(&self) -> TermMode {
+        *self.term.mode()
     }
 
     /// Take pending terminal events

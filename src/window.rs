@@ -18,7 +18,12 @@ use crate::input::detect_urls_in_line;
 use crate::state::{TabId, TabState, UiState};
 
 /// Map alacritty_terminal AnsiColor to RGBA array using theme palette
-fn ansi_color_to_rgba(color: AnsiColor, palette: &AnsiPalette, default_color: [f32; 4]) -> [f32; 4] {
+fn ansi_color_to_rgba(
+    color: AnsiColor,
+    palette: &AnsiPalette,
+    default_fg: [f32; 4],
+    default_bg: [f32; 4],
+) -> [f32; 4] {
     use crt_core::AnsiColor::*;
     use crt_core::NamedColor;
 
@@ -42,8 +47,9 @@ fn ansi_color_to_rgba(color: AnsiColor, palette: &AnsiPalette, default_color: [f
                 NamedColor::BrightMagenta => palette.bright_magenta,
                 NamedColor::BrightCyan => palette.bright_cyan,
                 NamedColor::BrightWhite => palette.bright_white,
-                // Foreground/Background use default
-                NamedColor::Foreground | NamedColor::Background => return default_color,
+                // Foreground/Background use their actual theme colors
+                NamedColor::Foreground => return default_fg,
+                NamedColor::Background => return default_bg,
                 // Dim variants use regular colors
                 NamedColor::DimBlack => palette.black,
                 NamedColor::DimRed => palette.red,
@@ -53,8 +59,8 @@ fn ansi_color_to_rgba(color: AnsiColor, palette: &AnsiPalette, default_color: [f
                 NamedColor::DimMagenta => palette.magenta,
                 NamedColor::DimCyan => palette.cyan,
                 NamedColor::DimWhite => palette.white,
-                // Cursor color
-                NamedColor::Cursor => return default_color,
+                // Cursor color - use foreground as default
+                NamedColor::Cursor => return default_fg,
                 // Bright foreground
                 NamedColor::BrightForeground => palette.bright_white,
                 NamedColor::DimForeground => palette.white,
@@ -343,6 +349,10 @@ pub struct CursorInfo {
     pub cell_width: f32,
     /// Cell height in pixels
     pub cell_height: f32,
+    /// Whether the cursor should be visible (false if terminal hid it via escape sequence)
+    pub visible: bool,
+    /// Cursor shape requested by the terminal/application
+    pub shape: crt_core::CursorShape,
 }
 
 /// Text decoration (underline, strikethrough, or background)
@@ -438,6 +448,8 @@ impl WindowState {
         // Cursor info
         let cursor = content.cursor;
         let cursor_point = cursor.point;
+        // Check cursor visibility via TermMode::SHOW_CURSOR (CSI ?25h/l)
+        let cursor_visible = terminal.cursor_mode_visible();
 
         // Compute cursor position (adjust for scroll offset)
         let cursor_viewport_line = cursor_point.line.0 + display_offset;
@@ -493,7 +505,7 @@ impl WindowState {
             };
 
             // Get foreground color
-            let mut fg_color = ansi_color_to_rgba(fg_ansi, palette, default_fg);
+            let mut fg_color = ansi_color_to_rgba(fg_ansi, palette, default_fg, default_bg);
 
             // Apply DIM flag by reducing alpha
             if flags.contains(CellFlags::DIM) {
@@ -501,7 +513,7 @@ impl WindowState {
             }
 
             // Get background color and add decoration if non-default
-            let bg_color = ansi_color_to_rgba(bg_ansi, palette, default_bg);
+            let bg_color = ansi_color_to_rgba(bg_ansi, palette, default_fg, default_bg);
             if bg_color != default_bg {
                 decorations.push(TextDecoration {
                     x,
@@ -625,6 +637,8 @@ impl WindowState {
                 y: cursor_y,
                 cell_width,
                 cell_height: line_height,
+                visible: cursor_visible,
+                shape: cursor.shape,
             },
             decorations,
         })

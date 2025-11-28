@@ -10,6 +10,7 @@ mod gpu;
 mod input;
 mod managers;
 mod menu;
+pub mod profiling;
 mod render;
 mod state;
 mod watcher;
@@ -540,6 +541,16 @@ impl App {
                     }
                     state.force_active_tab_redraw();
                     state.window.request_redraw();
+                }
+            }
+            MenuAction::ToggleProfiling => {
+                let (enabled, path) = profiling::toggle();
+                if enabled {
+                    if let Some(p) = path {
+                        log::info!("Profiling started: {}", p.display());
+                    }
+                } else if let Some(p) = path {
+                    log::info!("Profiling stopped. Log: {}", p.display());
                 }
             }
             _ => log::info!("{:?} not yet implemented", action),
@@ -1457,7 +1468,13 @@ fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn,crt=info")).init();
     log::info!("CRT Terminal starting");
 
+    // Initialize profiling (enabled via CRT_PROFILE=1)
+    profiling::init();
+
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
     event_loop.run_app(&mut App::new()).unwrap();
+
+    // Flush profiling data on exit
+    profiling::shutdown();
 }

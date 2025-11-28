@@ -1,9 +1,56 @@
 //! Configuration management for CRT terminal
 //!
 //! Loads config from ~/.config/crt/config.toml with sensible defaults.
+//! Paths can be overridden via:
+//! - `CRT_CONFIG_DIR` environment variable
+//! - `ConfigPaths` for programmatic control (useful for testing)
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Configuration paths that can be overridden for testing
+#[derive(Debug, Clone)]
+pub struct ConfigPaths {
+    /// Base directory for all config files
+    pub config_dir: PathBuf,
+}
+
+impl ConfigPaths {
+    /// Create from a specific directory
+    pub fn new(config_dir: PathBuf) -> Self {
+        Self { config_dir }
+    }
+
+    /// Get paths from environment or default
+    pub fn from_env_or_default() -> Option<Self> {
+        // First check environment variable
+        if let Ok(dir) = std::env::var("CRT_CONFIG_DIR") {
+            let path = PathBuf::from(dir);
+            if path.is_absolute() {
+                return Some(Self::new(path));
+            }
+            log::warn!("CRT_CONFIG_DIR must be an absolute path, ignoring: {:?}", path);
+        }
+
+        // Fall back to default
+        dirs::home_dir().map(|p| Self::new(p.join(".config").join("crt")))
+    }
+
+    /// Get the config file path
+    pub fn config_path(&self) -> PathBuf {
+        self.config_dir.join("config.toml")
+    }
+
+    /// Get the themes directory path
+    pub fn themes_dir(&self) -> PathBuf {
+        self.config_dir.join("themes")
+    }
+
+    /// Get a specific theme file path
+    pub fn theme_path(&self, theme_name: &str) -> PathBuf {
+        self.themes_dir().join(format!("{}.css", theme_name))
+    }
+}
 
 /// Shell configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -319,29 +366,35 @@ pub struct Config {
 }
 
 impl Config {
-    /// Get the config directory path (~/.config/crt)
+    /// Get the config directory path (~/.config/crt or from CRT_CONFIG_DIR)
     pub fn config_dir() -> Option<PathBuf> {
-        dirs::home_dir().map(|p| p.join(".config").join("crt"))
+        ConfigPaths::from_env_or_default().map(|p| p.config_dir)
     }
 
-    /// Get the config file path (~/.config/crt/config.toml)
+    /// Get the config file path
     pub fn config_path() -> Option<PathBuf> {
-        Self::config_dir().map(|p| p.join("config.toml"))
+        ConfigPaths::from_env_or_default().map(|p| p.config_path())
     }
 
-    /// Load config from file, or return defaults if not found
+    /// Load config from default path (respects CRT_CONFIG_DIR env var)
     pub fn load() -> Self {
-        let Some(path) = Self::config_path() else {
-            log::info!("Could not determine config path, using defaults");
-            return Self::default();
-        };
+        match ConfigPaths::from_env_or_default() {
+            Some(paths) => Self::load_with_paths(&paths),
+            None => {
+                log::info!("Could not determine config path, using defaults");
+                Self::default()
+            }
+        }
+    }
 
+    /// Load config from a specific file path
+    pub fn load_from(path: &Path) -> Self {
         if !path.exists() {
             log::info!("Config file not found at {:?}, using defaults", path);
             return Self::default();
         }
 
-        match std::fs::read_to_string(&path) {
+        match std::fs::read_to_string(path) {
             Ok(contents) => match toml::from_str(&contents) {
                 Ok(config) => {
                     log::info!("Loaded config from {:?}", path);
@@ -359,35 +412,191 @@ impl Config {
         }
     }
 
-    /// Get the themes directory path (~/.config/crt/themes)
-    pub fn themes_dir() -> Option<PathBuf> {
-        Self::config_dir().map(|p| p.join("themes"))
+    /// Load config using specified paths
+    pub fn load_with_paths(paths: &ConfigPaths) -> Self {
+        let config_path = paths.config_path();
+        Self::load_from(&config_path)
     }
 
-    /// Get theme CSS content from ~/.config/crt/themes/{name}.css
+    /// Get the themes directory path
+    pub fn themes_dir() -> Option<PathBuf> {
+        ConfigPaths::from_env_or_default().map(|p| p.themes_dir())
+    }
+
+    /// Get theme CSS content
     pub fn theme_css(&self) -> Option<String> {
         self.theme_css_with_path().map(|(css, _)| css)
     }
 
-    /// Get theme CSS content and the theme file's directory
-    /// Returns (css_content, theme_directory) for resolving relative paths
+    /// Get theme CSS with paths from environment or default
     pub fn theme_css_with_path(&self) -> Option<(String, PathBuf)> {
-        if let Some(themes_dir) = Self::themes_dir() {
-            let theme_path = themes_dir.join(format!("{}.css", self.theme.name));
-            match std::fs::read_to_string(&theme_path) {
-                Ok(css) => {
-                    log::info!("Loaded theme from {:?}", theme_path);
-                    return Some((css, themes_dir));
-                }
-                Err(_) => {
-                    log::warn!(
-                        "Theme '{}' not found at {:?}. Install themes to ~/.config/crt/themes/",
-                        self.theme.name,
-                        theme_path
-                    );
-                }
+        ConfigPaths::from_env_or_default()
+            .and_then(|paths| self.theme_css_with_paths(&paths))
+    }
+
+    /// Get theme CSS content and the theme file's directory using specified paths
+    /// Returns (css_content, theme_directory) for resolving relative paths
+    pub fn theme_css_with_paths(&self, paths: &ConfigPaths) -> Option<(String, PathBuf)> {
+        let themes_dir = paths.themes_dir();
+        let theme_path = paths.theme_path(&self.theme.name);
+
+        match std::fs::read_to_string(&theme_path) {
+            Ok(css) => {
+                log::info!("Loaded theme from {:?}", theme_path);
+                Some((css, themes_dir))
+            }
+            Err(_) => {
+                log::warn!(
+                    "Theme '{}' not found at {:?}. Install themes to {:?}",
+                    self.theme.name,
+                    theme_path,
+                    themes_dir
+                );
+                None
             }
         }
-        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_config_paths_new() {
+        let paths = ConfigPaths::new(PathBuf::from("/test/config"));
+        assert_eq!(paths.config_dir, PathBuf::from("/test/config"));
+        assert_eq!(paths.config_path(), PathBuf::from("/test/config/config.toml"));
+        assert_eq!(paths.themes_dir(), PathBuf::from("/test/config/themes"));
+        assert_eq!(
+            paths.theme_path("synthwave"),
+            PathBuf::from("/test/config/themes/synthwave.css")
+        );
+    }
+
+    #[test]
+    fn test_config_default() {
+        let config = Config::default();
+        assert_eq!(config.window.columns, 80);
+        assert_eq!(config.window.rows, 24);
+        assert_eq!(config.font.size, 14.0);
+        assert_eq!(config.theme.name, "synthwave");
+    }
+
+    #[test]
+    fn test_load_from_missing_file() {
+        let config = Config::load_from(Path::new("/nonexistent/config.toml"));
+        // Should return defaults
+        assert_eq!(config.window.columns, 80);
+    }
+
+    #[test]
+    fn test_load_from_valid_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        fs::write(
+            &config_path,
+            r#"
+[window]
+columns = 120
+rows = 40
+title = "Test Terminal"
+
+[font]
+size = 16.0
+
+[theme]
+name = "test-theme"
+"#,
+        )
+        .unwrap();
+
+        let config = Config::load_from(&config_path);
+        assert_eq!(config.window.columns, 120);
+        assert_eq!(config.window.rows, 40);
+        assert_eq!(config.window.title, "Test Terminal");
+        assert_eq!(config.font.size, 16.0);
+        assert_eq!(config.theme.name, "test-theme");
+    }
+
+    #[test]
+    fn test_load_with_paths() {
+        let temp_dir = TempDir::new().unwrap();
+        let paths = ConfigPaths::new(temp_dir.path().to_path_buf());
+
+        fs::write(
+            paths.config_path(),
+            r#"
+[window]
+columns = 100
+"#,
+        )
+        .unwrap();
+
+        let config = Config::load_with_paths(&paths);
+        assert_eq!(config.window.columns, 100);
+    }
+
+    #[test]
+    fn test_load_invalid_toml() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        fs::write(&config_path, "this is { not valid toml").unwrap();
+
+        let config = Config::load_from(&config_path);
+        // Should return defaults
+        assert_eq!(config.window.columns, 80);
+    }
+
+    #[test]
+    fn test_theme_css_with_paths() {
+        let temp_dir = TempDir::new().unwrap();
+        let paths = ConfigPaths::new(temp_dir.path().to_path_buf());
+
+        // Create themes directory and theme file
+        fs::create_dir_all(paths.themes_dir()).unwrap();
+        fs::write(
+            paths.theme_path("test-theme"),
+            ":root { --background: #000; }",
+        )
+        .unwrap();
+
+        let mut config = Config::default();
+        config.theme.name = "test-theme".to_string();
+
+        let result = config.theme_css_with_paths(&paths);
+        assert!(result.is_some());
+        let (css, themes_dir) = result.unwrap();
+        assert!(css.contains("--background"));
+        assert_eq!(themes_dir, paths.themes_dir());
+    }
+
+    #[test]
+    fn test_theme_css_missing() {
+        let temp_dir = TempDir::new().unwrap();
+        let paths = ConfigPaths::new(temp_dir.path().to_path_buf());
+
+        let config = Config::default();
+        let result = config.theme_css_with_paths(&paths);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_partial_config_uses_defaults() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        // Only specify window columns, everything else should be defaults
+        fs::write(&config_path, "[window]\ncolumns = 200\n").unwrap();
+
+        let config = Config::load_from(&config_path);
+        assert_eq!(config.window.columns, 200);
+        assert_eq!(config.window.rows, 24); // default
+        assert_eq!(config.font.size, 14.0); // default
+        assert_eq!(config.theme.name, "synthwave"); // default
     }
 }

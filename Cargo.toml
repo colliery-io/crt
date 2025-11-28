@@ -81,3 +81,16 @@ arboard = "3.6.1"
 regex = "1.12.2"
 open = "5.3.3"
 fontdb = { workspace = true }
+
+[dev-dependencies]
+criterion = { version = "0.7.0", features = ["html_reports"] }
+tempfile = "3.23.0"
+
+# Benchmark binaries (run with: cargo run --release --bin benchmark)
+[[bin]]
+name = "benchmark"
+path = "src/bin/benchmark.rs"
+
+[[bin]]
+name = "benchmark_gpu"
+path = "src/bin/benchmark_gpu.rs"

@@ -28,6 +28,7 @@ pub enum MenuAction {
     IncreaseFontSize,
     DecreaseFontSize,
     ResetFontSize,
+    ToggleProfiling,
     // Window menu
     Minimize,
     NextTab,
@@ -60,6 +61,7 @@ pub struct MenuIds {
     pub increase_font: MenuId,
     pub decrease_font: MenuId,
     pub reset_font: MenuId,
+    pub toggle_profiling: MenuId,
     pub minimize: MenuId,
     pub next_tab: MenuId,
     pub prev_tab: MenuId,
@@ -187,6 +189,12 @@ pub fn build_menu_bar() -> (Menu, MenuIds) {
         true,
         Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit0)),
     );
+    let toggle_profiling = MenuItem::with_id(
+        "toggle_profiling",
+        "Start Profiling",
+        true,
+        Some(Accelerator::new(Some(AccelMods::SUPER | AccelMods::ALT), Code::KeyP)),
+    );
 
     let view_menu = Submenu::with_items(
         "View",
@@ -197,6 +205,8 @@ pub fn build_menu_bar() -> (Menu, MenuIds) {
             &increase_font,
             &decrease_font,
             &reset_font,
+            &PredefinedMenuItem::separator(),
+            &toggle_profiling,
         ],
     ).unwrap();
 
@@ -318,6 +328,7 @@ pub fn build_menu_bar() -> (Menu, MenuIds) {
         increase_font: increase_font.id().clone(),
         decrease_font: decrease_font.id().clone(),
         reset_font: reset_font.id().clone(),
+        toggle_profiling: toggle_profiling.id().clone(),
         minimize: minimize.id().clone(),
         next_tab: next_tab.id().clone(),
         prev_tab: prev_tab.id().clone(),
@@ -353,6 +364,7 @@ pub fn menu_id_to_action(id: &MenuId, ids: &MenuIds) -> Option<MenuAction> {
     if *id == ids.increase_font { return Some(MenuAction::IncreaseFontSize); }
     if *id == ids.decrease_font { return Some(MenuAction::DecreaseFontSize); }
     if *id == ids.reset_font { return Some(MenuAction::ResetFontSize); }
+    if *id == ids.toggle_profiling { return Some(MenuAction::ToggleProfiling); }
     if *id == ids.minimize { return Some(MenuAction::Minimize); }
     if *id == ids.next_tab { return Some(MenuAction::NextTab); }
     if *id == ids.prev_tab { return Some(MenuAction::PrevTab); }
