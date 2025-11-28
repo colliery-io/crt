@@ -76,6 +76,12 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         }
     }
 
+    // Skip GPU rendering when window is occluded (minimized, hidden, or fully covered)
+    // PTY processing above still runs to keep shells responsive
+    if state.occluded {
+        return;
+    }
+
     // Update text buffer and get cursor/decoration info
     let text_update_start = Instant::now();
     let update_result = if state.dirty {

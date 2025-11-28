@@ -394,6 +394,7 @@ impl App {
             font_scale: 1.0,
             dirty: true,
             frame_count: 0,
+            occluded: false,
             cursor_position: (0.0, 0.0),
             last_click_time: None,
             last_click_tab: None,
@@ -881,6 +882,13 @@ impl ApplicationHandler for App {
 
             WindowEvent::Focused(focused) => {
                 if focused { self.focused_window = Some(id); }
+            }
+
+            WindowEvent::Occluded(occluded) => {
+                if let Some(state) = self.windows.get_mut(&id) {
+                    state.occluded = occluded;
+                    log::debug!("Window {:?} occluded: {}", id, occluded);
+                }
             }
 
             WindowEvent::ModifiersChanged(m) => { self.modifiers = m; }

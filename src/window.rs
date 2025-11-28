@@ -109,6 +109,8 @@ pub struct WindowState {
     // Rendering state
     pub dirty: bool,
     pub frame_count: u32,
+    /// Window is occluded (hidden, minimized, or fully covered)
+    pub occluded: bool,
     // Interaction state
     pub cursor_position: (f32, f32),
     pub last_click_time: Option<Instant>,
