@@ -8,6 +8,7 @@ mod config;
 mod font;
 mod gpu;
 mod input;
+mod managers;
 mod menu;
 mod render;
 mod state;
