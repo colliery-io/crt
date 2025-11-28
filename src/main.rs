@@ -469,7 +469,8 @@ impl App {
                         if let Some(id) = state.gpu.tab_bar.active_tab_id() {
                             state.gpu.tab_bar.close_tab(id);
                             state.remove_shell_for_tab(id);
-                            state.dirty = true;
+                            // Force redraw of new active tab to clear stale cached render state
+                            state.force_active_tab_redraw();
                             state.window.request_redraw();
                         }
                         false
@@ -1013,7 +1014,8 @@ impl ApplicationHandler for App {
                                 if let Some(tab_id) = state.gpu.tab_bar.active_tab_id() {
                                     state.gpu.tab_bar.close_tab(tab_id);
                                     state.remove_shell_for_tab(tab_id);
-                                    state.dirty = true;
+                                    // Force redraw of new active tab to clear stale cached render state
+                                    state.force_active_tab_redraw();
                                     state.window.request_redraw();
                                     return;
                                 }
