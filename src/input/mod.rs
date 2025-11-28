@@ -381,8 +381,10 @@ pub fn handle_shell_input(
         // Scroll to bottom when user types (show live output)
         if shell.is_scrolled_back() {
             shell.scroll_to_bottom();
-            state.content_hashes.insert(tab_id, 0); // Force redraw
         }
+        // Always invalidate content hash when input is sent to ensure re-render
+        // even if PTY output hasn't arrived yet (handles TUI apps like Claude Code)
+        state.content_hashes.insert(tab_id, 0);
         state.dirty = true;
         state.window.request_redraw();
     }
