@@ -6,8 +6,8 @@
 //! by running scripted content scenarios and measuring frame times.
 
 use std::collections::VecDeque;
-use std::time::{Duration, Instant};
 use std::io::Write;
+use std::time::{Duration, Instant};
 
 /// Frame timing statistics
 struct FrameStats {
@@ -17,16 +17,23 @@ struct FrameStats {
 
 impl FrameStats {
     fn new(max_samples: usize) -> Self {
-        Self { times: VecDeque::with_capacity(max_samples), max_samples }
+        Self {
+            times: VecDeque::with_capacity(max_samples),
+            max_samples,
+        }
     }
 
     fn record(&mut self, d: Duration) {
-        if self.times.len() >= self.max_samples { self.times.pop_front(); }
+        if self.times.len() >= self.max_samples {
+            self.times.pop_front();
+        }
         self.times.push_back(d);
     }
 
     fn avg_ms(&self) -> f64 {
-        if self.times.is_empty() { return 0.0; }
+        if self.times.is_empty() {
+            return 0.0;
+        }
         self.times.iter().sum::<Duration>().as_secs_f64() * 1000.0 / self.times.len() as f64
     }
 
@@ -36,7 +43,9 @@ impl FrameStats {
     }
 
     fn percentile(&self, p: f64) -> f64 {
-        if self.times.is_empty() { return 0.0; }
+        if self.times.is_empty() {
+            return 0.0;
+        }
         let mut sorted: Vec<_> = self.times.iter().collect();
         sorted.sort();
         sorted[((sorted.len() as f64 * p) as usize).min(sorted.len() - 1)].as_secs_f64() * 1000.0
@@ -47,14 +56,22 @@ impl FrameStats {
 fn get_rss_mb() -> f64 {
     std::process::Command::new("ps")
         .args(["-o", "rss=", "-p", &std::process::id().to_string()])
-        .output().ok()
-        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<u64>().ok())
+        .output()
+        .ok()
+        .and_then(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .trim()
+                .parse::<u64>()
+                .ok()
+        })
         .map(|kb| kb as f64 / 1024.0)
         .unwrap_or(0.0)
 }
 
 #[cfg(not(target_os = "macos"))]
-fn get_rss_mb() -> f64 { 0.0 }
+fn get_rss_mb() -> f64 {
+    0.0
+}
 
 fn main() {
     println!("CRT Terminal GPU Benchmark");
@@ -107,14 +124,18 @@ fn main() {
                 "color_stress" => {
                     let mut buf = Vec::new();
                     for i in 0..120 {
-                        buf.extend_from_slice(format!("\x1b[38;5;{}m#", (frame + i as u64) % 256).as_bytes());
+                        buf.extend_from_slice(
+                            format!("\x1b[38;5;{}m#", (frame + i as u64) % 256).as_bytes(),
+                        );
                     }
                     buf.extend_from_slice(b"\x1b[0m\n");
                     buf
                 }
                 "unicode" => {
                     let chars = ['中', '文', '日', '本', '語', 'あ', 'い'];
-                    let line: String = (0..60).map(|i| chars[(frame as usize + i) % chars.len()]).collect();
+                    let line: String = (0..60)
+                        .map(|i| chars[(frame as usize + i) % chars.len()])
+                        .collect();
                     format!("{}\n", line).into_bytes()
                 }
                 _ => vec![],
@@ -135,8 +156,12 @@ fn main() {
             std::thread::sleep(Duration::from_micros(100));
         }
 
-        println!("{:.1} FPS (avg: {:.2}ms, p99: {:.2}ms)",
-            stats.fps(), stats.avg_ms(), stats.percentile(0.99));
+        println!(
+            "{:.1} FPS (avg: {:.2}ms, p99: {:.2}ms)",
+            stats.fps(),
+            stats.avg_ms(),
+            stats.percentile(0.99)
+        );
     }
 
     println!("\nMemory: {:.1} MB", get_rss_mb());

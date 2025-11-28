@@ -40,11 +40,17 @@ impl FrameStats {
     }
 
     fn min_ms(&self) -> f64 {
-        self.frame_times.iter().min().map_or(0.0, |d| d.as_secs_f64() * 1000.0)
+        self.frame_times
+            .iter()
+            .min()
+            .map_or(0.0, |d| d.as_secs_f64() * 1000.0)
     }
 
     fn max_ms(&self) -> f64 {
-        self.frame_times.iter().max().map_or(0.0, |d| d.as_secs_f64() * 1000.0)
+        self.frame_times
+            .iter()
+            .max()
+            .map_or(0.0, |d| d.as_secs_f64() * 1000.0)
     }
 
     fn p99_ms(&self) -> f64 {
@@ -54,16 +60,14 @@ impl FrameStats {
         let mut sorted: Vec<_> = self.frame_times.iter().collect();
         sorted.sort();
         let idx = (sorted.len() as f64 * 0.99) as usize;
-        sorted.get(idx.min(sorted.len() - 1)).map_or(0.0, |d| d.as_secs_f64() * 1000.0)
+        sorted
+            .get(idx.min(sorted.len() - 1))
+            .map_or(0.0, |d| d.as_secs_f64() * 1000.0)
     }
 
     fn fps(&self) -> f64 {
         let avg = self.avg_ms();
-        if avg > 0.0 {
-            1000.0 / avg
-        } else {
-            0.0
-        }
+        if avg > 0.0 { 1000.0 / avg } else { 0.0 }
     }
 }
 
@@ -146,7 +150,11 @@ impl ScenarioResult {
 
         println!("Frame Timing:");
         println!("  Total Frames: {}", self.total_frames);
-        println!("  Avg Frame:    {:.2} ms ({:.1} FPS)", self.frame_stats.avg_ms(), self.frame_stats.fps());
+        println!(
+            "  Avg Frame:    {:.2} ms ({:.1} FPS)",
+            self.frame_stats.avg_ms(),
+            self.frame_stats.fps()
+        );
         println!("  Min Frame:    {:.2} ms", self.frame_stats.min_ms());
         println!("  Max Frame:    {:.2} ms", self.frame_stats.max_ms());
         println!("  P99 Frame:    {:.2} ms", self.frame_stats.p99_ms());
@@ -184,8 +192,11 @@ fn generate_scenario_content(scenario_name: &str, frame: u64) -> Vec<u8> {
         }
         "scrolling_output" => {
             // Continuous output like `yes` or log streaming
-            format!("[{:08}] Log line with timestamp and some data: {:064x}\n",
-                frame, frame).into_bytes()
+            format!(
+                "[{:08}] Log line with timestamp and some data: {:064x}\n",
+                frame, frame
+            )
+            .into_bytes()
         }
         "rapid_updates" => {
             // Rapid cursor movement and text updates (like htop)
@@ -193,7 +204,14 @@ fn generate_scenario_content(scenario_name: &str, frame: u64) -> Vec<u8> {
             // Move cursor around and update values
             for row in 0..24 {
                 buf.extend_from_slice(format!("\x1b[{};1H", row + 1).as_bytes());
-                buf.extend_from_slice(format!("CPU{:02}: {:5.1}% | ", row, (frame + row as u64) as f64 % 100.0).as_bytes());
+                buf.extend_from_slice(
+                    format!(
+                        "CPU{:02}: {:5.1}% | ",
+                        row,
+                        (frame + row as u64) as f64 % 100.0
+                    )
+                    .as_bytes(),
+                );
             }
             buf
         }
@@ -226,7 +244,9 @@ fn generate_scenario_content(scenario_name: &str, frame: u64) -> Vec<u8> {
                 "\x1b[33mwarning\x1b[0m: unused variable\n",
                 "   --> src/main.rs:42:9\n",
             ];
-            templates[(frame as usize) % templates.len()].as_bytes().to_vec()
+            templates[(frame as usize) % templates.len()]
+                .as_bytes()
+                .to_vec()
         }
         _ => vec![],
     }
@@ -247,7 +267,10 @@ fn run_scenario(scenario: Scenario) -> ScenarioResult {
         terminal.process_input(content.as_bytes());
     }
 
-    println!("Running scenario: {} ({} seconds)...", scenario.name, scenario.duration_secs);
+    println!(
+        "Running scenario: {} ({} seconds)...",
+        scenario.name, scenario.duration_secs
+    );
 
     while start_time.elapsed() < duration {
         let frame_start = Instant::now();
@@ -349,8 +372,12 @@ fn main() {
     println!("{}", "=".repeat(60));
 
     let total_frames: u64 = results.iter().map(|r| r.total_frames).sum();
-    let avg_fps: f64 = results.iter().map(|r| r.frame_stats.fps()).sum::<f64>() / results.len() as f64;
-    let worst_p99: f64 = results.iter().map(|r| r.frame_stats.p99_ms()).fold(0.0, f64::max);
+    let avg_fps: f64 =
+        results.iter().map(|r| r.frame_stats.fps()).sum::<f64>() / results.len() as f64;
+    let worst_p99: f64 = results
+        .iter()
+        .map(|r| r.frame_stats.p99_ms())
+        .fold(0.0, f64::max);
 
     println!("Total Frames Rendered: {}", total_frames);
     println!("Average FPS (across scenarios): {:.1}", avg_fps);

@@ -21,9 +21,9 @@
 
 use std::f64::consts::PI;
 
+use vello::Scene;
 use vello::kurbo::{Affine, BezPath, Circle, Ellipse, Point, Rect};
 use vello::peniko::{Brush, Color, Fill};
-use vello::Scene;
 
 use super::{BackdropEffect, EffectConfig};
 
@@ -244,7 +244,9 @@ impl ShapeEffect {
 
                 // Triangle wave: goes 0 -> 1 -> 0 -> 1 ...
                 let triangle = |v: f64, period: f64| -> f64 {
-                    if period <= 0.0 { return 0.5; }
+                    if period <= 0.0 {
+                        return 0.5;
+                    }
                     let p = v % period;
                     let half = period / 2.0;
                     if p < half { p / half } else { 2.0 - p / half }
@@ -284,33 +286,48 @@ impl ShapeEffect {
         let rect = Rect::new(-half, -half, half, half);
         let transform = Affine::translate(center.to_vec2()) * Affine::rotate(angle);
 
-        self.render_shape_with_glow(scene, transform, |scene, transform, brush| {
-            scene.fill(Fill::NonZero, transform, brush, None, &rect);
-        }, |scene, transform, brush, stroke| {
-            scene.stroke(stroke, transform, brush, None, &rect);
-        });
+        self.render_shape_with_glow(
+            scene,
+            transform,
+            |scene, transform, brush| {
+                scene.fill(Fill::NonZero, transform, brush, None, &rect);
+            },
+            |scene, transform, brush, stroke| {
+                scene.stroke(stroke, transform, brush, None, &rect);
+            },
+        );
     }
 
     /// Draw a circle
     fn draw_circle(&self, scene: &mut Scene, center: Point, _angle: f64) {
         let circle = Circle::new(center, self.size / 2.0);
 
-        self.render_shape_with_glow(scene, Affine::IDENTITY, |scene, transform, brush| {
-            scene.fill(Fill::NonZero, transform, brush, None, &circle);
-        }, |scene, transform, brush, stroke| {
-            scene.stroke(stroke, transform, brush, None, &circle);
-        });
+        self.render_shape_with_glow(
+            scene,
+            Affine::IDENTITY,
+            |scene, transform, brush| {
+                scene.fill(Fill::NonZero, transform, brush, None, &circle);
+            },
+            |scene, transform, brush, stroke| {
+                scene.stroke(stroke, transform, brush, None, &circle);
+            },
+        );
     }
 
     /// Draw an ellipse
     fn draw_ellipse(&self, scene: &mut Scene, center: Point, angle: f64) {
         let ellipse = Ellipse::new(center, (self.size / 2.0, self.size / 4.0), angle);
 
-        self.render_shape_with_glow(scene, Affine::IDENTITY, |scene, transform, brush| {
-            scene.fill(Fill::NonZero, transform, brush, None, &ellipse);
-        }, |scene, transform, brush, stroke| {
-            scene.stroke(stroke, transform, brush, None, &ellipse);
-        });
+        self.render_shape_with_glow(
+            scene,
+            Affine::IDENTITY,
+            |scene, transform, brush| {
+                scene.fill(Fill::NonZero, transform, brush, None, &ellipse);
+            },
+            |scene, transform, brush, stroke| {
+                scene.stroke(stroke, transform, brush, None, &ellipse);
+            },
+        );
     }
 
     /// Draw a triangle
@@ -318,11 +335,16 @@ impl ShapeEffect {
         let path = self.build_polygon_path(3, angle);
         let transform = Affine::translate(center.to_vec2());
 
-        self.render_shape_with_glow(scene, transform, |scene, transform, brush| {
-            scene.fill(Fill::NonZero, transform, brush, None, &path);
-        }, |scene, transform, brush, stroke| {
-            scene.stroke(stroke, transform, brush, None, &path);
-        });
+        self.render_shape_with_glow(
+            scene,
+            transform,
+            |scene, transform, brush| {
+                scene.fill(Fill::NonZero, transform, brush, None, &path);
+            },
+            |scene, transform, brush, stroke| {
+                scene.stroke(stroke, transform, brush, None, &path);
+            },
+        );
     }
 
     /// Draw a star
@@ -330,11 +352,16 @@ impl ShapeEffect {
         let path = self.build_star_path(5, angle);
         let transform = Affine::translate(center.to_vec2());
 
-        self.render_shape_with_glow(scene, transform, |scene, transform, brush| {
-            scene.fill(Fill::NonZero, transform, brush, None, &path);
-        }, |scene, transform, brush, stroke| {
-            scene.stroke(stroke, transform, brush, None, &path);
-        });
+        self.render_shape_with_glow(
+            scene,
+            transform,
+            |scene, transform, brush| {
+                scene.fill(Fill::NonZero, transform, brush, None, &path);
+            },
+            |scene, transform, brush, stroke| {
+                scene.stroke(stroke, transform, brush, None, &path);
+            },
+        );
     }
 
     /// Draw a heart
@@ -342,11 +369,16 @@ impl ShapeEffect {
         let path = self.build_heart_path(angle);
         let transform = Affine::translate(center.to_vec2());
 
-        self.render_shape_with_glow(scene, transform, |scene, transform, brush| {
-            scene.fill(Fill::NonZero, transform, brush, None, &path);
-        }, |scene, transform, brush, stroke| {
-            scene.stroke(stroke, transform, brush, None, &path);
-        });
+        self.render_shape_with_glow(
+            scene,
+            transform,
+            |scene, transform, brush| {
+                scene.fill(Fill::NonZero, transform, brush, None, &path);
+            },
+            |scene, transform, brush, stroke| {
+                scene.stroke(stroke, transform, brush, None, &path);
+            },
+        );
     }
 
     /// Draw a polygon
@@ -354,24 +386,34 @@ impl ShapeEffect {
         let path = self.build_polygon_path(self.polygon_sides, angle);
         let transform = Affine::translate(center.to_vec2());
 
-        self.render_shape_with_glow(scene, transform, |scene, transform, brush| {
-            scene.fill(Fill::NonZero, transform, brush, None, &path);
-        }, |scene, transform, brush, stroke| {
-            scene.stroke(stroke, transform, brush, None, &path);
-        });
+        self.render_shape_with_glow(
+            scene,
+            transform,
+            |scene, transform, brush| {
+                scene.fill(Fill::NonZero, transform, brush, None, &path);
+            },
+            |scene, transform, brush, stroke| {
+                scene.stroke(stroke, transform, brush, None, &path);
+            },
+        );
     }
 
     /// Render shape with glow, fill, and stroke
-    fn render_shape_with_glow<F, S>(&self, scene: &mut Scene, transform: Affine, fill_fn: F, stroke_fn: S)
-    where
+    fn render_shape_with_glow<F, S>(
+        &self,
+        scene: &mut Scene,
+        transform: Affine,
+        fill_fn: F,
+        stroke_fn: S,
+    ) where
         F: Fn(&mut Scene, Affine, &Brush),
         S: Fn(&mut Scene, Affine, &Brush, &vello::kurbo::Stroke),
     {
         // Draw glow layers
         if self.glow_radius > 0.0 {
-            let glow_color = self.glow_color.unwrap_or_else(|| {
-                self.fill.unwrap_or(Rgba::new(255, 255, 255, 255))
-            });
+            let glow_color = self
+                .glow_color
+                .unwrap_or_else(|| self.fill.unwrap_or(Rgba::new(255, 255, 255, 255)));
 
             let glow_layers = 4;
             for i in (1..=glow_layers).rev() {
@@ -429,7 +471,11 @@ impl ShapeEffect {
 
         for i in 0..(points * 2) {
             let angle = rotation + (i as f64 * PI / points as f64) - PI / 2.0;
-            let radius = if i % 2 == 0 { outer_radius } else { inner_radius };
+            let radius = if i % 2 == 0 {
+                outer_radius
+            } else {
+                inner_radius
+            };
             let x = angle.cos() * radius;
             let y = angle.sin() * radius;
 
@@ -654,9 +700,18 @@ mod tests {
 
     #[test]
     fn test_rotation_parsing() {
-        assert_eq!(RotationBehavior::from_str("none"), Some(RotationBehavior::None));
-        assert_eq!(RotationBehavior::from_str("SPIN"), Some(RotationBehavior::Spin));
-        assert_eq!(RotationBehavior::from_str("Wobble"), Some(RotationBehavior::Wobble));
+        assert_eq!(
+            RotationBehavior::from_str("none"),
+            Some(RotationBehavior::None)
+        );
+        assert_eq!(
+            RotationBehavior::from_str("SPIN"),
+            Some(RotationBehavior::Spin)
+        );
+        assert_eq!(
+            RotationBehavior::from_str("Wobble"),
+            Some(RotationBehavior::Wobble)
+        );
     }
 
     #[test]

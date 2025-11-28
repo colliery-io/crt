@@ -321,11 +321,7 @@ pub fn selection_to_ranges(state: &SelectionState, line_width: usize) -> Vec<Lin
             } else {
                 // Multi-line selection
                 // First line: from start to end of line
-                ranges.push(LineRange::new(
-                    start.line,
-                    start.column,
-                    Column(line_width),
-                ));
+                ranges.push(LineRange::new(start.line, start.column, Column(line_width)));
 
                 // Middle lines: full lines
                 for line in (start.line.0 + 1)..end.line.0 {

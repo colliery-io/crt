@@ -4,7 +4,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, TerminalVelloRenderer, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, SpriteAnimationState, CrtPipeline};
+use crt_renderer::{
+    BackgroundImagePipeline, BackgroundImageState, CrtPipeline, EffectPipeline, EffectsRenderer,
+    GlyphCache, GridRenderer, RectRenderer, SpriteAnimationState, TabBar, TerminalVelloRenderer,
+};
 
 /// Shared GPU resources across all windows
 pub struct SharedGpuState {
@@ -71,7 +74,8 @@ impl SharedGpuState {
                         pipeline_cache: None,
                         ..Default::default()
                     },
-                ).expect("Failed to create Vello renderer")
+                )
+                .expect("Failed to create Vello renderer"),
             );
         }
     }
@@ -100,7 +104,8 @@ impl SharedGpuState {
                         pipeline_cache: None,
                         ..Default::default()
                     },
-                ).expect("Failed to recreate Vello renderer")
+                )
+                .expect("Failed to recreate Vello renderer"),
             );
         }
     }

@@ -194,7 +194,8 @@ impl BellState {
                     0.0
                 } else {
                     // Fade out linearly, scaled by intensity
-                    let progress = 1.0 - (elapsed.as_secs_f32() / self.flash_duration.as_secs_f32());
+                    let progress =
+                        1.0 - (elapsed.as_secs_f32() / self.flash_duration.as_secs_f32());
                     progress * self.intensity
                 }
             }
@@ -404,7 +405,10 @@ impl WindowState {
     /// Update text buffer for this window's active shell
     ///
     /// Returns cursor position and decorations if content changed, None otherwise
-    pub fn update_text_buffer(&mut self, shared_gpu: &SharedGpuState) -> Option<TextBufferUpdateResult> {
+    pub fn update_text_buffer(
+        &mut self,
+        shared_gpu: &SharedGpuState,
+    ) -> Option<TextBufferUpdateResult> {
         let active_tab_id = self.gpu.tab_bar.active_tab_id();
         let shell = active_tab_id.and_then(|id| self.shells.get(&id));
 
@@ -459,7 +463,8 @@ impl WindowState {
         let cursor_y = offset_y + padding + (cursor_viewport_line as f32 * line_height);
 
         // First pass: collect line text for URL detection
-        let mut line_texts: std::collections::BTreeMap<i32, String> = std::collections::BTreeMap::new();
+        let mut line_texts: std::collections::BTreeMap<i32, String> =
+            std::collections::BTreeMap::new();
         for cell in content.display_iter {
             let viewport_line = cell.point.line.0 + display_offset;
             line_texts.entry(viewport_line).or_default().push(cell.c);
@@ -485,7 +490,13 @@ impl WindowState {
         let palette = &self.gpu.effect_pipeline.theme().palette;
         let default_fg = self.gpu.effect_pipeline.theme().foreground.to_array();
         // Use the bottom of the gradient as default background (typically the darker color)
-        let default_bg = self.gpu.effect_pipeline.theme().background.bottom.to_array();
+        let default_bg = self
+            .gpu
+            .effect_pipeline
+            .theme()
+            .background
+            .bottom
+            .to_array();
 
         // Render cells (text only, no cursor)
         for cell in content.display_iter {
@@ -626,7 +637,9 @@ impl WindowState {
                 if use_glow {
                     self.gpu.grid_renderer.push_glyphs(&[glyph], fg_color);
                 } else {
-                    self.gpu.output_grid_renderer.push_glyphs(&[glyph], fg_color);
+                    self.gpu
+                        .output_grid_renderer
+                        .push_glyphs(&[glyph], fg_color);
                 }
             }
         }

@@ -84,7 +84,9 @@ pub fn detect_urls(text: &str) -> Vec<UrlMatch> {
         .map(|m| {
             let raw_url = m.as_str();
             // Trim trailing punctuation that's likely not part of the URL
-            let url = raw_url.trim_end_matches(|c| matches!(c, '.' | ',' | ')' | ']' | '}' | ';' | ':' | '!' | '?'));
+            let url = raw_url.trim_end_matches(|c| {
+                matches!(c, '.' | ',' | ')' | ']' | '}' | ';' | ':' | '!' | '?')
+            });
             UrlMatch {
                 url: url.to_string(),
                 start_col: m.start(),

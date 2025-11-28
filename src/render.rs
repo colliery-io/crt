@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use crate::gpu::SharedGpuState;
 use crate::profiling::{self, FrameTiming, GridSnapshot};
-use crate::window::{ContextMenuItem, WindowState, DecorationKind};
+use crate::window::{ContextMenuItem, DecorationKind, WindowState};
 use crt_core::SelectionRange;
 
 /// How often to reset vello renderer to clean up atlas resources (in frames)
@@ -23,7 +23,9 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     // This prevents unbounded GPU memory growth from vello's internal caches
     // NOTE: The primary memory fix is frame throttling in main.rs (see about_to_wait).
     // This reset is a secondary defense against vello atlas accumulation.
-    if state.frame_count % VELLO_RESET_INTERVAL == 0 && state.gpu.effects_renderer.has_enabled_effects() {
+    if state.frame_count % VELLO_RESET_INTERVAL == 0
+        && state.gpu.effects_renderer.has_enabled_effects()
+    {
         shared.reset_vello_renderer();
     }
 
@@ -103,11 +105,15 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         shared.ensure_vello_renderer();
 
         // Render effects to intermediate texture
-        state.gpu.effects_renderer.render(
-            &shared.device,
-            &shared.queue,
-            (state.gpu.config.width, state.gpu.config.height),
-        ).is_some()
+        state
+            .gpu
+            .effects_renderer
+            .render(
+                &shared.device,
+                &shared.queue,
+                (state.gpu.config.width, state.gpu.config.height),
+            )
+            .is_some()
     } else {
         false
     };
@@ -128,7 +134,12 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     // Take ownership of CRT view to avoid borrow conflicts
     let crt_view_clone = state.gpu.crt_texture_view.as_ref().map(|_| {
         // Create a new view from the texture each frame (cheap operation)
-        state.gpu.crt_texture.as_ref().unwrap().create_view(&Default::default())
+        state
+            .gpu
+            .crt_texture
+            .as_ref()
+            .unwrap()
+            .create_view(&Default::default())
     });
     let render_target: &wgpu::TextureView = if crt_enabled {
         crt_view_clone.as_ref().unwrap_or(&frame_view)
@@ -194,7 +205,8 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         let height = state.gpu.config.height as f32;
 
         // Log once to confirm sprite is rendering
-        static LOGGED_SPRITE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        static LOGGED_SPRITE: std::sync::atomic::AtomicBool =
+            std::sync::atomic::AtomicBool::new(false);
         if !LOGGED_SPRITE.swap(true, std::sync::atomic::Ordering::Relaxed) {
             log::info!("Rendering sprite: {}x{}", width, height);
         }
@@ -269,7 +281,10 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
             occlusion_query_set: None,
         });
 
-        state.gpu.background_image_pipeline.render(&mut pass, bind_group);
+        state
+            .gpu
+            .background_image_pipeline
+            .render(&mut pass, bind_group);
     }
 
     // Pass 2: Update cursor position if content changed
@@ -297,7 +312,12 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     // Pass 3: Render cell backgrounds via RectRenderer (before text)
     // Always render from cached decorations so they persist across frames
     {
-        let bg_count = state.cached_render.decorations.iter().filter(|d| d.kind == DecorationKind::Background).count();
+        let bg_count = state
+            .cached_render
+            .decorations
+            .iter()
+            .filter(|d| d.kind == DecorationKind::Background)
+            .count();
         if bg_count > 0 {
             state.gpu.rect_renderer.clear();
             state.gpu.rect_renderer.update_screen_size(
@@ -359,7 +379,10 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
             occlusion_query_set: None,
         });
 
-        state.gpu.output_grid_renderer.render(&shared.queue, &mut pass);
+        state
+            .gpu
+            .output_grid_renderer
+            .render(&shared.queue, &mut pass);
     }
 
     // Pass 4: Render cursor line text to intermediate texture (for glow effect)
@@ -426,7 +449,11 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
             occlusion_query_set: None,
         });
 
-        state.gpu.effect_pipeline.composite.render(&mut pass, &state.gpu.composite_bind_group);
+        state
+            .gpu
+            .effect_pipeline
+            .composite
+            .render(&mut pass, &state.gpu.composite_bind_group);
     }
 
     // Pass 5: Render cursor, selection, underlines, strikethroughs via RectRenderer
@@ -497,7 +524,12 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
                         }
                         crt_core::CursorShape::Underline => {
                             // 2-pixel tall underline at the bottom
-                            Some((cursor.x, cursor.y + cursor.cell_height - 2.0, cursor.cell_width, 2.0))
+                            Some((
+                                cursor.x,
+                                cursor.y + cursor.cell_height - 2.0,
+                                cursor.cell_width,
+                                2.0,
+                            ))
                         }
                         crt_core::CursorShape::HollowBlock => {
                             // Hollow block - just the outline (we'll draw 4 rects for the border)
@@ -508,7 +540,13 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
                     };
 
                     if let Some((rect_x, rect_y, rect_w, rect_h)) = cursor_rect {
-                        state.gpu.overlay_rect_renderer.push_rect(rect_x, rect_y, rect_w, rect_h, cursor_color);
+                        state.gpu.overlay_rect_renderer.push_rect(
+                            rect_x,
+                            rect_y,
+                            rect_w,
+                            rect_h,
+                            cursor_color,
+                        );
                     }
                 }
             }
@@ -532,7 +570,10 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
                 occlusion_query_set: None,
             });
 
-            state.gpu.overlay_rect_renderer.render(&shared.queue, &mut pass);
+            state
+                .gpu
+                .overlay_rect_renderer
+                .render(&shared.queue, &mut pass);
         }
     }
 
@@ -548,7 +589,10 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
             state.gpu.config.width as f32,
             state.gpu.config.height as f32,
         );
-        state.gpu.tab_bar.render_shapes_to_rects(&mut state.gpu.rect_renderer);
+        state
+            .gpu
+            .tab_bar
+            .render_shapes_to_rects(&mut state.gpu.rect_renderer);
 
         if state.gpu.rect_renderer.instance_count() > 0 {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -661,7 +705,11 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
                     crt_core::CursorShape::Hidden => "Hidden",
                 };
                 let mode_visible = terminal.cursor_mode_visible();
-                let shape_str = format!("{} (mode:{})", cursor_shape_str, if mode_visible { "show" } else { "hide" });
+                let shape_str = format!(
+                    "{} (mode:{})",
+                    cursor_shape_str,
+                    if mode_visible { "show" } else { "hide" }
+                );
                 let snapshot = GridSnapshot {
                     columns: size.columns,
                     lines: size.lines,
@@ -704,7 +752,10 @@ fn render_selection_rects(state: &mut WindowState, selection: &SelectionRange) {
             let x = offset_x + padding + (min_col as f32 * cell_width);
             let num_cells = max_col - min_col + 1;
             let width = num_cells as f32 * cell_width;
-            state.gpu.overlay_rect_renderer.push_rect(x, y, width, line_height, selection_color);
+            state
+                .gpu
+                .overlay_rect_renderer
+                .push_rect(x, y, width, line_height, selection_color);
         }
     } else {
         // Normal selection: spans from start point to end point
@@ -728,7 +779,10 @@ fn render_selection_rects(state: &mut WindowState, selection: &SelectionRange) {
             let x = offset_x + padding + (line_start_col as f32 * cell_width);
             let num_cells = (line_end_col - line_start_col + 1).min(500);
             let width = num_cells as f32 * cell_width;
-            state.gpu.overlay_rect_renderer.push_rect(x, y, width, line_height, selection_color);
+            state
+                .gpu
+                .overlay_rect_renderer
+                .push_rect(x, y, width, line_height, selection_color);
         }
     }
 }
@@ -755,9 +809,18 @@ fn render_tab_titles(
     if let Some((radius, glow_color)) = active_shadow {
         // Tighter glow offsets for a subtle halo effect
         let offsets = [
-            (-0.75, -0.75), (0.75, -0.75), (-0.75, 0.75), (0.75, 0.75),
-            (-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0),
-            (-0.5, 0.0), (0.5, 0.0), (0.0, -0.5), (0.0, 0.5),
+            (-0.75, -0.75),
+            (0.75, -0.75),
+            (-0.75, 0.75),
+            (0.75, 0.75),
+            (-1.0, 0.0),
+            (1.0, 0.0),
+            (0.0, -1.0),
+            (0.0, 1.0),
+            (-0.5, 0.0),
+            (0.5, 0.0),
+            (0.0, -0.5),
+            (0.0, 0.5),
         ];
 
         let glow_alpha = (glow_color[3] * (radius / 25.0).min(1.0)).min(0.4);
@@ -769,12 +832,17 @@ fn render_tab_titles(
                     let mut glyphs = Vec::new();
                     let mut char_x = *x + ox;
                     for c in title.chars() {
-                        if let Some(glyph) = state.gpu.tab_glyph_cache.position_char(c, char_x, *y + oy) {
+                        if let Some(glyph) =
+                            state.gpu.tab_glyph_cache.position_char(c, char_x, *y + oy)
+                        {
                             glyphs.push(glyph);
                         }
                         char_x += state.gpu.tab_glyph_cache.cell_width();
                     }
-                    state.gpu.tab_title_renderer.push_glyphs(&glyphs, glow_render_color);
+                    state
+                        .gpu
+                        .tab_title_renderer
+                        .push_glyphs(&glyphs, glow_render_color);
                 }
             }
         }
@@ -803,7 +871,10 @@ fn render_tab_titles(
         } else {
             inactive_color
         };
-        state.gpu.tab_title_renderer.push_glyphs(&glyphs, text_color);
+        state
+            .gpu
+            .tab_title_renderer
+            .push_glyphs(&glyphs, text_color);
     }
 
     state.gpu.tab_glyph_cache.flush(&shared.queue);
@@ -824,7 +895,10 @@ fn render_tab_titles(
         occlusion_query_set: None,
     });
 
-    state.gpu.tab_title_renderer.render(&shared.queue, &mut pass);
+    state
+        .gpu
+        .tab_title_renderer
+        .render(&shared.queue, &mut pass);
 }
 
 /// Render search bar overlay
@@ -860,7 +934,10 @@ fn render_search_bar(
     );
 
     // Outer border rect
-    state.gpu.rect_renderer.push_rect(bar_x, bar_y, bar_width, bar_height, border_color);
+    state
+        .gpu
+        .rect_renderer
+        .push_rect(bar_x, bar_y, bar_width, bar_height, border_color);
     // Inner background rect
     state.gpu.rect_renderer.push_rect(
         bar_x + border_width,
@@ -927,13 +1004,20 @@ fn render_search_bar(
     let text_baseline_y = text_y + (text_height - font_height) / 2.0;
 
     for c in display_text.chars() {
-        if let Some(glyph) = state.gpu.tab_glyph_cache.position_char(c, char_x, text_baseline_y) {
+        if let Some(glyph) = state
+            .gpu
+            .tab_glyph_cache
+            .position_char(c, char_x, text_baseline_y)
+        {
             glyphs.push(glyph);
         }
         char_x += state.gpu.tab_glyph_cache.cell_width();
     }
 
-    state.gpu.tab_title_renderer.push_glyphs(&glyphs, text_color);
+    state
+        .gpu
+        .tab_title_renderer
+        .push_glyphs(&glyphs, text_color);
     state.gpu.tab_glyph_cache.flush(&shared.queue);
 
     // Render text pass
@@ -953,7 +1037,10 @@ fn render_search_bar(
         occlusion_query_set: None,
     });
 
-    state.gpu.tab_title_renderer.render(&shared.queue, &mut pass);
+    state
+        .gpu
+        .tab_title_renderer
+        .render(&shared.queue, &mut pass);
 }
 
 /// Render bell flash overlay (semi-transparent white flash)
@@ -1060,25 +1147,45 @@ fn render_context_menu(
 
     // Render background using rect_renderer
     state.gpu.rect_renderer.clear();
-    state.gpu.rect_renderer.update_screen_size(
-        &shared.queue,
-        screen_width,
-        screen_height,
-    );
+    state
+        .gpu
+        .rect_renderer
+        .update_screen_size(&shared.queue, screen_width, screen_height);
 
     // Menu background
-    state.gpu.rect_renderer.push_rect(menu_x, menu_y, menu_width, menu_height, bg_color);
+    state
+        .gpu
+        .rect_renderer
+        .push_rect(menu_x, menu_y, menu_width, menu_height, bg_color);
 
     // Border (simple rectangles around the edges)
     let border_thickness = 1.0 * scale;
     // Top border
-    state.gpu.rect_renderer.push_rect(menu_x, menu_y, menu_width, border_thickness, border_color);
+    state
+        .gpu
+        .rect_renderer
+        .push_rect(menu_x, menu_y, menu_width, border_thickness, border_color);
     // Bottom border
-    state.gpu.rect_renderer.push_rect(menu_x, menu_y + menu_height - border_thickness, menu_width, border_thickness, border_color);
+    state.gpu.rect_renderer.push_rect(
+        menu_x,
+        menu_y + menu_height - border_thickness,
+        menu_width,
+        border_thickness,
+        border_color,
+    );
     // Left border
-    state.gpu.rect_renderer.push_rect(menu_x, menu_y, border_thickness, menu_height, border_color);
+    state
+        .gpu
+        .rect_renderer
+        .push_rect(menu_x, menu_y, border_thickness, menu_height, border_color);
     // Right border
-    state.gpu.rect_renderer.push_rect(menu_x + menu_width - border_thickness, menu_y, border_thickness, menu_height, border_color);
+    state.gpu.rect_renderer.push_rect(
+        menu_x + menu_width - border_thickness,
+        menu_y,
+        border_thickness,
+        menu_height,
+        border_color,
+    );
 
     // Hover highlight
     if let Some(hover_idx) = state.context_menu.hovered_item {
@@ -1133,7 +1240,10 @@ fn render_context_menu(
             }
             char_x += state.gpu.tab_glyph_cache.cell_width();
         }
-        state.gpu.tab_title_renderer.push_glyphs(&glyphs, text_color);
+        state
+            .gpu
+            .tab_title_renderer
+            .push_glyphs(&glyphs, text_color);
 
         // Render shortcut (right-aligned)
         let shortcut = item.shortcut();
@@ -1148,7 +1258,10 @@ fn render_context_menu(
             }
             char_x += state.gpu.tab_glyph_cache.cell_width();
         }
-        state.gpu.tab_title_renderer.push_glyphs(&shortcut_glyphs, shortcut_color);
+        state
+            .gpu
+            .tab_title_renderer
+            .push_glyphs(&shortcut_glyphs, shortcut_color);
     }
 
     state.gpu.tab_glyph_cache.flush(&shared.queue);
@@ -1171,6 +1284,9 @@ fn render_context_menu(
             occlusion_query_set: None,
         });
 
-        state.gpu.tab_title_renderer.render(&shared.queue, &mut pass);
+        state
+            .gpu
+            .tab_title_renderer
+            .render(&shared.queue, &mut pass);
     }
 }

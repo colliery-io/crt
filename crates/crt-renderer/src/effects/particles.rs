@@ -17,9 +17,9 @@
 
 use std::f64::consts::PI;
 
+use vello::Scene;
 use vello::kurbo::{Affine, BezPath, Circle, Point, Rect};
 use vello::peniko::{Brush, Color, Fill};
-use vello::Scene;
 
 use super::{BackdropEffect, EffectConfig};
 
@@ -290,7 +290,11 @@ impl ParticleEffect {
 
         for i in 0..(points * 2) {
             let angle = rotation + (i as f64 * PI / points as f64) - PI / 2.0;
-            let radius = if i % 2 == 0 { outer_radius } else { inner_radius };
+            let radius = if i % 2 == 0 {
+                outer_radius
+            } else {
+                inner_radius
+            };
             let x = center.x + angle.cos() * radius;
             let y = center.y + angle.sin() * radius;
 
@@ -364,7 +368,15 @@ impl ParticleEffect {
     }
 
     /// Draw a particle at the given position
-    fn draw_particle(&self, scene: &mut Scene, x: f64, y: f64, size: f64, rotation: f64, color: Color) {
+    fn draw_particle(
+        &self,
+        scene: &mut Scene,
+        x: f64,
+        y: f64,
+        size: f64,
+        rotation: f64,
+        color: Color,
+    ) {
         let center = Point::new(x, y);
 
         // Draw glow if enabled
@@ -380,7 +392,13 @@ impl ParticleEffect {
                 if glow_alpha > 0.001 {
                     let glow_color = Color::new([r, g, b, glow_alpha]);
                     let circle = Circle::new(center, glow_size);
-                    scene.fill(Fill::NonZero, Affine::IDENTITY, &Brush::Solid(glow_color), None, &circle);
+                    scene.fill(
+                        Fill::NonZero,
+                        Affine::IDENTITY,
+                        &Brush::Solid(glow_color),
+                        None,
+                        &circle,
+                    );
                 }
             }
         }
@@ -389,24 +407,54 @@ impl ParticleEffect {
         match self.shape {
             ParticleShape::Dot => {
                 let circle = Circle::new(center, size);
-                scene.fill(Fill::NonZero, Affine::IDENTITY, &Brush::Solid(color), None, &circle);
+                scene.fill(
+                    Fill::NonZero,
+                    Affine::IDENTITY,
+                    &Brush::Solid(color),
+                    None,
+                    &circle,
+                );
             }
             ParticleShape::Circle => {
                 let circle = Circle::new(center, size);
                 let stroke = vello::kurbo::Stroke::new(size * 0.3);
-                scene.stroke(&stroke, Affine::IDENTITY, &Brush::Solid(color), None, &circle);
+                scene.stroke(
+                    &stroke,
+                    Affine::IDENTITY,
+                    &Brush::Solid(color),
+                    None,
+                    &circle,
+                );
             }
             ParticleShape::Star => {
                 let path = Self::draw_star(center, size, rotation);
-                scene.fill(Fill::NonZero, Affine::IDENTITY, &Brush::Solid(color), None, &path);
+                scene.fill(
+                    Fill::NonZero,
+                    Affine::IDENTITY,
+                    &Brush::Solid(color),
+                    None,
+                    &path,
+                );
             }
             ParticleShape::Heart => {
                 let path = Self::draw_heart(center, size, rotation);
-                scene.fill(Fill::NonZero, Affine::IDENTITY, &Brush::Solid(color), None, &path);
+                scene.fill(
+                    Fill::NonZero,
+                    Affine::IDENTITY,
+                    &Brush::Solid(color),
+                    None,
+                    &path,
+                );
             }
             ParticleShape::Sparkle => {
                 let path = Self::draw_sparkle(center, size, rotation);
-                scene.fill(Fill::NonZero, Affine::IDENTITY, &Brush::Solid(color), None, &path);
+                scene.fill(
+                    Fill::NonZero,
+                    Affine::IDENTITY,
+                    &Brush::Solid(color),
+                    None,
+                    &path,
+                );
             }
         }
     }
@@ -569,13 +617,25 @@ mod tests {
         assert_eq!(ParticleShape::from_str("dot"), Some(ParticleShape::Dot));
         assert_eq!(ParticleShape::from_str("STAR"), Some(ParticleShape::Star));
         assert_eq!(ParticleShape::from_str("Heart"), Some(ParticleShape::Heart));
-        assert_eq!(ParticleShape::from_str("sparkle"), Some(ParticleShape::Sparkle));
+        assert_eq!(
+            ParticleShape::from_str("sparkle"),
+            Some(ParticleShape::Sparkle)
+        );
     }
 
     #[test]
     fn test_behavior_parsing() {
-        assert_eq!(ParticleBehavior::from_str("float"), Some(ParticleBehavior::Float));
-        assert_eq!(ParticleBehavior::from_str("RISE"), Some(ParticleBehavior::Rise));
-        assert_eq!(ParticleBehavior::from_str("Fall"), Some(ParticleBehavior::Fall));
+        assert_eq!(
+            ParticleBehavior::from_str("float"),
+            Some(ParticleBehavior::Float)
+        );
+        assert_eq!(
+            ParticleBehavior::from_str("RISE"),
+            Some(ParticleBehavior::Rise)
+        );
+        assert_eq!(
+            ParticleBehavior::from_str("Fall"),
+            Some(ParticleBehavior::Fall)
+        );
     }
 }

@@ -5,9 +5,9 @@
 
 use std::collections::HashMap;
 use swash::{
+    FontRef,
     scale::{Render, ScaleContext, Source, StrikeWith},
     zeno::Format,
-    FontRef,
 };
 
 /// Text style flags for glyph rendering
@@ -158,7 +158,9 @@ impl FontVariants {
     /// Get font data for the given style, falling back to regular
     fn get_for_style(&self, style: GlyphStyle) -> &[u8] {
         match (style.bold, style.italic) {
-            (true, true) => self.bold_italic.as_deref()
+            (true, true) => self
+                .bold_italic
+                .as_deref()
                 .or(self.bold.as_deref())
                 .or(self.italic.as_deref())
                 .unwrap_or(&self.regular),
@@ -332,7 +334,11 @@ impl GlyphCache {
     }
 
     /// Get or create a cached glyph with specific style
-    pub fn get_or_insert_styled(&mut self, character: char, style: GlyphStyle) -> Option<CachedGlyph> {
+    pub fn get_or_insert_styled(
+        &mut self,
+        character: char,
+        style: GlyphStyle,
+    ) -> Option<CachedGlyph> {
         let key = GlyphKey::with_style(character, self.font_size, style);
 
         if let Some(&glyph) = self.glyphs.get(&key) {
@@ -360,9 +366,9 @@ impl GlyphCache {
         // Render the glyph
         // Prioritize scalable sources (outlines) over fixed-size bitmaps for proper zoom support
         let image = Render::new(&[
-            Source::ColorOutline(0),  // Scalable color outlines (COLR/CPAL fonts)
-            Source::Outline,          // Scalable monochrome outlines
-            Source::ColorBitmap(StrikeWith::BestFit),  // Fixed-size bitmaps (last resort)
+            Source::ColorOutline(0), // Scalable color outlines (COLR/CPAL fonts)
+            Source::Outline,         // Scalable monochrome outlines
+            Source::ColorBitmap(StrikeWith::BestFit), // Fixed-size bitmaps (last resort)
         ])
         .format(Format::Alpha)
         .render(&mut scaler, glyph_id)?;
@@ -424,7 +430,12 @@ impl GlyphCache {
 
     /// Position a character at a fixed grid cell (regular style)
     /// cell_x, cell_y: grid cell coordinates (in pixels, top-left of cell)
-    pub fn position_char(&mut self, character: char, cell_x: f32, cell_y: f32) -> Option<PositionedGlyph> {
+    pub fn position_char(
+        &mut self,
+        character: char,
+        cell_x: f32,
+        cell_y: f32,
+    ) -> Option<PositionedGlyph> {
         self.position_char_styled(character, cell_x, cell_y, GlyphStyle::default())
     }
 

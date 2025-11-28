@@ -21,9 +21,9 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use vello::Scene;
 use vello::kurbo::{Affine, Point, Rect};
 use vello::peniko::{Blob, ImageAlphaType, ImageBrush, ImageData, ImageFormat};
-use vello::Scene;
 
 use super::{BackdropEffect, EffectConfig};
 
@@ -131,10 +131,14 @@ impl SpriteSheet {
         if sheet_width < expected_width || sheet_height < expected_height {
             return Err(format!(
                 "Sprite sheet dimensions {}x{} don't match frame config ({}x{} * {}x{} = {}x{})",
-                sheet_width, sheet_height,
-                frame_width, frame_height,
-                columns, rows,
-                expected_width, expected_height
+                sheet_width,
+                sheet_height,
+                frame_width,
+                frame_height,
+                columns,
+                rows,
+                expected_width,
+                expected_height
             ));
         }
 
@@ -156,7 +160,12 @@ impl SpriteSheet {
 
         log::info!(
             "Loaded sprite sheet {:?}: {}x{}, {}x{} frames, {} total",
-            path, sheet_width, sheet_height, columns, rows, frame_count
+            path,
+            sheet_width,
+            sheet_height,
+            columns,
+            rows,
+            frame_count
         );
 
         Ok(Self {
@@ -302,7 +311,9 @@ impl SpriteEffect {
                 let ty = t * 75.0;
 
                 let triangle = |v: f64, period: f64| -> f64 {
-                    if period <= 0.0 { return 0.5; }
+                    if period <= 0.0 {
+                        return 0.5;
+                    }
                     let p = v % period;
                     let half = period / 2.0;
                     if p < half { p / half } else { 2.0 - p / half }
@@ -409,8 +420,7 @@ impl BackdropEffect for SpriteEffect {
         // Create image brush from the cached ImageData
         // The ImageData is created once when loading and reused here
         // The clone of ImageData is cheap (just Arc increments for the Blob)
-        let image_brush = ImageBrush::new(sheet.image_data.clone())
-            .with_alpha(self.opacity);
+        let image_brush = ImageBrush::new(sheet.image_data.clone()).with_alpha(self.opacity);
 
         // Calculate sprite display size
         let sprite_width = sheet.frame_width as f64 * self.scale;
@@ -447,8 +457,10 @@ impl BackdropEffect for SpriteEffect {
         // Transform: position the sprite sheet so current frame is in the clip
         // Frame is at (frame_x, frame_y) in sheet coordinates
         // We want it at (target_x, target_y) in screen coordinates
-        let transform = Affine::translate((target_x - frame_x * self.scale, target_y - frame_y * self.scale))
-            * Affine::scale(self.scale);
+        let transform = Affine::translate((
+            target_x - frame_x * self.scale,
+            target_y - frame_y * self.scale,
+        )) * Affine::scale(self.scale);
 
         scene.draw_image(&image_brush, transform);
 
@@ -464,8 +476,9 @@ impl BackdropEffect for SpriteEffect {
         if let Some(path) = config.get("path") {
             let path = path.trim();
             let path = if (path.starts_with('"') && path.ends_with('"'))
-                || (path.starts_with('\'') && path.ends_with('\'')) {
-                &path[1..path.len()-1]
+                || (path.starts_with('\'') && path.ends_with('\''))
+            {
+                &path[1..path.len() - 1]
             } else {
                 path
             };

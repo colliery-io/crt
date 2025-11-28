@@ -5,7 +5,7 @@
 //! The expensive vello::Renderer is shared across all renderers to save memory.
 
 use std::time::{Duration, Instant};
-use vello::{peniko, kurbo, Scene, Renderer, RenderParams, AaConfig};
+use vello::{AaConfig, RenderParams, Renderer, Scene, kurbo, peniko};
 
 /// Cursor shape style
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -216,14 +216,12 @@ impl TerminalVelloRenderer {
         ));
 
         let rect = match self.cursor_shape {
-            CursorShape::Block => {
-                kurbo::Rect::new(
-                    cursor.x as f64,
-                    cursor.y as f64,
-                    (cursor.x + cursor.cell_width) as f64,
-                    (cursor.y + cursor.cell_height) as f64,
-                )
-            }
+            CursorShape::Block => kurbo::Rect::new(
+                cursor.x as f64,
+                cursor.y as f64,
+                (cursor.x + cursor.cell_width) as f64,
+                (cursor.y + cursor.cell_height) as f64,
+            ),
             CursorShape::Bar => {
                 // 2-pixel wide bar on the left
                 kurbo::Rect::new(
@@ -276,13 +274,7 @@ impl TerminalVelloRenderer {
             antialiasing_method: AaConfig::Area,
         };
 
-        renderer.render_to_texture(
-            device,
-            queue,
-            &self.scene,
-            target_view,
-            &params,
-        )
+        renderer.render_to_texture(device, queue, &self.scene, target_view, &params)
     }
 
     /// Get the rendered texture view for compositing
@@ -325,7 +317,14 @@ impl TerminalVelloRenderer {
     }
 
     /// Add a selection spanning multiple cells to the scene
-    pub fn add_selection_row(&mut self, start_x: f32, y: f32, num_cells: usize, cell_width: f32, cell_height: f32) {
+    pub fn add_selection_row(
+        &mut self,
+        start_x: f32,
+        y: f32,
+        num_cells: usize,
+        cell_width: f32,
+        cell_height: f32,
+    ) {
         if num_cells == 0 {
             return;
         }
@@ -353,7 +352,14 @@ impl TerminalVelloRenderer {
     }
 
     /// Add a background rectangle for a cell
-    pub fn add_background(&mut self, x: f32, y: f32, cell_width: f32, cell_height: f32, color: [f32; 4]) {
+    pub fn add_background(
+        &mut self,
+        x: f32,
+        y: f32,
+        cell_width: f32,
+        cell_height: f32,
+        color: [f32; 4],
+    ) {
         let rect = kurbo::Rect::new(
             x as f64,
             y as f64,
@@ -372,7 +378,14 @@ impl TerminalVelloRenderer {
     }
 
     /// Add an underline decoration for a cell
-    pub fn add_underline(&mut self, x: f32, y: f32, cell_width: f32, cell_height: f32, color: [f32; 4]) {
+    pub fn add_underline(
+        &mut self,
+        x: f32,
+        y: f32,
+        cell_width: f32,
+        cell_height: f32,
+        color: [f32; 4],
+    ) {
         // Position underline near the bottom of the cell, 2 pixels thick
         let underline_y = y + cell_height - 3.0;
         let rect = kurbo::Rect::new(
@@ -393,7 +406,14 @@ impl TerminalVelloRenderer {
     }
 
     /// Add a strikethrough decoration for a cell
-    pub fn add_strikethrough(&mut self, x: f32, y: f32, cell_width: f32, cell_height: f32, color: [f32; 4]) {
+    pub fn add_strikethrough(
+        &mut self,
+        x: f32,
+        y: f32,
+        cell_width: f32,
+        cell_height: f32,
+        color: [f32; 4],
+    ) {
         // Position strikethrough at middle of cell, 1.5 pixels thick
         let strike_y = y + cell_height * 0.45;
         let rect = kurbo::Rect::new(
@@ -465,13 +485,8 @@ impl TerminalVelloRenderer {
             border_color[3],
         ));
         let stroke = kurbo::Stroke::new(1.5 * scale_factor as f64);
-        self.scene.stroke(
-            &stroke,
-            kurbo::Affine::IDENTITY,
-            &border_brush,
-            None,
-            &rect,
-        );
+        self.scene
+            .stroke(&stroke, kurbo::Affine::IDENTITY, &border_brush, None, &rect);
 
         // Return text position and dimensions for text rendering
         let text_x = bar_x + padding;

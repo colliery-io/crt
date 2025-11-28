@@ -112,7 +112,10 @@ pub fn init_from_config(enabled: bool, output_path: Option<PathBuf>) {
             profiler.log_system_info();
             *guard = Some(profiler);
             PROFILING_ENABLED.store(true, Ordering::SeqCst);
-            log::info!("Profiling enabled via config. Writing to: {}", path.display());
+            log::info!(
+                "Profiling enabled via config. Writing to: {}",
+                path.display()
+            );
         }
     }
 }
@@ -122,7 +125,10 @@ fn with_profiler<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&mut Profiler) -> R,
 {
-    PROFILER.lock().ok().and_then(|mut guard| guard.as_mut().map(f))
+    PROFILER
+        .lock()
+        .ok()
+        .and_then(|mut guard| guard.as_mut().map(f))
 }
 
 /// Record a frame timing
@@ -332,9 +338,7 @@ impl Profiler {
             let _ = fs::create_dir_all(parent);
         }
 
-        let writer = File::create(&output_path)
-            .ok()
-            .map(|f| BufWriter::new(f));
+        let writer = File::create(&output_path).ok().map(|f| BufWriter::new(f));
 
         if writer.is_some() {
             eprintln!("[PROFILE] Writing to: {}", output_path.display());
@@ -384,7 +388,11 @@ impl Profiler {
     fn log_system_info(&mut self) {
         self.write("=== CRT Terminal Profile Log ===");
         self.write(&format!("Version: {}", env!("CARGO_PKG_VERSION")));
-        self.write(&format!("OS: {} {}", std::env::consts::OS, std::env::consts::ARCH));
+        self.write(&format!(
+            "OS: {} {}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        ));
 
         #[cfg(target_os = "macos")]
         {
@@ -527,7 +535,10 @@ impl Profiler {
         ));
 
         if let Some(sample) = self.memory_samples.last() {
-            self.write(&format!("MEMORY: rss={:.1}MB", sample.rss_kb as f64 / 1024.0));
+            self.write(&format!(
+                "MEMORY: rss={:.1}MB",
+                sample.rss_kb as f64 / 1024.0
+            ));
         }
         self.flush();
     }
@@ -552,22 +563,41 @@ impl Profiler {
             ));
 
             self.write("Breakdown:");
-            self.write(&format!("  Update:  avg={:.2}ms p99={:.2}ms",
-                self.update_stats.avg_ms(), self.update_stats.percentile(0.99)));
-            self.write(&format!("  Render:  avg={:.2}ms p99={:.2}ms",
-                self.render_stats.avg_ms(), self.render_stats.percentile(0.99)));
-            self.write(&format!("  Present: avg={:.2}ms p99={:.2}ms",
-                self.present_stats.avg_ms(), self.present_stats.percentile(0.99)));
-            self.write(&format!("  Effects: avg={:.2}ms p99={:.2}ms",
-                self.effects_stats.avg_ms(), self.effects_stats.percentile(0.99)));
+            self.write(&format!(
+                "  Update:  avg={:.2}ms p99={:.2}ms",
+                self.update_stats.avg_ms(),
+                self.update_stats.percentile(0.99)
+            ));
+            self.write(&format!(
+                "  Render:  avg={:.2}ms p99={:.2}ms",
+                self.render_stats.avg_ms(),
+                self.render_stats.percentile(0.99)
+            ));
+            self.write(&format!(
+                "  Present: avg={:.2}ms p99={:.2}ms",
+                self.present_stats.avg_ms(),
+                self.present_stats.percentile(0.99)
+            ));
+            self.write(&format!(
+                "  Effects: avg={:.2}ms p99={:.2}ms",
+                self.effects_stats.avg_ms(),
+                self.effects_stats.percentile(0.99)
+            ));
         }
 
         if !self.subsystem_stats.is_empty() {
             // Collect subsystem data before writing to avoid borrow issues
-            let mut subsystem_lines: Vec<String> = self.subsystem_stats.iter()
+            let mut subsystem_lines: Vec<String> = self
+                .subsystem_stats
+                .iter()
                 .map(|(name, stats)| {
-                    format!("  {}: count={} avg={:.2}ms total={:.1}ms",
-                        name, stats.count, stats.avg_ms(), stats.total_us as f64 / 1000.0)
+                    format!(
+                        "  {}: count={} avg={:.2}ms total={:.1}ms",
+                        name,
+                        stats.count,
+                        stats.avg_ms(),
+                        stats.total_us as f64 / 1000.0
+                    )
                 })
                 .collect();
             subsystem_lines.sort(); // Sort by name for consistent output
@@ -581,14 +611,21 @@ impl Profiler {
         if !self.memory_samples.is_empty() {
             let first_kb = self.memory_samples.first().unwrap().rss_kb;
             let last_kb = self.memory_samples.last().unwrap().rss_kb;
-            let max_kb = self.memory_samples.iter().map(|s| s.rss_kb).max().unwrap_or(0);
+            let max_kb = self
+                .memory_samples
+                .iter()
+                .map(|s| s.rss_kb)
+                .max()
+                .unwrap_or(0);
 
             self.write("Memory:");
             self.write(&format!("  Start:  {:.1}MB", first_kb as f64 / 1024.0));
             self.write(&format!("  End:    {:.1}MB", last_kb as f64 / 1024.0));
             self.write(&format!("  Peak:   {:.1}MB", max_kb as f64 / 1024.0));
-            self.write(&format!("  Growth: {:+.1}MB",
-                (last_kb as i64 - first_kb as i64) as f64 / 1024.0));
+            self.write(&format!(
+                "  Growth: {:+.1}MB",
+                (last_kb as i64 - first_kb as i64) as f64 / 1024.0
+            ));
         }
 
         self.write(&format!("Events logged: {}", self.event_count));
@@ -601,7 +638,10 @@ impl Profiler {
             let _ = writer.flush();
         }
 
-        eprintln!("[PROFILE] Session complete. Log saved to: {}", self.output_path.display());
+        eprintln!(
+            "[PROFILE] Session complete. Log saved to: {}",
+            self.output_path.display()
+        );
     }
 }
 

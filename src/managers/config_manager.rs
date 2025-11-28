@@ -174,10 +174,7 @@ impl ConfigManager {
                 })
             }
             None => {
-                log::warn!(
-                    "Theme '{}' not found, using default",
-                    config.theme.name
-                );
+                log::warn!("Theme '{}' not found, using default", config.theme.name);
                 Theme::default()
             }
         }

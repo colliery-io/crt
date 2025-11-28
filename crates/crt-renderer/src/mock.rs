@@ -80,9 +80,7 @@ impl MockRenderer {
         self.calls.iter().any(|call| {
             if let RenderCall::Cells(cells) = call {
                 cells.iter().any(|c| {
-                    c.character == character
-                        && c.position.row == row
-                        && c.position.col == col
+                    c.character == character && c.position.row == row && c.position.col == col
                 })
             } else {
                 false
@@ -103,9 +101,9 @@ impl MockRenderer {
 
     /// Check if any selection was rendered
     pub fn has_selection(&self) -> bool {
-        self.calls.iter().any(|call| {
-            matches!(call, RenderCall::Selection(ranges) if !ranges.is_empty())
-        })
+        self.calls
+            .iter()
+            .any(|call| matches!(call, RenderCall::Selection(ranges) if !ranges.is_empty()))
     }
 
     /// Count total cells rendered across all calls
@@ -124,7 +122,9 @@ impl MockRenderer {
 
     /// Check if tabs were rendered
     pub fn has_tabs(&self) -> bool {
-        self.calls.iter().any(|call| matches!(call, RenderCall::Tabs { .. }))
+        self.calls
+            .iter()
+            .any(|call| matches!(call, RenderCall::Tabs { .. }))
     }
 
     /// Get the last rendered tabs if any
@@ -140,12 +140,16 @@ impl MockRenderer {
 
     /// Check if context menu was rendered
     pub fn has_context_menu(&self) -> bool {
-        self.calls.iter().any(|call| matches!(call, RenderCall::ContextMenu { .. }))
+        self.calls
+            .iter()
+            .any(|call| matches!(call, RenderCall::ContextMenu { .. }))
     }
 
     /// Check if bell flash was rendered
     pub fn has_bell_flash(&self) -> bool {
-        self.calls.iter().any(|call| matches!(call, RenderCall::BellFlash(_)))
+        self.calls
+            .iter()
+            .any(|call| matches!(call, RenderCall::BellFlash(_)))
     }
 
     /// Get the last bell flash intensity if any
@@ -161,12 +165,16 @@ impl MockRenderer {
 
     /// Check if text was cleared
     pub fn was_cleared(&self) -> bool {
-        self.calls.iter().any(|call| matches!(call, RenderCall::ClearText))
+        self.calls
+            .iter()
+            .any(|call| matches!(call, RenderCall::ClearText))
     }
 
     /// Check if effects update was called
     pub fn has_effects_update(&self) -> bool {
-        self.calls.iter().any(|call| matches!(call, RenderCall::EffectsUpdate(_)))
+        self.calls
+            .iter()
+            .any(|call| matches!(call, RenderCall::EffectsUpdate(_)))
     }
 
     /// Get the last effects update delta time if any
@@ -187,7 +195,11 @@ impl MockRenderer {
             .iter()
             .filter_map(|call| {
                 if let RenderCall::Cells(cells) = call {
-                    Some(cells.iter().map(|c| (c.position.row, c.position.col, c.character)))
+                    Some(
+                        cells
+                            .iter()
+                            .map(|c| (c.position.row, c.position.col, c.character)),
+                    )
                 } else {
                     None
                 }

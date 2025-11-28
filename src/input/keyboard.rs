@@ -127,7 +127,7 @@ fn character_to_bytes(c: &str, modifiers: Modifiers) -> Option<Vec<u8>> {
         if let Some(ch) = c.chars().next() {
             let ctrl_char = match ch.to_ascii_lowercase() {
                 'a'..='z' => Some((ch.to_ascii_lowercase() as u8) - b'a' + 1),
-                '[' => Some(0x1b), // Ctrl+[ = Escape
+                '[' => Some(0x1b),  // Ctrl+[ = Escape
                 '\\' => Some(0x1c), // Ctrl+\
                 ']' => Some(0x1d),  // Ctrl+]
                 '^' => Some(0x1e),  // Ctrl+^

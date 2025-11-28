@@ -8,12 +8,14 @@ mod mouse;
 mod url_detection;
 
 pub use commands::{Command, SelectionMode};
-pub use keyboard::{is_app_shortcut, key_to_terminal_bytes, shortcut_to_command, Modifiers};
+pub use keyboard::{Modifiers, is_app_shortcut, key_to_terminal_bytes, shortcut_to_command};
 pub use mouse::{
-    cell_to_pixel, cell_to_pixel_center, determine_click_count, expand_to_line, expand_to_word,
-    is_in_grid, pixel_to_cell, pixel_to_cell_clamped, CellMetrics, SelectionRange,
+    CellMetrics, SelectionRange, cell_to_pixel, cell_to_pixel_center, determine_click_count,
+    expand_to_line, expand_to_word, is_in_grid, pixel_to_cell, pixel_to_cell_clamped,
 };
-pub use url_detection::{detect_url_at_column, detect_urls, url_at_column, url_index_at_column, UrlMatch};
+pub use url_detection::{
+    UrlMatch, detect_url_at_column, detect_urls, url_at_column, url_index_at_column,
+};
 
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -50,15 +52,17 @@ fn url_regex() -> &'static Regex {
             |
             (?:www\.)  # www. prefix
             [^\s<>\[\]{}|\\^`\x00-\x1f]+  # URL characters
-            "
-        ).expect("Invalid URL regex")
+            ",
+        )
+        .expect("Invalid URL regex")
     })
 }
 
 /// Scan a line of text for URLs and return their positions
 pub fn detect_urls_in_line(line_text: &str, line_num: usize) -> Vec<DetectedUrl> {
     let regex = url_regex();
-    regex.find_iter(line_text)
+    regex
+        .find_iter(line_text)
         .map(|m| DetectedUrl {
             url: m.as_str().to_string(),
             start_col: m.start(),
@@ -70,16 +74,14 @@ pub fn detect_urls_in_line(line_text: &str, line_num: usize) -> Vec<DetectedUrl>
 
 /// Check if a position (col, line) is within a detected URL
 pub fn find_url_at_position(urls: &[DetectedUrl], col: usize, line: usize) -> Option<&DetectedUrl> {
-    urls.iter().find(|url| {
-        url.line == line && col >= url.start_col && col < url.end_col
-    })
+    urls.iter()
+        .find(|url| url.line == line && col >= url.start_col && col < url.end_col)
 }
 
 /// Find the index of a URL at a given position
 pub fn find_url_index_at_position(urls: &[DetectedUrl], col: usize, line: usize) -> Option<usize> {
-    urls.iter().position(|url| {
-        url.line == line && col >= url.start_col && col < url.end_col
-    })
+    urls.iter()
+        .position(|url| url.line == line && col >= url.start_col && col < url.end_col)
 }
 
 /// Open a URL in the default browser
@@ -126,13 +128,16 @@ pub fn should_report_motion(shell: &ShellTerminal, button_pressed: bool) -> bool
     let mode = shell.terminal().inner().mode();
     // MOUSE_MOTION: report all motion
     // MOUSE_DRAG: report motion only when button is pressed
-    mode.contains(TermMode::MOUSE_MOTION)
-        || (mode.contains(TermMode::MOUSE_DRAG) && button_pressed)
+    mode.contains(TermMode::MOUSE_MOTION) || (mode.contains(TermMode::MOUSE_DRAG) && button_pressed)
 }
 
 /// Check if SGR extended mouse mode is enabled
 pub fn is_sgr_mouse_mode(shell: &ShellTerminal) -> bool {
-    shell.terminal().inner().mode().contains(TermMode::SGR_MOUSE)
+    shell
+        .terminal()
+        .inner()
+        .mode()
+        .contains(TermMode::SGR_MOUSE)
 }
 
 /// Generate mouse escape sequence for terminal
@@ -169,11 +174,7 @@ pub enum TabEditResult {
 }
 
 /// Handle keyboard input for tab title editing
-pub fn handle_tab_editing(
-    state: &mut WindowState,
-    key: &Key,
-    mod_pressed: bool,
-) -> TabEditResult {
+pub fn handle_tab_editing(state: &mut WindowState, key: &Key, mod_pressed: bool) -> TabEditResult {
     if !state.gpu.tab_bar.is_editing() || mod_pressed {
         return TabEditResult::NotHandled;
     }
@@ -244,7 +245,9 @@ pub fn handle_shell_input(
 ) -> bool {
     let tab_id = state.gpu.tab_bar.active_tab_id();
     let Some(tab_id) = tab_id else { return false };
-    let Some(shell) = state.shells.get_mut(&tab_id) else { return false };
+    let Some(shell) = state.shells.get_mut(&tab_id) else {
+        return false;
+    };
 
     let mut input_sent = false;
     match key {
@@ -357,11 +360,11 @@ pub fn handle_shell_input(
                 if let Some(ch) = c.chars().next() {
                     let ctrl_char = match ch.to_ascii_lowercase() {
                         'a'..='z' => Some((ch.to_ascii_lowercase() as u8) - b'a' + 1),
-                        '[' => Some(0x1b), // Ctrl+[ = Escape
+                        '[' => Some(0x1b),  // Ctrl+[ = Escape
                         '\\' => Some(0x1c), // Ctrl+\
-                        ']' => Some(0x1d), // Ctrl+]
-                        '^' => Some(0x1e), // Ctrl+^
-                        '_' => Some(0x1f), // Ctrl+_
+                        ']' => Some(0x1d),  // Ctrl+]
+                        '^' => Some(0x1e),  // Ctrl+^
+                        '_' => Some(0x1f),  // Ctrl+_
                         _ => None,
                     };
                     if let Some(byte) = ctrl_char {
@@ -393,12 +396,7 @@ pub fn handle_shell_input(
 }
 
 /// Handle mouse click on tab bar
-pub fn handle_tab_click(
-    state: &mut WindowState,
-    x: f32,
-    y: f32,
-    now: std::time::Instant,
-) -> bool {
+pub fn handle_tab_click(state: &mut WindowState, x: f32, y: f32, now: std::time::Instant) -> bool {
     let double_click_threshold = std::time::Duration::from_millis(400);
 
     let mut tab_closed = None;
@@ -426,7 +424,8 @@ pub fn handle_tab_click(
                     tab_switched = true;
                 }
             } else {
-                let is_double_click = state.last_click_time
+                let is_double_click = state
+                    .last_click_time
                     .map(|t| now.duration_since(t) < double_click_threshold)
                     .unwrap_or(false)
                     && state.last_click_tab == Some(tab_id);
@@ -501,7 +500,10 @@ pub fn handle_resize(
     // Update GPU resources
     state.gpu.config.width = new_width;
     state.gpu.config.height = new_height;
-    state.gpu.surface.configure(&shared.device, &state.gpu.config);
+    state
+        .gpu
+        .surface
+        .configure(&shared.device, &state.gpu.config);
 
     // Recreate text texture for glow effect (must match new size)
     let text_texture = shared.device.create_texture(&wgpu::TextureDescriptor {
@@ -519,19 +521,19 @@ pub fn handle_resize(
         view_formats: &[],
     });
     let text_texture_view = text_texture.create_view(&Default::default());
-    let composite_bind_group = state.gpu.effect_pipeline.composite.create_bind_group(
-        &shared.device,
-        &text_texture_view,
-    );
+    let composite_bind_group = state
+        .gpu
+        .effect_pipeline
+        .composite
+        .create_bind_group(&shared.device, &text_texture_view);
     state.gpu.text_texture = text_texture;
     state.gpu.text_texture_view = text_texture_view;
     state.gpu.composite_bind_group = composite_bind_group;
 
-    state.gpu.grid_renderer.update_screen_size(
-        &shared.queue,
-        new_width as f32,
-        new_height as f32,
-    );
+    state
+        .gpu
+        .grid_renderer
+        .update_screen_size(&shared.queue, new_width as f32, new_height as f32);
     state.gpu.output_grid_renderer.update_screen_size(
         &shared.queue,
         new_width as f32,
@@ -543,7 +545,10 @@ pub fn handle_resize(
         new_height as f32,
     );
 
-    state.gpu.tab_bar.resize(new_width as f32, new_height as f32);
+    state
+        .gpu
+        .tab_bar
+        .resize(new_width as f32, new_height as f32);
 
     state.dirty = true;
     for hash in state.content_hashes.values_mut() {
@@ -608,7 +613,9 @@ pub fn handle_terminal_mouse_button(
     // Get the active shell
     let tab_id = state.gpu.tab_bar.active_tab_id();
     let Some(tab_id) = tab_id else { return false };
-    let Some(shell) = state.shells.get_mut(&tab_id) else { return false };
+    let Some(shell) = state.shells.get_mut(&tab_id) else {
+        return false;
+    };
 
     // Check if we should report mouse events to the terminal
     if should_report_mouse(shell) {
@@ -639,12 +646,13 @@ pub fn handle_terminal_mouse_button(
 
     if pressed {
         // Determine click count for multi-click selection
-        let click_count = if let (Some(last_time), Some((last_col, last_line))) =
-            (state.last_selection_click_time, state.last_selection_click_pos)
-        {
+        let click_count = if let (Some(last_time), Some((last_col, last_line))) = (
+            state.last_selection_click_time,
+            state.last_selection_click_pos,
+        ) {
             let time_ok = now.duration_since(last_time) < MULTI_CLICK_THRESHOLD;
             let pos_ok = col.abs_diff(last_col) <= MULTI_CLICK_DISTANCE
-                      && line.abs_diff(last_line) <= MULTI_CLICK_DISTANCE;
+                && line.abs_diff(last_line) <= MULTI_CLICK_DISTANCE;
 
             if time_ok && pos_ok {
                 (state.selection_click_count % 3) + 1
@@ -694,7 +702,9 @@ pub fn handle_terminal_mouse_move(state: &mut WindowState, x: f32, y: f32) {
 
     let tab_id = state.gpu.tab_bar.active_tab_id();
     let Some(tab_id) = tab_id else { return };
-    let Some(shell) = state.shells.get_mut(&tab_id) else { return };
+    let Some(shell) = state.shells.get_mut(&tab_id) else {
+        return;
+    };
 
     // Check if we should report motion to terminal
     if should_report_motion(shell, state.mouse_pressed) {
@@ -767,7 +777,9 @@ pub fn handle_terminal_scroll(state: &mut WindowState, x: f32, y: f32, delta_y: 
 
     let tab_id = state.gpu.tab_bar.active_tab_id();
     let Some(tab_id) = tab_id else { return false };
-    let Some(shell) = state.shells.get_mut(&tab_id) else { return false };
+    let Some(shell) = state.shells.get_mut(&tab_id) else {
+        return false;
+    };
 
     // Check if we should report scroll to terminal
     if should_report_mouse(shell) {
@@ -793,7 +805,9 @@ pub fn handle_terminal_scroll(state: &mut WindowState, x: f32, y: f32, delta_y: 
 pub fn clear_terminal_selection(state: &mut WindowState) {
     let tab_id = state.gpu.tab_bar.active_tab_id();
     let Some(tab_id) = tab_id else { return };
-    let Some(shell) = state.shells.get_mut(&tab_id) else { return };
+    let Some(shell) = state.shells.get_mut(&tab_id) else {
+        return;
+    };
 
     if shell.has_selection() {
         shell.clear_selection();
@@ -828,7 +842,9 @@ pub fn set_clipboard_content(text: &str) {
 pub fn paste_to_terminal(state: &mut WindowState, content: &str) {
     let tab_id = state.gpu.tab_bar.active_tab_id();
     let Some(tab_id) = tab_id else { return };
-    let Some(shell) = state.shells.get_mut(&tab_id) else { return };
+    let Some(shell) = state.shells.get_mut(&tab_id) else {
+        return;
+    };
 
     // Check if bracketed paste mode is enabled
     let bracketed = shell.bracketed_paste_enabled();

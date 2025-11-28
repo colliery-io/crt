@@ -188,9 +188,9 @@ fn test_osc_set_title() {
 
     // Title event should be generated
     let events = harness.terminal().take_events();
-    let has_title = events.iter().any(|e| {
-        matches!(e, TerminalEvent::Title(t) if t == "New Title")
-    });
+    let has_title = events
+        .iter()
+        .any(|e| matches!(e, TerminalEvent::Title(t) if t == "New Title"));
     assert!(has_title, "Expected title event");
 }
 
@@ -203,9 +203,7 @@ fn test_bell() {
 
     // Bell event should be generated
     let events = harness.terminal().take_events();
-    let has_bell = events.iter().any(|e| {
-        matches!(e, TerminalEvent::Bell)
-    });
+    let has_bell = events.iter().any(|e| matches!(e, TerminalEvent::Bell));
     assert!(has_bell, "Expected bell event");
 }
 
@@ -271,21 +269,20 @@ fn test_scroll_region() {
 
 #[test]
 fn test_selection_basic() {
-    use crt_core::{Point, Column, Line, SelectionType};
+    use crt_core::{Column, Line, Point, SelectionType};
 
     let mut harness = TerminalTestHarness::default_size();
     harness.input_str("Select this text");
 
     // Start selection at beginning
-    harness.terminal_mut().start_selection(
-        Point::new(Line(0), Column(0)),
-        SelectionType::Simple
-    );
+    harness
+        .terminal_mut()
+        .start_selection(Point::new(Line(0), Column(0)), SelectionType::Simple);
 
     // Extend to "Select"
-    harness.terminal_mut().update_selection(
-        Point::new(Line(0), Column(6))
-    );
+    harness
+        .terminal_mut()
+        .update_selection(Point::new(Line(0), Column(6)));
 
     assert!(harness.terminal().has_selection());
 
@@ -296,15 +293,14 @@ fn test_selection_basic() {
 
 #[test]
 fn test_selection_clear() {
-    use crt_core::{Point, Column, Line, SelectionType};
+    use crt_core::{Column, Line, Point, SelectionType};
 
     let mut harness = TerminalTestHarness::default_size();
     harness.input_str("Text");
 
-    harness.terminal_mut().start_selection(
-        Point::new(Line(0), Column(0)),
-        SelectionType::Simple
-    );
+    harness
+        .terminal_mut()
+        .start_selection(Point::new(Line(0), Column(0)), SelectionType::Simple);
     assert!(harness.terminal().has_selection());
 
     harness.terminal_mut().clear_selection();

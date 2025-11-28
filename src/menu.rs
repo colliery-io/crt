@@ -4,8 +4,8 @@
 
 #[cfg(target_os = "macos")]
 use muda::{
+    AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu,
     accelerator::{Accelerator, Code, Modifiers as AccelMods},
-    AboutMetadata, Menu, MenuItem, MenuId, PredefinedMenuItem, Submenu,
 };
 
 /// Menu action identifiers
@@ -116,7 +116,10 @@ pub fn build_menu_bar() -> (Menu, MenuIds) {
         "close_window",
         "Close Window",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER | AccelMods::SHIFT), Code::KeyW)),
+        Some(Accelerator::new(
+            Some(AccelMods::SUPER | AccelMods::SHIFT),
+            Code::KeyW,
+        )),
     );
     let quit = MenuItem::with_id(
         "quit",
@@ -137,7 +140,8 @@ pub fn build_menu_bar() -> (Menu, MenuIds) {
             &PredefinedMenuItem::separator(),
             &quit,
         ],
-    ).unwrap();
+    )
+    .unwrap();
 
     // Edit menu
     let copy = MenuItem::with_id(
@@ -183,14 +187,18 @@ pub fn build_menu_bar() -> (Menu, MenuIds) {
             &PredefinedMenuItem::separator(),
             &clear_scrollback,
         ],
-    ).unwrap();
+    )
+    .unwrap();
 
     // View menu
     let toggle_fullscreen = MenuItem::with_id(
         "toggle_fullscreen",
         "Enter Full Screen",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER | AccelMods::CONTROL), Code::KeyF)),
+        Some(Accelerator::new(
+            Some(AccelMods::SUPER | AccelMods::CONTROL),
+            Code::KeyF,
+        )),
     );
     let increase_font = MenuItem::with_id(
         "increase_font",
@@ -214,7 +222,10 @@ pub fn build_menu_bar() -> (Menu, MenuIds) {
         "toggle_profiling",
         "Start Profiling",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER | AccelMods::ALT), Code::KeyP)),
+        Some(Accelerator::new(
+            Some(AccelMods::SUPER | AccelMods::ALT),
+            Code::KeyP,
+        )),
     );
 
     let view_menu = Submenu::with_items(
@@ -229,7 +240,8 @@ pub fn build_menu_bar() -> (Menu, MenuIds) {
             &PredefinedMenuItem::separator(),
             &toggle_profiling,
         ],
-    ).unwrap();
+    )
+    .unwrap();
 
     // Window menu
     let minimize = MenuItem::with_id(
@@ -242,13 +254,19 @@ pub fn build_menu_bar() -> (Menu, MenuIds) {
         "next_tab",
         "Show Next Tab",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER | AccelMods::SHIFT), Code::BracketRight)),
+        Some(Accelerator::new(
+            Some(AccelMods::SUPER | AccelMods::SHIFT),
+            Code::BracketRight,
+        )),
     );
     let prev_tab = MenuItem::with_id(
         "prev_tab",
         "Show Previous Tab",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER | AccelMods::SHIFT), Code::BracketLeft)),
+        Some(Accelerator::new(
+            Some(AccelMods::SUPER | AccelMods::SHIFT),
+            Code::BracketLeft,
+        )),
     );
 
     // Tab selection items
@@ -326,7 +344,8 @@ pub fn build_menu_bar() -> (Menu, MenuIds) {
             &select_tab_8,
             &select_tab_9,
         ],
-    ).unwrap();
+    )
+    .unwrap();
 
     // Build the menu bar
     menu.append(&app_menu).unwrap();
@@ -372,32 +391,86 @@ pub fn build_menu_bar() -> (Menu, MenuIds) {
 
 #[cfg(target_os = "macos")]
 pub fn menu_id_to_action(id: &MenuId, ids: &MenuIds) -> Option<MenuAction> {
-    if *id == ids.new_tab { return Some(MenuAction::NewTab); }
-    if *id == ids.new_window { return Some(MenuAction::NewWindow); }
-    if *id == ids.close_tab { return Some(MenuAction::CloseTab); }
-    if *id == ids.close_window { return Some(MenuAction::CloseWindow); }
-    if *id == ids.quit { return Some(MenuAction::Quit); }
-    if *id == ids.copy { return Some(MenuAction::Copy); }
-    if *id == ids.paste { return Some(MenuAction::Paste); }
-    if *id == ids.select_all { return Some(MenuAction::SelectAll); }
-    if *id == ids.find { return Some(MenuAction::Find); }
-    if *id == ids.clear_scrollback { return Some(MenuAction::ClearScrollback); }
-    if *id == ids.toggle_fullscreen { return Some(MenuAction::ToggleFullScreen); }
-    if *id == ids.increase_font { return Some(MenuAction::IncreaseFontSize); }
-    if *id == ids.decrease_font { return Some(MenuAction::DecreaseFontSize); }
-    if *id == ids.reset_font { return Some(MenuAction::ResetFontSize); }
-    if *id == ids.toggle_profiling { return Some(MenuAction::ToggleProfiling); }
-    if *id == ids.minimize { return Some(MenuAction::Minimize); }
-    if *id == ids.next_tab { return Some(MenuAction::NextTab); }
-    if *id == ids.prev_tab { return Some(MenuAction::PrevTab); }
-    if *id == ids.select_tab[0] { return Some(MenuAction::SelectTab1); }
-    if *id == ids.select_tab[1] { return Some(MenuAction::SelectTab2); }
-    if *id == ids.select_tab[2] { return Some(MenuAction::SelectTab3); }
-    if *id == ids.select_tab[3] { return Some(MenuAction::SelectTab4); }
-    if *id == ids.select_tab[4] { return Some(MenuAction::SelectTab5); }
-    if *id == ids.select_tab[5] { return Some(MenuAction::SelectTab6); }
-    if *id == ids.select_tab[6] { return Some(MenuAction::SelectTab7); }
-    if *id == ids.select_tab[7] { return Some(MenuAction::SelectTab8); }
-    if *id == ids.select_tab[8] { return Some(MenuAction::SelectTab9); }
+    if *id == ids.new_tab {
+        return Some(MenuAction::NewTab);
+    }
+    if *id == ids.new_window {
+        return Some(MenuAction::NewWindow);
+    }
+    if *id == ids.close_tab {
+        return Some(MenuAction::CloseTab);
+    }
+    if *id == ids.close_window {
+        return Some(MenuAction::CloseWindow);
+    }
+    if *id == ids.quit {
+        return Some(MenuAction::Quit);
+    }
+    if *id == ids.copy {
+        return Some(MenuAction::Copy);
+    }
+    if *id == ids.paste {
+        return Some(MenuAction::Paste);
+    }
+    if *id == ids.select_all {
+        return Some(MenuAction::SelectAll);
+    }
+    if *id == ids.find {
+        return Some(MenuAction::Find);
+    }
+    if *id == ids.clear_scrollback {
+        return Some(MenuAction::ClearScrollback);
+    }
+    if *id == ids.toggle_fullscreen {
+        return Some(MenuAction::ToggleFullScreen);
+    }
+    if *id == ids.increase_font {
+        return Some(MenuAction::IncreaseFontSize);
+    }
+    if *id == ids.decrease_font {
+        return Some(MenuAction::DecreaseFontSize);
+    }
+    if *id == ids.reset_font {
+        return Some(MenuAction::ResetFontSize);
+    }
+    if *id == ids.toggle_profiling {
+        return Some(MenuAction::ToggleProfiling);
+    }
+    if *id == ids.minimize {
+        return Some(MenuAction::Minimize);
+    }
+    if *id == ids.next_tab {
+        return Some(MenuAction::NextTab);
+    }
+    if *id == ids.prev_tab {
+        return Some(MenuAction::PrevTab);
+    }
+    if *id == ids.select_tab[0] {
+        return Some(MenuAction::SelectTab1);
+    }
+    if *id == ids.select_tab[1] {
+        return Some(MenuAction::SelectTab2);
+    }
+    if *id == ids.select_tab[2] {
+        return Some(MenuAction::SelectTab3);
+    }
+    if *id == ids.select_tab[3] {
+        return Some(MenuAction::SelectTab4);
+    }
+    if *id == ids.select_tab[4] {
+        return Some(MenuAction::SelectTab5);
+    }
+    if *id == ids.select_tab[5] {
+        return Some(MenuAction::SelectTab6);
+    }
+    if *id == ids.select_tab[6] {
+        return Some(MenuAction::SelectTab7);
+    }
+    if *id == ids.select_tab[7] {
+        return Some(MenuAction::SelectTab8);
+    }
+    if *id == ids.select_tab[8] {
+        return Some(MenuAction::SelectTab9);
+    }
     None
 }

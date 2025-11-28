@@ -6,7 +6,7 @@ use std::io::{Read, Write};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
-use portable_pty::{native_pty_system, Child, CommandBuilder, PtySize};
+use portable_pty::{Child, CommandBuilder, PtySize, native_pty_system};
 use std::path::PathBuf;
 
 /// Messages sent to the PTY writer thread
@@ -257,6 +257,10 @@ mod tests {
 
         // Output should contain "hello"
         let output_str = String::from_utf8_lossy(&output);
-        assert!(output_str.contains("hello"), "Output should contain 'hello': {}", output_str);
+        assert!(
+            output_str.contains("hello"),
+            "Output should contain 'hello': {}",
+            output_str
+        );
     }
 }

@@ -46,7 +46,8 @@ impl LoadedImage {
         let path = path.as_ref();
 
         // Check if it's a GIF (may be animated)
-        let extension = path.extension()
+        let extension = path
+            .extension()
             .and_then(|e| e.to_str())
             .map(|s| s.to_lowercase());
 
@@ -59,8 +60,8 @@ impl LoadedImage {
 
     /// Load a static image (PNG, JPEG, etc.)
     fn load_static(path: &Path) -> Result<Self, String> {
-        let img = image::open(path)
-            .map_err(|e| format!("Failed to load image {:?}: {}", path, e))?;
+        let img =
+            image::open(path).map_err(|e| format!("Failed to load image {:?}: {}", path, e))?;
 
         let rgba = img.to_rgba8();
         let (width, height) = rgba.dimensions();
@@ -82,8 +83,8 @@ impl LoadedImage {
             .map_err(|e| format!("Failed to decode GIF {:?}: {}", path, e))?;
 
         let frames_result: Result<Vec<_>, _> = decoder.into_frames().collect();
-        let frames = frames_result
-            .map_err(|e| format!("Failed to decode GIF frames {:?}: {}", path, e))?;
+        let frames =
+            frames_result.map_err(|e| format!("Failed to decode GIF frames {:?}: {}", path, e))?;
 
         if frames.is_empty() {
             return Err(format!("GIF has no frames: {:?}", path));
@@ -102,17 +103,20 @@ impl LoadedImage {
         }
 
         // Multiple frames - animated
-        let image_frames: Vec<ImageFrame> = frames.into_iter().map(|frame| {
-            let delay = Duration::from(frame.delay());
-            let rgba = frame.into_buffer();
-            let (width, height) = rgba.dimensions();
-            ImageFrame {
-                data: rgba.into_raw(),
-                width,
-                height,
-                delay,
-            }
-        }).collect();
+        let image_frames: Vec<ImageFrame> = frames
+            .into_iter()
+            .map(|frame| {
+                let delay = Duration::from(frame.delay());
+                let rgba = frame.into_buffer();
+                let (width, height) = rgba.dimensions();
+                ImageFrame {
+                    data: rgba.into_raw(),
+                    width,
+                    height,
+                    delay,
+                }
+            })
+            .collect();
 
         Ok(LoadedImage::Animated {
             frames: image_frames,
@@ -125,7 +129,11 @@ impl LoadedImage {
     pub fn dimensions(&self) -> (u32, u32) {
         match self {
             LoadedImage::Static { width, height, .. } => (*width, *height),
-            LoadedImage::Animated { frames, current_frame, .. } => {
+            LoadedImage::Animated {
+                frames,
+                current_frame,
+                ..
+            } => {
                 let frame = &frames[*current_frame];
                 (frame.width, frame.height)
             }
@@ -136,9 +144,11 @@ impl LoadedImage {
     pub fn current_data(&self) -> &[u8] {
         match self {
             LoadedImage::Static { data, .. } => data,
-            LoadedImage::Animated { frames, current_frame, .. } => {
-                &frames[*current_frame].data
-            }
+            LoadedImage::Animated {
+                frames,
+                current_frame,
+                ..
+            } => &frames[*current_frame].data,
         }
     }
 
@@ -146,7 +156,11 @@ impl LoadedImage {
     pub fn update_animation(&mut self) -> bool {
         match self {
             LoadedImage::Static { .. } => false,
-            LoadedImage::Animated { frames, current_frame, last_frame_time } => {
+            LoadedImage::Animated {
+                frames,
+                current_frame,
+                last_frame_time,
+            } => {
                 let frame = &frames[*current_frame];
                 if last_frame_time.elapsed() >= frame.delay {
                     *current_frame = (*current_frame + 1) % frames.len();
@@ -247,12 +261,22 @@ impl BackgroundTexture {
     }
 
     /// Create sampler with specific repeat mode
-    pub fn create_sampler_with_repeat(device: &wgpu::Device, repeat: BackgroundRepeat) -> wgpu::Sampler {
+    pub fn create_sampler_with_repeat(
+        device: &wgpu::Device,
+        repeat: BackgroundRepeat,
+    ) -> wgpu::Sampler {
         let (address_u, address_v) = match repeat {
-            BackgroundRepeat::NoRepeat => (wgpu::AddressMode::ClampToEdge, wgpu::AddressMode::ClampToEdge),
+            BackgroundRepeat::NoRepeat => (
+                wgpu::AddressMode::ClampToEdge,
+                wgpu::AddressMode::ClampToEdge,
+            ),
             BackgroundRepeat::Repeat => (wgpu::AddressMode::Repeat, wgpu::AddressMode::Repeat),
-            BackgroundRepeat::RepeatX => (wgpu::AddressMode::Repeat, wgpu::AddressMode::ClampToEdge),
-            BackgroundRepeat::RepeatY => (wgpu::AddressMode::ClampToEdge, wgpu::AddressMode::Repeat),
+            BackgroundRepeat::RepeatX => {
+                (wgpu::AddressMode::Repeat, wgpu::AddressMode::ClampToEdge)
+            }
+            BackgroundRepeat::RepeatY => {
+                (wgpu::AddressMode::ClampToEdge, wgpu::AddressMode::Repeat)
+            }
         };
 
         device.create_sampler(&wgpu::SamplerDescriptor {
@@ -283,7 +307,8 @@ impl BackgroundImageState {
         config: &BackgroundImage,
     ) -> Result<Self, String> {
         // Use resolved_path() to handle relative paths against theme directory
-        let path = config.resolved_path()
+        let path = config
+            .resolved_path()
             .ok_or_else(|| "No background image path specified".to_string())?;
 
         log::debug!("Loading background image from: {:?}", path);

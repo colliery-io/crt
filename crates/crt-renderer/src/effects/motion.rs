@@ -118,14 +118,7 @@ impl MotionBehavior {
     /// * `bounds` - Screen/container bounds
     /// * `dt` - Delta time in seconds
     /// * `time` - Total elapsed time in seconds (for float behavior)
-    pub fn update(
-        &mut self,
-        position: &mut Vec2,
-        size: Vec2,
-        bounds: Rect,
-        dt: f32,
-        time: f32,
-    ) {
+    pub fn update(&mut self, position: &mut Vec2, size: Vec2, bounds: Rect, dt: f32, time: f32) {
         match self {
             Self::None => {}
 
@@ -189,10 +182,8 @@ impl MotionBehavior {
                 let s = *seed as f64;
 
                 // Two independent sine waves with different frequencies for organic motion
-                let noise_x = (t * 0.7 + s * 0.1).sin() * 0.6
-                    + (t * 1.3 + s * 0.3).sin() * 0.4;
-                let noise_y = (t * 0.9 + s * 0.2).sin() * 0.6
-                    + (t * 1.1 + s * 0.4).sin() * 0.4;
+                let noise_x = (t * 0.7 + s * 0.1).sin() * 0.6 + (t * 1.3 + s * 0.3).sin() * 0.4;
+                let noise_y = (t * 0.9 + s * 0.2).sin() * 0.6 + (t * 1.1 + s * 0.4).sin() * 0.4;
 
                 // Calculate center of bounds
                 let center_x = (bounds.x0 + bounds.x1) / 2.0;
@@ -284,7 +275,10 @@ mod tests {
 
         // Should have bounced and velocity reversed
         if let MotionBehavior::Bounce { velocity } = behavior {
-            assert!(velocity.x < 0.0, "Velocity should be negative after right bounce");
+            assert!(
+                velocity.x < 0.0,
+                "Velocity should be negative after right bounce"
+            );
         }
     }
 
@@ -298,7 +292,10 @@ mod tests {
         behavior.update(&mut pos, size, bounds, 0.2, 0.0);
 
         if let MotionBehavior::Bounce { velocity } = behavior {
-            assert!(velocity.x > 0.0, "Velocity should be positive after left bounce");
+            assert!(
+                velocity.x > 0.0,
+                "Velocity should be positive after left bounce"
+            );
         }
     }
 
@@ -312,7 +309,10 @@ mod tests {
         behavior.update(&mut pos, size, bounds, 0.2, 0.0);
 
         if let MotionBehavior::Bounce { velocity } = behavior {
-            assert!(velocity.y < 0.0, "Velocity should be negative after bottom bounce");
+            assert!(
+                velocity.y < 0.0,
+                "Velocity should be negative after bottom bounce"
+            );
         }
     }
 
@@ -342,8 +342,16 @@ mod tests {
         }
 
         // Position should stay roughly in the middle area
-        assert!(pos.x >= -100.0 && pos.x <= 900.0, "X should be reasonable: {}", pos.x);
-        assert!(pos.y >= -100.0 && pos.y <= 700.0, "Y should be reasonable: {}", pos.y);
+        assert!(
+            pos.x >= -100.0 && pos.x <= 900.0,
+            "X should be reasonable: {}",
+            pos.x
+        );
+        assert!(
+            pos.y >= -100.0 && pos.y <= 700.0,
+            "Y should be reasonable: {}",
+            pos.y
+        );
     }
 
     #[test]
@@ -379,11 +387,29 @@ mod tests {
 
     #[test]
     fn test_from_str() {
-        assert!(matches!(MotionBehavior::from_str("bounce"), MotionBehavior::Bounce { .. }));
-        assert!(matches!(MotionBehavior::from_str("scroll"), MotionBehavior::Scroll { .. }));
-        assert!(matches!(MotionBehavior::from_str("float"), MotionBehavior::Float { .. }));
-        assert!(matches!(MotionBehavior::from_str("orbit"), MotionBehavior::Orbit { .. }));
-        assert!(matches!(MotionBehavior::from_str("none"), MotionBehavior::None));
-        assert!(matches!(MotionBehavior::from_str("invalid"), MotionBehavior::None));
+        assert!(matches!(
+            MotionBehavior::from_str("bounce"),
+            MotionBehavior::Bounce { .. }
+        ));
+        assert!(matches!(
+            MotionBehavior::from_str("scroll"),
+            MotionBehavior::Scroll { .. }
+        ));
+        assert!(matches!(
+            MotionBehavior::from_str("float"),
+            MotionBehavior::Float { .. }
+        ));
+        assert!(matches!(
+            MotionBehavior::from_str("orbit"),
+            MotionBehavior::Orbit { .. }
+        ));
+        assert!(matches!(
+            MotionBehavior::from_str("none"),
+            MotionBehavior::None
+        ));
+        assert!(matches!(
+            MotionBehavior::from_str("invalid"),
+            MotionBehavior::None
+        ));
     }
 }

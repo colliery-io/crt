@@ -15,9 +15,9 @@
 //! - `--rain-glow-radius: <number>` (glow spread, 0 = no glow)
 //! - `--rain-glow-intensity: <number>` (0-1 glow brightness)
 
+use vello::Scene;
 use vello::kurbo::{Affine, Line, Rect, Stroke};
 use vello::peniko::{Brush, Color};
-use vello::Scene;
 
 use super::{BackdropEffect, EffectConfig};
 
@@ -214,7 +214,13 @@ impl RainEffect {
                 if glow_alpha > 0.001 {
                     let glow_color = Color::new([r, g, b, glow_alpha]);
                     let stroke = Stroke::new(glow_width);
-                    scene.stroke(&stroke, Affine::IDENTITY, &Brush::Solid(glow_color), None, &line);
+                    scene.stroke(
+                        &stroke,
+                        Affine::IDENTITY,
+                        &Brush::Solid(glow_color),
+                        None,
+                        &line,
+                    );
                 }
             }
         }

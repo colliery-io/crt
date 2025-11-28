@@ -196,12 +196,19 @@ impl TabBarState {
 
     /// Check if a tab has a custom title
     pub fn has_custom_title(&self, id: u64) -> bool {
-        self.tabs.iter().find(|t| t.id == id).map(|t| t.has_custom_title).unwrap_or(false)
+        self.tabs
+            .iter()
+            .find(|t| t.id == id)
+            .map(|t| t.has_custom_title)
+            .unwrap_or(false)
     }
 
     /// Get a tab's title by ID
     pub fn get_tab_title(&self, id: u64) -> Option<&str> {
-        self.tabs.iter().find(|t| t.id == id).map(|t| t.title.as_str())
+        self.tabs
+            .iter()
+            .find(|t| t.id == id)
+            .map(|t| t.title.as_str())
     }
 
     // ---- Inline Editing Methods ----

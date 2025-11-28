@@ -139,10 +139,7 @@ pub fn is_in_grid(x: f32, y: f32, metrics: &CellMetrics, cols: usize, rows: usiz
     let grid_right = metrics.padding_left + (cols as f32 * metrics.cell_width);
     let grid_bottom = metrics.padding_top + (rows as f32 * metrics.cell_height);
 
-    x >= metrics.padding_left
-        && x < grid_right
-        && y >= metrics.padding_top
-        && y < grid_bottom
+    x >= metrics.padding_left && x < grid_right && y >= metrics.padding_top && y < grid_bottom
 }
 
 /// Selection range with ordered start and end points
@@ -603,7 +600,7 @@ mod tests {
             Some(1000),
             Some((5, 5)),
             (5, 5),
-            2,   // previous was double
+            2, // previous was double
             400,
             1,
         );
@@ -617,7 +614,7 @@ mod tests {
             Some(1000),
             Some((5, 5)),
             (5, 5),
-            3,   // previous was triple
+            3, // previous was triple
             400,
             1,
         );

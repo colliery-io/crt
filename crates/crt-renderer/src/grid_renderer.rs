@@ -211,7 +211,11 @@ impl GridRenderer {
     }
 
     /// Update the bind group with a new glyph cache atlas
-    pub fn set_glyph_cache(&mut self, device: &wgpu::Device, glyph_cache: &crate::glyph_cache::GlyphCache) {
+    pub fn set_glyph_cache(
+        &mut self,
+        device: &wgpu::Device,
+        glyph_cache: &crate::glyph_cache::GlyphCache,
+    ) {
         self.bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Grid Bind Group"),
             layout: &self.bind_group_layout,
@@ -241,7 +245,8 @@ impl GridRenderer {
     pub fn push_glyphs(&mut self, glyphs: &[PositionedGlyph], color: [f32; 4]) {
         for glyph in glyphs {
             if self.instances.len() < self.instance_capacity {
-                self.instances.push(GlyphInstance::from_positioned(glyph, color));
+                self.instances
+                    .push(GlyphInstance::from_positioned(glyph, color));
             }
         }
     }
@@ -256,11 +261,7 @@ impl GridRenderer {
     }
 
     /// Upload instances and render
-    pub fn render<'a>(
-        &'a self,
-        queue: &wgpu::Queue,
-        render_pass: &mut wgpu::RenderPass<'a>,
-    ) {
+    pub fn render<'a>(&'a self, queue: &wgpu::Queue, render_pass: &mut wgpu::RenderPass<'a>) {
         if self.instances.is_empty() {
             return;
         }

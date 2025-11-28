@@ -3,7 +3,7 @@
 //! Watches ~/.config/crt/config.toml and theme files for changes.
 
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
-use std::sync::mpsc::{channel, Receiver};
+use std::sync::mpsc::{Receiver, channel};
 use std::time::Instant;
 
 use crate::config::Config;
@@ -46,13 +46,16 @@ impl ConfigWatcher {
                     for path in &event.paths {
                         if path == &config_path_clone {
                             let _ = tx.send(ConfigEvent::ConfigChanged);
-                        } else if path.starts_with(&themes_dir) && path.extension().map(|e| e == "css").unwrap_or(false) {
+                        } else if path.starts_with(&themes_dir)
+                            && path.extension().map(|e| e == "css").unwrap_or(false)
+                        {
                             let _ = tx.send(ConfigEvent::ThemeChanged);
                         }
                     }
                 }
             }
-        }).ok()?;
+        })
+        .ok()?;
 
         // Watch the config directory
         watcher.watch(&config_dir, RecursiveMode::Recursive).ok()?;

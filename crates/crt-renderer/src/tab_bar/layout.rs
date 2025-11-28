@@ -3,8 +3,8 @@
 //! Handles positioning, sizing, and hit testing - no GPU dependencies.
 //! Tab bar is always positioned at the top of the window.
 
-use crt_theme::TabTheme;
 use super::state::TabBarState;
+use crt_theme::TabTheme;
 
 /// Rectangle for a tab (for hit testing and rendering)
 #[derive(Debug, Clone, Copy, Default)]
@@ -19,13 +19,14 @@ pub struct TabRect {
 
 impl TabRect {
     pub fn contains(&self, x: f32, y: f32) -> bool {
-        x >= self.x && x < self.x + self.width &&
-        y >= self.y && y < self.y + self.height
+        x >= self.x && x < self.x + self.width && y >= self.y && y < self.y + self.height
     }
 
     pub fn close_contains(&self, x: f32, y: f32) -> bool {
-        x >= self.close_x && x < self.close_x + self.close_width &&
-        y >= self.y && y < self.y + self.height
+        x >= self.close_x
+            && x < self.close_x + self.close_width
+            && y >= self.y
+            && y < self.y + self.height
     }
 }
 
@@ -159,8 +160,8 @@ impl TabLayout {
         let total_gap = tab_gap * (tab_count.saturating_sub(1)) as f32;
         let min_width = theme.tab.min_width * s;
         let max_width = theme.tab.max_width * s;
-        let width_per_tab = ((available_width - total_gap) / tab_count as f32)
-            .clamp(min_width, max_width);
+        let width_per_tab =
+            ((available_width - total_gap) / tab_count as f32).clamp(min_width, max_width);
 
         let mut x = padding;
         for _ in 0..tab_count {

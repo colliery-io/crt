@@ -12,8 +12,7 @@ use std::time::Duration;
 
 #[test]
 fn test_shell_spawn() {
-    let harness = ShellTestHarness::with_shell(80, 24, "/bin/sh")
-        .expect("Failed to spawn shell");
+    let harness = ShellTestHarness::with_shell(80, 24, "/bin/sh").expect("Failed to spawn shell");
 
     // Shell should be running
     assert_eq!(harness.shell().terminal().columns(), 80);
@@ -22,8 +21,8 @@ fn test_shell_spawn() {
 
 #[test]
 fn test_shell_echo() {
-    let mut harness = ShellTestHarness::with_shell(80, 24, "/bin/sh")
-        .expect("Failed to spawn shell");
+    let mut harness =
+        ShellTestHarness::with_shell(80, 24, "/bin/sh").expect("Failed to spawn shell");
 
     // Wait for shell to start
     std::thread::sleep(Duration::from_millis(100));
@@ -33,14 +32,15 @@ fn test_shell_echo() {
     harness.send("echo TESTOUTPUT123\n");
 
     // Wait for output
-    harness.wait_for_text("TESTOUTPUT123")
+    harness
+        .wait_for_text("TESTOUTPUT123")
         .expect("Should see echo output");
 }
 
 #[test]
 fn test_shell_multiple_commands() {
-    let mut harness = ShellTestHarness::with_shell(80, 24, "/bin/sh")
-        .expect("Failed to spawn shell");
+    let mut harness =
+        ShellTestHarness::with_shell(80, 24, "/bin/sh").expect("Failed to spawn shell");
 
     std::thread::sleep(Duration::from_millis(100));
     harness.process_output();
@@ -58,8 +58,8 @@ fn test_shell_multiple_commands() {
 
 #[test]
 fn test_shell_pwd() {
-    let mut harness = ShellTestHarness::with_shell(80, 24, "/bin/sh")
-        .expect("Failed to spawn shell");
+    let mut harness =
+        ShellTestHarness::with_shell(80, 24, "/bin/sh").expect("Failed to spawn shell");
 
     std::thread::sleep(Duration::from_millis(100));
     harness.process_output();
@@ -74,8 +74,8 @@ fn test_shell_pwd() {
 
 #[test]
 fn test_shell_term_env() {
-    let mut harness = ShellTestHarness::with_shell(80, 24, "/bin/sh")
-        .expect("Failed to spawn shell");
+    let mut harness =
+        ShellTestHarness::with_shell(80, 24, "/bin/sh").expect("Failed to spawn shell");
 
     std::thread::sleep(Duration::from_millis(100));
     harness.process_output();
@@ -83,14 +83,15 @@ fn test_shell_term_env() {
     harness.send("echo $TERM\n");
 
     // Should be set to xterm-256color
-    harness.wait_for_text("xterm-256color")
+    harness
+        .wait_for_text("xterm-256color")
         .expect("TERM should be xterm-256color");
 }
 
 #[test]
 fn test_shell_colorterm_env() {
-    let mut harness = ShellTestHarness::with_shell(80, 24, "/bin/sh")
-        .expect("Failed to spawn shell");
+    let mut harness =
+        ShellTestHarness::with_shell(80, 24, "/bin/sh").expect("Failed to spawn shell");
 
     std::thread::sleep(Duration::from_millis(100));
     harness.process_output();
@@ -98,7 +99,8 @@ fn test_shell_colorterm_env() {
     harness.send("echo $COLORTERM\n");
 
     // Should be set to truecolor
-    harness.wait_for_text("truecolor")
+    harness
+        .wait_for_text("truecolor")
         .expect("COLORTERM should be truecolor");
 }
 
@@ -108,8 +110,8 @@ fn test_shell_colorterm_env() {
 fn test_shell_resize() {
     use crt_core::Size;
 
-    let mut harness = ShellTestHarness::with_shell(80, 24, "/bin/sh")
-        .expect("Failed to spawn shell");
+    let mut harness =
+        ShellTestHarness::with_shell(80, 24, "/bin/sh").expect("Failed to spawn shell");
 
     std::thread::sleep(Duration::from_millis(100));
     harness.process_output();
@@ -123,15 +125,17 @@ fn test_shell_resize() {
 
     // Shell should still work after resize
     harness.send("echo resized\n");
-    harness.wait_for_text("resized").expect("Should work after resize");
+    harness
+        .wait_for_text("resized")
+        .expect("Should work after resize");
 }
 
 // === Exit status tests ===
 
 #[test]
 fn test_shell_exit_status() {
-    let mut harness = ShellTestHarness::with_shell(80, 24, "/bin/sh")
-        .expect("Failed to spawn shell");
+    let mut harness =
+        ShellTestHarness::with_shell(80, 24, "/bin/sh").expect("Failed to spawn shell");
 
     std::thread::sleep(Duration::from_millis(100));
     harness.process_output();
@@ -149,8 +153,8 @@ fn test_shell_exit_status() {
 
 #[test]
 fn test_shell_ctrl_c() {
-    let mut harness = ShellTestHarness::with_shell(80, 24, "/bin/sh")
-        .expect("Failed to spawn shell");
+    let mut harness =
+        ShellTestHarness::with_shell(80, 24, "/bin/sh").expect("Failed to spawn shell");
 
     std::thread::sleep(Duration::from_millis(100));
     harness.process_output();
@@ -166,13 +170,15 @@ fn test_shell_ctrl_c() {
 
     // Should still be able to run commands
     harness.send("echo after\n");
-    harness.wait_for_text("after").expect("Shell should still work after Ctrl-C");
+    harness
+        .wait_for_text("after")
+        .expect("Shell should still work after Ctrl-C");
 }
 
 #[test]
 fn test_shell_ctrl_d_partial() {
-    let mut harness = ShellTestHarness::with_shell(80, 24, "/bin/sh")
-        .expect("Failed to spawn shell");
+    let mut harness =
+        ShellTestHarness::with_shell(80, 24, "/bin/sh").expect("Failed to spawn shell");
 
     std::thread::sleep(Duration::from_millis(100));
     harness.process_output();
@@ -185,15 +191,17 @@ fn test_shell_ctrl_d_partial() {
 
     // Shell should still be running
     harness.send("\necho stillhere\n");
-    harness.wait_for_text("stillhere").expect("Shell should still be running");
+    harness
+        .wait_for_text("stillhere")
+        .expect("Shell should still be running");
 }
 
 // === History tests ===
 
 #[test]
 fn test_terminal_history() {
-    let mut harness = ShellTestHarness::with_shell(80, 24, "/bin/sh")
-        .expect("Failed to spawn shell");
+    let mut harness =
+        ShellTestHarness::with_shell(80, 24, "/bin/sh").expect("Failed to spawn shell");
 
     std::thread::sleep(Duration::from_millis(100));
     harness.process_output();
@@ -206,19 +214,25 @@ fn test_terminal_history() {
     }
 
     // Wait for all output
-    harness.wait_for_text("line49").expect("Should see last line");
+    harness
+        .wait_for_text("line49")
+        .expect("Should see last line");
 
     // Terminal should have history
     let history_size = harness.shell().terminal().history_size();
-    assert!(history_size > 0, "Should have history, got {}", history_size);
+    assert!(
+        history_size > 0,
+        "Should have history, got {}",
+        history_size
+    );
 }
 
 #[test]
 fn test_terminal_scroll() {
     use crt_core::Scroll;
 
-    let mut harness = ShellTestHarness::with_shell(80, 24, "/bin/sh")
-        .expect("Failed to spawn shell");
+    let mut harness =
+        ShellTestHarness::with_shell(80, 24, "/bin/sh").expect("Failed to spawn shell");
 
     std::thread::sleep(Duration::from_millis(100));
     harness.process_output();
@@ -249,25 +263,26 @@ fn test_terminal_scroll() {
 
 #[test]
 fn test_selection_shell_output() {
-    use crt_core::{Point, Column, Line, SelectionType};
+    use crt_core::{Column, Line, Point, SelectionType};
 
-    let mut harness = ShellTestHarness::with_shell(80, 24, "/bin/sh")
-        .expect("Failed to spawn shell");
+    let mut harness =
+        ShellTestHarness::with_shell(80, 24, "/bin/sh").expect("Failed to spawn shell");
 
     std::thread::sleep(Duration::from_millis(100));
     harness.process_output();
 
     harness.send("echo SelectableText\n");
-    harness.wait_for_text("SelectableText").expect("Should see output");
+    harness
+        .wait_for_text("SelectableText")
+        .expect("Should see output");
 
     // Try to select text
-    harness.shell_mut().start_selection(
-        Point::new(Line(0), Column(0)),
-        SelectionType::Simple
-    );
-    harness.shell_mut().update_selection(
-        Point::new(Line(0), Column(20))
-    );
+    harness
+        .shell_mut()
+        .start_selection(Point::new(Line(0), Column(0)), SelectionType::Simple);
+    harness
+        .shell_mut()
+        .update_selection(Point::new(Line(0), Column(20)));
 
     assert!(harness.shell().has_selection());
 
@@ -280,8 +295,8 @@ fn test_selection_shell_output() {
 
 #[test]
 fn test_shell_cat() {
-    let mut harness = ShellTestHarness::with_shell(80, 24, "/bin/sh")
-        .expect("Failed to spawn shell");
+    let mut harness =
+        ShellTestHarness::with_shell(80, 24, "/bin/sh").expect("Failed to spawn shell");
 
     std::thread::sleep(Duration::from_millis(100));
     harness.process_output();
@@ -289,7 +304,8 @@ fn test_shell_cat() {
     // Echo some text through cat
     harness.send("echo 'cat test line' | cat\n");
 
-    harness.wait_for_text("cat test line")
+    harness
+        .wait_for_text("cat test line")
         .expect("Should see cat output");
 }
 
@@ -297,15 +313,16 @@ fn test_shell_cat() {
 
 #[test]
 fn test_shell_pipe() {
-    let mut harness = ShellTestHarness::with_shell(80, 24, "/bin/sh")
-        .expect("Failed to spawn shell");
+    let mut harness =
+        ShellTestHarness::with_shell(80, 24, "/bin/sh").expect("Failed to spawn shell");
 
     std::thread::sleep(Duration::from_millis(100));
     harness.process_output();
 
     harness.send("echo 'hello world' | tr 'a-z' 'A-Z'\n");
 
-    harness.wait_for_text("HELLO WORLD")
+    harness
+        .wait_for_text("HELLO WORLD")
         .expect("Should see transformed output");
 }
 
@@ -313,8 +330,8 @@ fn test_shell_pipe() {
 
 #[test]
 fn test_shell_long_line() {
-    let mut harness = ShellTestHarness::with_shell(80, 24, "/bin/sh")
-        .expect("Failed to spawn shell");
+    let mut harness =
+        ShellTestHarness::with_shell(80, 24, "/bin/sh").expect("Failed to spawn shell");
 
     std::thread::sleep(Duration::from_millis(100));
     harness.process_output();

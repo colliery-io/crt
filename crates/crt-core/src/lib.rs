@@ -10,24 +10,21 @@ pub mod pty;
 pub use pty::Pty;
 
 // Re-export alacritty_terminal types needed for rendering
+pub use alacritty_terminal::event::Event as TerminalEvent;
+pub use alacritty_terminal::grid::Scroll;
+pub use alacritty_terminal::index::Side;
+pub use alacritty_terminal::index::{Column, Line, Point};
+pub use alacritty_terminal::selection::{Selection, SelectionRange, SelectionType};
+pub use alacritty_terminal::term::TermMode;
 pub use alacritty_terminal::term::{
+    LineDamageBounds, RenderableContent, RenderableCursor, TermDamage,
     cell::Cell,
     cell::Flags as CellFlags,
     color::{self, Colors},
-    LineDamageBounds,
-    RenderableCursor,
-    RenderableContent,
-    TermDamage,
 };
-pub use alacritty_terminal::index::{Column, Line, Point};
 pub use alacritty_terminal::vte::ansi::Color as AnsiColor;
 pub use alacritty_terminal::vte::ansi::CursorShape;
 pub use alacritty_terminal::vte::ansi::NamedColor;
-pub use alacritty_terminal::selection::{Selection, SelectionRange, SelectionType};
-pub use alacritty_terminal::index::Side;
-pub use alacritty_terminal::grid::Scroll;
-pub use alacritty_terminal::term::TermMode;
-pub use alacritty_terminal::event::Event as TerminalEvent;
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -51,8 +48,8 @@ pub enum SemanticZone {
     Output,
 }
 use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::term::{self, Config as TermConfig, Term};
 use alacritty_terminal::term::test::TermSize;
+use alacritty_terminal::term::{self, Config as TermConfig, Term};
 use alacritty_terminal::vte::ansi;
 
 /// Shared event storage
@@ -181,7 +178,8 @@ impl Terminal {
                     let cmd = bytes[i + 6];
                     // Check for valid terminator (BEL \x07 or ST \x1b\\)
                     let has_bel = i + 7 < bytes.len() && bytes[i + 7] == 0x07;
-                    let has_st = i + 8 < bytes.len() && bytes[i + 7] == 0x1b && bytes[i + 8] == b'\\';
+                    let has_st =
+                        i + 8 < bytes.len() && bytes[i + 7] == 0x1b && bytes[i + 8] == b'\\';
 
                     if has_bel || has_st {
                         self.handle_osc133(cmd);
@@ -229,7 +227,10 @@ impl Terminal {
     ///
     /// Returns Unknown if no OSC 133 marker has been seen for this line.
     pub fn get_line_zone(&self, line: i32) -> SemanticZone {
-        self.line_zones.get(&line).copied().unwrap_or(SemanticZone::Unknown)
+        self.line_zones
+            .get(&line)
+            .copied()
+            .unwrap_or(SemanticZone::Unknown)
     }
 
     /// Check if any OSC 133 zones have been detected
@@ -313,8 +314,8 @@ impl Terminal {
 
     /// Start a new selection at the given point
     pub fn start_selection(&mut self, point: Point, selection_type: SelectionType) {
-        use alacritty_terminal::selection::Selection;
         use alacritty_terminal::index::Side;
+        use alacritty_terminal::selection::Selection;
         self.term.selection = Some(Selection::new(selection_type, point, Side::Left));
     }
 
@@ -362,7 +363,8 @@ impl Terminal {
 
     /// Scroll to the bottom (show live output)
     pub fn scroll_to_bottom(&mut self) {
-        self.term.scroll_display(alacritty_terminal::grid::Scroll::Bottom);
+        self.term
+            .scroll_display(alacritty_terminal::grid::Scroll::Bottom);
     }
 
     /// Get total number of lines including history

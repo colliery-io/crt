@@ -44,13 +44,27 @@ impl SpritePosition {
     }
 
     /// Calculate actual position given screen and sprite dimensions
-    pub fn resolve(&self, screen_w: f32, screen_h: f32, sprite_w: f32, sprite_h: f32, margin: f32) -> (f32, f32) {
+    pub fn resolve(
+        &self,
+        screen_w: f32,
+        screen_h: f32,
+        sprite_w: f32,
+        sprite_h: f32,
+        margin: f32,
+    ) -> (f32, f32) {
         match self {
             SpritePosition::Fixed(x, y) => (*x, *y),
             SpritePosition::Center => (screen_w / 2.0, screen_h / 2.0),
-            SpritePosition::BottomRight => (screen_w - sprite_w / 2.0 - margin, screen_h - sprite_h / 2.0 - margin),
-            SpritePosition::BottomLeft => (sprite_w / 2.0 + margin, screen_h - sprite_h / 2.0 - margin),
-            SpritePosition::TopRight => (screen_w - sprite_w / 2.0 - margin, sprite_h / 2.0 + margin),
+            SpritePosition::BottomRight => (
+                screen_w - sprite_w / 2.0 - margin,
+                screen_h - sprite_h / 2.0 - margin,
+            ),
+            SpritePosition::BottomLeft => {
+                (sprite_w / 2.0 + margin, screen_h - sprite_h / 2.0 - margin)
+            }
+            SpritePosition::TopRight => {
+                (screen_w - sprite_w / 2.0 - margin, sprite_h / 2.0 + margin)
+            }
             SpritePosition::TopLeft => (sprite_w / 2.0 + margin, sprite_h / 2.0 + margin),
         }
     }
@@ -136,7 +150,12 @@ impl SpriteSheet {
 
         log::info!(
             "Loaded sprite sheet {:?}: {}x{}, {}x{} frames, {} total",
-            path, width, height, columns, rows, frame_count
+            path,
+            width,
+            height,
+            columns,
+            rows,
+            frame_count
         );
 
         Ok(Self {
@@ -206,7 +225,11 @@ impl SpriteTexture {
             ..Default::default()
         });
 
-        Self { texture, view, sampler }
+        Self {
+            texture,
+            view,
+            sampler,
+        }
     }
 }
 
@@ -325,12 +348,7 @@ impl SpriteRenderer {
     }
 
     /// Load a sprite sheet
-    pub fn load_sheet(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        sheet: SpriteSheet,
-    ) {
+    pub fn load_sheet(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, sheet: SpriteSheet) {
         let texture = SpriteTexture::new(device, queue, &sheet);
 
         // Create bind group with texture
@@ -395,7 +413,9 @@ impl SpriteRenderer {
         opacity: f32,
     ) {
         let Some(sheet) = &self.sheet else { return };
-        let Some(bind_group) = &self.bind_group else { return };
+        let Some(bind_group) = &self.bind_group else {
+            return;
+        };
 
         // Calculate sprite size in pixels
         let sprite_w = sheet.frame_width as f32 * scale;
@@ -651,7 +671,13 @@ impl SpriteAnimationState {
     }
 
     /// Render the sprite
-    pub fn render<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, queue: &wgpu::Queue, screen_width: f32, screen_height: f32) {
+    pub fn render<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        queue: &wgpu::Queue,
+        screen_width: f32,
+        screen_height: f32,
+    ) {
         self.renderer.render(
             pass,
             queue,

@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "0.0.0-alpha"
+version = "0.0.1"
 edition = "2024"
 
 [workspace.dependencies]
@@ -48,7 +48,7 @@ dirs = "5.0"
 # Main binary package
 [package]
 name = "crt"
-version = "0.0.0-alpha"
+version = "0.0.1"
 edition = "2024"
 description = "GPU-accelerated terminal emulator with synthwave aesthetics"
 license = "MIT"

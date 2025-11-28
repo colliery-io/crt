@@ -4,9 +4,9 @@
 //! Uses bright head and fading trail for the classic matrix rain look.
 
 use super::{BackdropEffect, EffectConfig};
+use vello::Scene;
 use vello::kurbo::{Affine, BezPath, Circle, Point, Rect, Shape, Stroke};
 use vello::peniko::{Brush, Color};
-use vello::Scene;
 
 /// A single column of falling characters
 #[derive(Debug, Clone)]
@@ -376,7 +376,8 @@ impl BackdropEffect for MatrixEffect {
                 // Occasionally change a random character in the trail
                 let change_seed = (self.time * 1000.0) as u32 + idx;
                 if Self::rand(change_seed) < 0.1 && !column.char_seeds.is_empty() {
-                    let char_idx = Self::hash(change_seed.wrapping_add(500)) as usize % column.char_seeds.len();
+                    let char_idx = Self::hash(change_seed.wrapping_add(500)) as usize
+                        % column.char_seeds.len();
                     column.char_seeds[char_idx] = change_seed.wrapping_add(1000);
                 }
 
@@ -463,7 +464,13 @@ impl BackdropEffect for MatrixEffect {
                 // Draw the character shape
                 let center = Point::new(x_px, char_y_px + self.char_height / 2.0);
                 let char_seed = column.char_seeds[i];
-                let path = Self::draw_char(center, self.char_width, self.char_height, char_seed, &self.charset);
+                let path = Self::draw_char(
+                    center,
+                    self.char_width,
+                    self.char_height,
+                    char_seed,
+                    &self.charset,
+                );
 
                 let stroke = Stroke::new(1.5);
                 scene.stroke(&stroke, Affine::IDENTITY, &Brush::Solid(color), None, &path);
@@ -505,10 +512,7 @@ impl BackdropEffect for MatrixEffect {
         }
 
         if let Some(charset_str) = config.get("charset") {
-            let chars: Vec<char> = charset_str
-                .trim_matches('"')
-                .chars()
-                .collect();
+            let chars: Vec<char> = charset_str.trim_matches('"').chars().collect();
             if !chars.is_empty() {
                 self.charset = chars;
             }

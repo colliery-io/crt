@@ -161,7 +161,13 @@ impl AnsiPalette {
             let r = (idx / 36) % 6;
             let g = (idx / 6) % 6;
             let b = idx % 6;
-            let to_float = |v: u8| if v == 0 { 0.0 } else { (v as f32 * 40.0 + 55.0) / 255.0 };
+            let to_float = |v: u8| {
+                if v == 0 {
+                    0.0
+                } else {
+                    (v as f32 * 40.0 + 55.0) / 255.0
+                }
+            };
             Color::rgb(to_float(r), to_float(g), to_float(b))
         } else {
             // Grayscale (232-255)
@@ -1175,7 +1181,10 @@ impl Theme {
     }
 
     /// Load theme from CSS string with base directory for resolving relative paths
-    pub fn from_css_with_base(css: &str, base_dir: impl AsRef<Path>) -> Result<Self, parser::ThemeParseError> {
+    pub fn from_css_with_base(
+        css: &str,
+        base_dir: impl AsRef<Path>,
+    ) -> Result<Self, parser::ThemeParseError> {
         let mut theme = parser::parse_theme(css)?;
         // Set base_dir on background_image if present
         if let Some(ref mut bg) = theme.background_image {
@@ -1230,23 +1239,23 @@ impl Theme {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct ThemeUniforms {
-    pub screen_size: [f32; 2],      // offset 0
-    pub time: f32,                   // offset 8
-    pub grid_intensity: f32,         // offset 12
-    pub gradient_top: [f32; 4],      // offset 16 (16-byte aligned)
-    pub gradient_bottom: [f32; 4],   // offset 32
-    pub grid_color: [f32; 4],        // offset 48
-    pub grid_spacing: f32,           // offset 64
-    pub grid_line_width: f32,        // offset 68
-    pub grid_perspective: f32,       // offset 72
-    pub grid_horizon: f32,           // offset 76
-    pub glow_color: [f32; 4],        // offset 80 (16-byte aligned, 80 % 16 == 0)
-    pub glow_radius: f32,            // offset 96
-    pub glow_intensity: f32,         // offset 100
-    pub _pad1: [f32; 2],             // offset 104 - padding to align text_color to 16 bytes
-    pub text_color: [f32; 4],        // offset 112 (16-byte aligned)
-    pub _pad2: [f32; 4],             // offset 128 - final padding
-    // Total: 144 bytes
+    pub screen_size: [f32; 2],     // offset 0
+    pub time: f32,                 // offset 8
+    pub grid_intensity: f32,       // offset 12
+    pub gradient_top: [f32; 4],    // offset 16 (16-byte aligned)
+    pub gradient_bottom: [f32; 4], // offset 32
+    pub grid_color: [f32; 4],      // offset 48
+    pub grid_spacing: f32,         // offset 64
+    pub grid_line_width: f32,      // offset 68
+    pub grid_perspective: f32,     // offset 72
+    pub grid_horizon: f32,         // offset 76
+    pub glow_color: [f32; 4],      // offset 80 (16-byte aligned, 80 % 16 == 0)
+    pub glow_radius: f32,          // offset 96
+    pub glow_intensity: f32,       // offset 100
+    pub _pad1: [f32; 2],           // offset 104 - padding to align text_color to 16 bytes
+    pub text_color: [f32; 4],      // offset 112 (16-byte aligned)
+    pub _pad2: [f32; 4],           // offset 128 - final padding
+                                   // Total: 144 bytes
 }
 
 #[cfg(test)]

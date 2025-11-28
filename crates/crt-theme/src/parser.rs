@@ -6,18 +6,18 @@
 use std::collections::HashMap;
 use thiserror::Error;
 
-use lightningcss::stylesheet::{ParserOptions, StyleSheet};
-use lightningcss::rules::CssRule;
-use lightningcss::properties::Property;
-use lightningcss::values::color::CssColor;
-use lightningcss::traits::ToCss;
 use lightningcss::printer::PrinterOptions;
+use lightningcss::properties::Property;
+use lightningcss::rules::CssRule;
+use lightningcss::stylesheet::{ParserOptions, StyleSheet};
+use lightningcss::traits::ToCss;
+use lightningcss::values::color::CssColor;
 
 use crate::{
-    BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize,
-    Color, CrtEffect, GridEffect, LinearGradient, MatrixEffect, ParticleBehavior, ParticleEffect,
-    ParticleShape, RainEffect, ShapeEffect, ShapeMotion, ShapeRotation, ShapeType,
-    SpriteEffect, SpriteMotion, SpritePosition, StarDirection, StarfieldEffect, TextShadow, Theme,
+    BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, Color, CrtEffect,
+    GridEffect, LinearGradient, MatrixEffect, ParticleBehavior, ParticleEffect, ParticleShape,
+    RainEffect, ShapeEffect, ShapeMotion, ShapeRotation, ShapeType, SpriteEffect, SpriteMotion,
+    SpritePosition, StarDirection, StarfieldEffect, TextShadow, Theme,
 };
 
 #[derive(Error, Debug)]
@@ -53,7 +53,8 @@ fn css_color_to_color(css_color: &CssColor) -> Result<Color, ThemeParseError> {
         CssColor::CurrentColor => Ok(Color::rgb(1.0, 1.0, 1.0)), // Default to white
         _ => {
             // For other color types, convert to string and parse
-            let css_str = css_color.to_css_string(opts())
+            let css_str = css_color
+                .to_css_string(opts())
                 .map_err(|e| ThemeParseError::InvalidColor(format!("{:?}", e)))?;
             parse_color_string(&css_str)
         }
@@ -152,7 +153,11 @@ fn parse_named_color(name: &str) -> Option<Color> {
         "transparent" => return Some(Color::rgba(0.0, 0.0, 0.0, 0.0)),
         _ => return None,
     };
-    Some(Color::rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0))
+    Some(Color::rgb(
+        r as f32 / 255.0,
+        g as f32 / 255.0,
+        b as f32 / 255.0,
+    ))
 }
 
 /// Parse a hex color (#rgb, #rgba, #rrggbb, #rrggbbaa)
@@ -553,7 +558,8 @@ fn extract_properties(rule: &lightningcss::rules::style::StyleRule) -> RulePrope
                     .filter_map(|f| match f {
                         lightningcss::properties::font::FontFamily::FamilyName(name) => {
                             // Use ToCss to get the name - includes quotes if needed
-                            name.to_css_string(opts()).ok()
+                            name.to_css_string(opts())
+                                .ok()
                                 .map(|s| s.trim_matches('"').to_string())
                         }
                         lightningcss::properties::font::FontFamily::Generic(g) => {
@@ -665,9 +671,7 @@ fn extract_properties(rule: &lightningcss::rules::style::StyleRule) -> RulePrope
 
 /// Get selector string from a style rule
 fn get_selector_string(rule: &lightningcss::rules::style::StyleRule) -> String {
-    rule.selectors
-        .to_css_string(opts())
-        .unwrap_or_default()
+    rule.selectors.to_css_string(opts()).unwrap_or_default()
 }
 
 /// Parse CSS theme using lightningcss
@@ -779,16 +783,20 @@ fn apply_terminal_properties(
 
     // Background image
     if let Some(url) = standard.get("background-image") {
-        let size = standard.get("background-size")
+        let size = standard
+            .get("background-size")
             .map(|s| parse_background_size(s))
             .unwrap_or_default();
-        let position = standard.get("background-position")
+        let position = standard
+            .get("background-position")
             .map(|s| parse_background_position(s))
             .unwrap_or_default();
-        let repeat = standard.get("background-repeat")
+        let repeat = standard
+            .get("background-repeat")
             .map(|s| parse_background_repeat(s))
             .unwrap_or_default();
-        let opacity = custom.get("--background-opacity")
+        let opacity = custom
+            .get("--background-opacity")
             .and_then(|s| s.parse::<f32>().ok())
             .unwrap_or(1.0);
 
@@ -1180,8 +1188,9 @@ fn apply_backdrop_properties(
         // Strip quotes if present
         let path = v.trim();
         let path = if (path.starts_with('"') && path.ends_with('"'))
-            || (path.starts_with('\'') && path.ends_with('\'')) {
-            &path[1..path.len()-1]
+            || (path.starts_with('\'') && path.ends_with('\''))
+        {
+            &path[1..path.len() - 1]
         } else {
             path
         };
@@ -1387,7 +1396,8 @@ fn apply_ansi_palette(
 ) -> Result<(), ThemeParseError> {
     // Helper to get color from either --ansi-* or --color-* format
     fn get_color<'a>(custom: &'a HashMap<String, String>, name: &str) -> Option<&'a String> {
-        custom.get(&format!("--ansi-{}", name))
+        custom
+            .get(&format!("--ansi-{}", name))
             .or_else(|| custom.get(&format!("--color-{}", name)))
     }
 
@@ -1630,7 +1640,9 @@ mod tests {
         "#;
 
         let theme = parse_theme(css).unwrap();
-        let bg = theme.background_image.expect("background_image should be set");
+        let bg = theme
+            .background_image
+            .expect("background_image should be set");
         assert_eq!(bg.path, Some("/path/to/image.png".to_string()));
         assert_eq!(bg.size, BackgroundSize::Cover);
         assert_eq!(bg.position, BackgroundPosition::Center);
@@ -1643,22 +1655,43 @@ mod tests {
         assert_eq!(parse_background_size("cover"), BackgroundSize::Cover);
         assert_eq!(parse_background_size("contain"), BackgroundSize::Contain);
         assert_eq!(parse_background_size("auto"), BackgroundSize::Auto);
-        assert_eq!(parse_background_size("100px 200px"), BackgroundSize::Fixed(100, 200));
+        assert_eq!(
+            parse_background_size("100px 200px"),
+            BackgroundSize::Fixed(100, 200)
+        );
     }
 
     #[test]
     fn test_parse_background_position() {
-        assert_eq!(parse_background_position("center"), BackgroundPosition::Center);
-        assert_eq!(parse_background_position("top left"), BackgroundPosition::TopLeft);
-        assert_eq!(parse_background_position("bottom right"), BackgroundPosition::BottomRight);
+        assert_eq!(
+            parse_background_position("center"),
+            BackgroundPosition::Center
+        );
+        assert_eq!(
+            parse_background_position("top left"),
+            BackgroundPosition::TopLeft
+        );
+        assert_eq!(
+            parse_background_position("bottom right"),
+            BackgroundPosition::BottomRight
+        );
     }
 
     #[test]
     fn test_parse_background_repeat() {
-        assert_eq!(parse_background_repeat("no-repeat"), BackgroundRepeat::NoRepeat);
+        assert_eq!(
+            parse_background_repeat("no-repeat"),
+            BackgroundRepeat::NoRepeat
+        );
         assert_eq!(parse_background_repeat("repeat"), BackgroundRepeat::Repeat);
-        assert_eq!(parse_background_repeat("repeat-x"), BackgroundRepeat::RepeatX);
-        assert_eq!(parse_background_repeat("repeat-y"), BackgroundRepeat::RepeatY);
+        assert_eq!(
+            parse_background_repeat("repeat-x"),
+            BackgroundRepeat::RepeatX
+        );
+        assert_eq!(
+            parse_background_repeat("repeat-y"),
+            BackgroundRepeat::RepeatY
+        );
     }
 
     #[test]

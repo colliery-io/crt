@@ -31,7 +31,10 @@ fn font_db() -> &'static Database {
 
         // Then load system fonts as fallback
         db.load_system_fonts();
-        log::info!("Font database initialized with {} fonts", db.faces().count());
+        log::info!(
+            "Font database initialized with {} fonts",
+            db.faces().count()
+        );
         db
     })
 }
@@ -52,15 +55,9 @@ fn load_font(family: &str, weight: Weight, style: Style) -> Option<Vec<u8>> {
 
     // fontdb gives us the font source - we need to read the data
     match &face.source {
-        fontdb::Source::File(path) => {
-            std::fs::read(path).ok()
-        }
-        fontdb::Source::Binary(data) => {
-            Some(data.as_ref().as_ref().to_vec())
-        }
-        fontdb::Source::SharedFile(_path, data) => {
-            Some(data.as_ref().as_ref().to_vec())
-        }
+        fontdb::Source::File(path) => std::fs::read(path).ok(),
+        fontdb::Source::Binary(data) => Some(data.as_ref().as_ref().to_vec()),
+        fontdb::Source::SharedFile(_path, data) => Some(data.as_ref().as_ref().to_vec()),
     }
 }
 
@@ -95,7 +92,9 @@ pub fn load_font_variants(config: &FontConfig) -> FontVariants {
             log::warn!("MesloLGS NF not found - install fonts to ~/.config/crt/fonts/");
             load_font_from_families(
                 &["Menlo", "Monaco", "Consolas", "DejaVu Sans Mono"]
-                    .iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>(),
                 Weight::NORMAL,
                 Style::Normal,
             )

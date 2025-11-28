@@ -41,9 +41,9 @@ pub use shape::ShapeEffect;
 pub use sprite::SpriteEffect;
 pub use starfield::StarfieldEffect;
 
-use vello::kurbo::{Rect, Vec2};
 use std::collections::HashMap;
 use vello::Scene;
+use vello::kurbo::{Rect, Vec2};
 
 /// Configuration passed to effects from parsed CSS properties
 #[derive(Debug, Clone, Default)]

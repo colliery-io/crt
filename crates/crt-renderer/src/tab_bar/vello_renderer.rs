@@ -4,11 +4,11 @@
 //! Text glow effects are still handled by the existing text renderer.
 //! The expensive vello::Renderer is shared across all renderers to save memory.
 
-use crt_theme::{TabTheme, Color};
-use vello::{peniko, kurbo, Scene, Renderer, RenderParams, AaConfig};
+use crt_theme::{Color, TabTheme};
+use vello::{AaConfig, RenderParams, Renderer, Scene, kurbo, peniko};
 
-use super::state::TabBarState;
 use super::layout::TabLayout;
+use super::state::TabBarState;
 
 /// Vello-based tab bar renderer
 ///
@@ -88,12 +88,7 @@ impl VelloTabBarRenderer {
     }
 
     /// Build vello shapes for the tab bar
-    fn build_scene(
-        &mut self,
-        state: &TabBarState,
-        layout: &TabLayout,
-        theme: &TabTheme,
-    ) {
+    fn build_scene(&mut self, state: &TabBarState, layout: &TabLayout, theme: &TabTheme) {
         let s = layout.scale_factor() as f64;
         let bar_height = layout.height() as f64 * s;
         let (screen_width, _) = layout.screen_size();
@@ -140,7 +135,10 @@ impl VelloTabBarRenderer {
 
             // Tab background with rounded top corners
             let tab_rect = kurbo::RoundedRect::new(
-                x, y, x + w, y + h,
+                x,
+                y,
+                x + w,
+                y + h,
                 kurbo::RoundedRectRadii::new(border_radius, border_radius, 0.0, 0.0),
             );
             self.scene.fill(
@@ -163,13 +161,8 @@ impl VelloTabBarRenderer {
             path.quad_to((x + w, y), (x + w, y + border_radius)); // top-right corner
             path.line_to((x + w, y + h)); // right side down
 
-            self.scene.stroke(
-                &stroke,
-                kurbo::Affine::IDENTITY,
-                &border_color,
-                None,
-                &path,
-            );
+            self.scene
+                .stroke(&stroke, kurbo::Affine::IDENTITY, &border_color, None, &path);
 
             // Active tab accent line at bottom
             if is_active {
@@ -209,13 +202,7 @@ impl VelloTabBarRenderer {
             antialiasing_method: AaConfig::Area,
         };
 
-        renderer.render_to_texture(
-            device,
-            queue,
-            &self.scene,
-            target_view,
-            &params,
-        )
+        renderer.render_to_texture(device, queue, &self.scene, target_view, &params)
     }
 
     /// Get the rendered texture view for compositing

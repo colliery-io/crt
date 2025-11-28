@@ -19,9 +19,9 @@
 //! - `--grid-vanishing-spread: <number>` (0-1, how spread lines are at horizon)
 //! - `--grid-curved: true|false` (curved or straight vertical lines)
 
+use vello::Scene;
 use vello::kurbo::{Affine, BezPath, Line, Point, Rect, Stroke};
 use vello::peniko::{Brush, Color};
-use vello::Scene;
 
 use super::{BackdropEffect, EffectConfig};
 
@@ -163,14 +163,26 @@ impl GridEffect {
                 if glow_alpha > 0.001 {
                     let glow_color = Color::new([r, g, b, glow_alpha]);
                     let stroke = Stroke::new(glow_width);
-                    scene.stroke(&stroke, Affine::IDENTITY, &Brush::Solid(glow_color), None, shape);
+                    scene.stroke(
+                        &stroke,
+                        Affine::IDENTITY,
+                        &Brush::Solid(glow_color),
+                        None,
+                        shape,
+                    );
                 }
             }
         }
 
         // Draw the core line
         let stroke = Stroke::new(base_width);
-        scene.stroke(&stroke, Affine::IDENTITY, &Brush::Solid(base_color), None, shape);
+        scene.stroke(
+            &stroke,
+            Affine::IDENTITY,
+            &Brush::Solid(base_color),
+            None,
+            shape,
+        );
     }
 }
 
@@ -252,7 +264,8 @@ impl BackdropEffect for GridEffect {
 
             // Fade based on horizon position (center = brightest)
             let center_fade = 1.0 - x_offset.abs() * 0.3;
-            let alpha = (self.color.a as f64 / 255.0 * self.intensity * center_fade.max(0.0) * 255.0) as u8;
+            let alpha =
+                (self.color.a as f64 / 255.0 * self.intensity * center_fade.max(0.0) * 255.0) as u8;
 
             if alpha == 0 {
                 continue;
@@ -289,7 +302,8 @@ impl BackdropEffect for GridEffect {
             } else {
                 // Straight lines - start below horizon
                 let start_perspective = start_t.powf(self.perspective);
-                let start_x = center_x + x_offset * width * 0.5 * (spread + start_perspective) / spread;
+                let start_x =
+                    center_x + x_offset * width * 0.5 * (spread + start_perspective) / spread;
                 let start_y = horizon_y + start_t * grid_height;
                 let bottom_x = center_x + x_offset * width * 0.5 * (spread + 1.0) / spread;
                 let line = Line::new((start_x, start_y), (bottom_x, bottom_y));
@@ -469,6 +483,9 @@ mod tests {
         // At t=0.5 with perspective, should be closer to horizon than linear
         let y_mid = grid.perspective_y(0.5, 100.0, 500.0);
         let linear_mid = 300.0; // (100 + 500) / 2
-        assert!(y_mid < linear_mid, "Perspective should compress toward horizon");
+        assert!(
+            y_mid < linear_mid,
+            "Perspective should compress toward horizon"
+        );
     }
 }

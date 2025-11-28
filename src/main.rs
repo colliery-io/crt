@@ -21,21 +21,26 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use config::Config;
-use crt_core::{ShellTerminal, Size, Scroll};
-use crt_renderer::{GlyphCache, GridRenderer, RectRenderer, EffectPipeline, TabBar, BackgroundImagePipeline, BackgroundImageState, EffectsRenderer, GridEffect, StarfieldEffect, RainEffect, ParticleEffect, MatrixEffect, ShapeEffect, SpriteEffect, EffectConfig, SpriteAnimationState, SpriteConfig, SpritePosition, SpriteMotion, CrtPipeline};
+use crt_core::{Scroll, ShellTerminal, Size};
+use crt_renderer::{
+    BackgroundImagePipeline, BackgroundImageState, CrtPipeline, EffectConfig, EffectPipeline,
+    EffectsRenderer, GlyphCache, GridEffect, GridRenderer, MatrixEffect, ParticleEffect,
+    RainEffect, RectRenderer, ShapeEffect, SpriteAnimationState, SpriteConfig, SpriteEffect,
+    SpriteMotion, SpritePosition, StarfieldEffect, TabBar,
+};
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
 use input::{
-    TabEditResult, handle_tab_editing, handle_shell_input, handle_tab_click, handle_resize,
-    handle_terminal_mouse_button, handle_terminal_mouse_move,
-    handle_terminal_mouse_release, handle_terminal_scroll,
-    clear_terminal_selection, get_terminal_selection_text, get_clipboard_content, set_clipboard_content,
-    paste_to_terminal, MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT,
-    find_url_at_position, find_url_index_at_position, open_url,
+    MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT, TabEditResult,
+    clear_terminal_selection, find_url_at_position, find_url_index_at_position,
+    get_clipboard_content, get_terminal_selection_text, handle_resize, handle_shell_input,
+    handle_tab_click, handle_tab_editing, handle_terminal_mouse_button, handle_terminal_mouse_move,
+    handle_terminal_mouse_release, handle_terminal_scroll, open_url, paste_to_terminal,
+    set_clipboard_content,
 };
 use menu::MenuAction;
 use render::render_frame;
-use window::{ContextMenuItem, WindowState, SearchMatch};
+use window::{ContextMenuItem, SearchMatch, WindowState};
 
 use winit::{
     application::ApplicationHandler,
@@ -58,7 +63,6 @@ use menu::{MenuIds, build_menu_bar, menu_id_to_action};
 const MIN_FONT_SCALE: f32 = 0.5;
 const MAX_FONT_SCALE: f32 = 3.0;
 const FONT_SCALE_STEP: f32 = 0.1;
-
 
 struct App {
     windows: HashMap<WindowId, WindowState>,
@@ -128,7 +132,11 @@ impl App {
             window_attrs = window_attrs.with_tabbing_identifier(&unique_id);
         }
 
-        let window = Arc::new(event_loop.create_window(window_attrs).expect("Failed to create window"));
+        let window = Arc::new(
+            event_loop
+                .create_window(window_attrs)
+                .expect("Failed to create window"),
+        );
         let window_id = window.id();
         let size = window.inner_size();
         let scale_factor = window.scale_factor() as f32;
@@ -154,8 +162,13 @@ impl App {
         let scaled_font_size = self.config.font.size * scale_factor;
         let line_height_multiplier = self.config.font.line_height;
         let font_variants = font::load_font_variants(&self.config.font);
-        let mut glyph_cache = GlyphCache::with_variants(&shared.device, font_variants.clone(), scaled_font_size, line_height_multiplier)
-            .expect("Failed to create glyph cache");
+        let mut glyph_cache = GlyphCache::with_variants(
+            &shared.device,
+            font_variants.clone(),
+            scaled_font_size,
+            line_height_multiplier,
+        )
+        .expect("Failed to create glyph cache");
         glyph_cache.precache_ascii();
         glyph_cache.flush(&shared.queue);
 
@@ -166,12 +179,17 @@ impl App {
         // Separate renderer for output text (rendered flat, no glow)
         let mut output_grid_renderer = GridRenderer::new(&shared.device, format);
         output_grid_renderer.set_glyph_cache(&shared.device, &glyph_cache);
-        output_grid_renderer.update_screen_size(&shared.queue, size.width as f32, size.height as f32);
+        output_grid_renderer.update_screen_size(
+            &shared.queue,
+            size.width as f32,
+            size.height as f32,
+        );
 
         // Tab bar uses same font at smaller size with fixed line height
         let tab_font_size = 12.0 * scale_factor;
-        let mut tab_glyph_cache = GlyphCache::with_variants(&shared.device, font_variants, tab_font_size, 1.3)
-            .expect("Failed to create tab glyph cache");
+        let mut tab_glyph_cache =
+            GlyphCache::with_variants(&shared.device, font_variants, tab_font_size, 1.3)
+                .expect("Failed to create tab glyph cache");
         tab_glyph_cache.precache_ascii();
         tab_glyph_cache.flush(&shared.queue);
 
@@ -185,7 +203,8 @@ impl App {
         effect_pipeline.set_theme(theme.clone());
 
         // Backdrop effects renderer (grid, starfield, rain, particles, etc.)
-        let mut effects_renderer = EffectsRenderer::new(&shared.device, shared.vello_renderer_arc(), format);
+        let mut effects_renderer =
+            EffectsRenderer::new(&shared.device, shared.vello_renderer_arc(), format);
         // Add effects (disabled by default, enabled via CSS)
         effects_renderer.add_effect(Box::new(GridEffect::new()));
         effects_renderer.add_effect(Box::new(StarfieldEffect::new()));
@@ -224,27 +243,29 @@ impl App {
 
         // Background image pipeline (always created, state only if theme has background image)
         let background_image_pipeline = BackgroundImagePipeline::new(&shared.device, format);
-        let (background_image_state, background_image_bind_group) = if let Some(ref bg_image) = theme.background_image {
-            match BackgroundImageState::new(&shared.device, &shared.queue, bg_image) {
-                Ok(state) => {
-                    let bind_group = background_image_pipeline.create_bind_group(
-                        &shared.device,
-                        &state.texture.view,
-                    );
-                    log::info!("Loaded background image: {:?}", bg_image.path);
-                    (Some(state), Some(bind_group))
+        let (background_image_state, background_image_bind_group) =
+            if let Some(ref bg_image) = theme.background_image {
+                match BackgroundImageState::new(&shared.device, &shared.queue, bg_image) {
+                    Ok(state) => {
+                        let bind_group = background_image_pipeline
+                            .create_bind_group(&shared.device, &state.texture.view);
+                        log::info!("Loaded background image: {:?}", bg_image.path);
+                        (Some(state), Some(bind_group))
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to load background image: {}", e);
+                        (None, None)
+                    }
                 }
-                Err(e) => {
-                    log::warn!("Failed to load background image: {}", e);
-                    (None, None)
-                }
-            }
-        } else {
-            (None, None)
-        };
+            } else {
+                (None, None)
+            };
 
         // Sprite animation state (bypasses vello for memory efficiency)
-        log::info!("Checking sprite config: {:?}", theme.sprite.as_ref().map(|s| (s.enabled, &s.path)));
+        log::info!(
+            "Checking sprite config: {:?}",
+            theme.sprite.as_ref().map(|s| (s.enabled, &s.path))
+        );
         let sprite_state = if let Some(ref sprite) = theme.sprite {
             if sprite.enabled {
                 if let Some(ref path_str) = sprite.path {
@@ -316,10 +337,9 @@ impl App {
             view_formats: &[],
         });
         let text_texture_view = text_texture.create_view(&Default::default());
-        let composite_bind_group = effect_pipeline.composite.create_bind_group(
-            &shared.device,
-            &text_texture_view,
-        );
+        let composite_bind_group = effect_pipeline
+            .composite
+            .create_bind_group(&shared.device, &text_texture_view);
 
         // CRT post-processing pipeline
         let mut crt_pipeline = CrtPipeline::new(&shared.device, format);
@@ -337,7 +357,8 @@ impl App {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
             let view = texture.create_view(&Default::default());
@@ -415,16 +436,22 @@ impl App {
 
         self.windows.insert(window_id, window_state);
         self.focused_window = Some(window_id);
-        log::info!("Created window {:?}, total: {}", window_id, self.windows.len());
+        log::info!(
+            "Created window {:?}, total: {}",
+            window_id,
+            self.windows.len()
+        );
         window_id
     }
 
     fn load_theme(&self) -> Theme {
         match self.config.theme_css_with_path() {
-            Some((css, base_dir)) => Theme::from_css_with_base(&css, &base_dir).unwrap_or_else(|e| {
-                log::warn!("Failed to parse theme: {:?}", e);
-                Theme::default()
-            }),
+            Some((css, base_dir)) => {
+                Theme::from_css_with_base(&css, &base_dir).unwrap_or_else(|e| {
+                    log::warn!("Failed to parse theme: {:?}", e);
+                    Theme::default()
+                })
+            }
             None => {
                 log::warn!("Theme not found, using default");
                 Theme::default()
@@ -438,7 +465,11 @@ impl App {
 
     fn close_window(&mut self, window_id: WindowId) {
         if self.windows.remove(&window_id).is_some() {
-            log::info!("Closed window {:?}, remaining: {}", window_id, self.windows.len());
+            log::info!(
+                "Closed window {:?}, remaining: {}",
+                window_id,
+                self.windows.len()
+            );
             if self.focused_window == Some(window_id) {
                 self.focused_window = self.windows.keys().next().copied();
             }
@@ -454,7 +485,10 @@ impl App {
                     let cwd = state.active_shell_cwd();
                     let tab_num = state.gpu.tab_bar.tab_count() + 1;
                     let tab_id = state.gpu.tab_bar.add_tab(format!("Terminal {}", tab_num));
-                    state.gpu.tab_bar.select_tab_index(state.gpu.tab_bar.tab_count() - 1);
+                    state
+                        .gpu
+                        .tab_bar
+                        .select_tab_index(state.gpu.tab_bar.tab_count() - 1);
                     state.create_shell_for_tab_with_cwd(tab_id, cwd);
                     state.dirty = true;
                     state.window.request_redraw();
@@ -474,20 +508,30 @@ impl App {
                             state.window.request_redraw();
                         }
                         false
-                    } else { true }
-                } else { false };
+                    } else {
+                        true
+                    }
+                } else {
+                    false
+                };
                 if should_close {
-                    if let Some(id) = self.focused_window { self.close_window(id); }
+                    if let Some(id) = self.focused_window {
+                        self.close_window(id);
+                    }
                 }
             }
             MenuAction::CloseWindow => {
-                if let Some(id) = self.focused_window { self.close_window(id); }
+                if let Some(id) = self.focused_window {
+                    self.close_window(id);
+                }
             }
             MenuAction::Quit => event_loop.exit(),
             MenuAction::ToggleFullScreen => {
                 if let Some(state) = self.focused_window_mut() {
                     let fs = state.window.fullscreen().is_some();
-                    state.window.set_fullscreen(if fs { None } else {
+                    state.window.set_fullscreen(if fs {
+                        None
+                    } else {
                         Some(winit::window::Fullscreen::Borderless(None))
                     });
                 }
@@ -496,7 +540,10 @@ impl App {
             MenuAction::DecreaseFontSize => self.adjust_font_scale(-FONT_SCALE_STEP),
             MenuAction::ResetFontSize => {
                 // Compute delta to get back to scale 1.0
-                if let Some(state) = self.windows.get(&self.focused_window.unwrap_or(WindowId::dummy())) {
+                if let Some(state) = self
+                    .windows
+                    .get(&self.focused_window.unwrap_or(WindowId::dummy()))
+                {
                     let delta = 1.0 - state.font_scale;
                     if delta.abs() > 0.001 {
                         self.adjust_font_scale(delta);
@@ -587,13 +634,22 @@ impl App {
 
             // Update glyph cache with new font size
             let new_font_size = base_font_size * new_scale * state.scale_factor;
-            state.gpu.glyph_cache.set_font_size(&shared.queue, new_font_size);
+            state
+                .gpu
+                .glyph_cache
+                .set_font_size(&shared.queue, new_font_size);
             state.gpu.glyph_cache.precache_ascii();
             state.gpu.glyph_cache.flush(&shared.queue);
 
             // Update grid renderers with new glyph cache
-            state.gpu.grid_renderer.set_glyph_cache(&shared.device, &state.gpu.glyph_cache);
-            state.gpu.output_grid_renderer.set_glyph_cache(&shared.device, &state.gpu.glyph_cache);
+            state
+                .gpu
+                .grid_renderer
+                .set_glyph_cache(&shared.device, &state.gpu.glyph_cache);
+            state
+                .gpu
+                .output_grid_renderer
+                .set_glyph_cache(&shared.device, &state.gpu.glyph_cache);
 
             // Recalculate terminal grid size (like resize does)
             let cell_width = state.gpu.glyph_cache.cell_width();
@@ -604,7 +660,8 @@ impl App {
             let tab_bar_physical = tab_bar_height * state.scale_factor;
 
             let content_width = (state.gpu.config.width as f32 - padding_physical).max(60.0);
-            let content_height = (state.gpu.config.height as f32 - padding_physical - tab_bar_physical).max(40.0);
+            let content_height =
+                (state.gpu.config.height as f32 - padding_physical - tab_bar_physical).max(40.0);
 
             let new_cols = ((content_width / cell_width) as usize).max(10);
             let new_rows = ((content_height / line_height) as usize).max(4);
@@ -629,8 +686,11 @@ impl App {
     #[cfg(target_os = "macos")]
     fn navigate_tab(&mut self, next: bool) {
         if let Some(state) = self.focused_window_mut() {
-            if next { state.gpu.tab_bar.next_tab(); }
-            else { state.gpu.tab_bar.prev_tab(); }
+            if next {
+                state.gpu.tab_bar.next_tab();
+            } else {
+                state.gpu.tab_bar.prev_tab();
+            }
             state.force_active_tab_redraw();
             state.window.request_redraw();
         }
@@ -703,13 +763,16 @@ fn configure_effects_from_theme(effects_renderer: &mut EffectsRenderer, theme: &
         config.insert("grid-enabled", if grid.enabled { "true" } else { "false" });
         // Convert Color to rgba() string
         let c = grid.color;
-        config.insert("grid-color", format!(
-            "rgba({}, {}, {}, {})",
-            (c.r * 255.0) as u8,
-            (c.g * 255.0) as u8,
-            (c.b * 255.0) as u8,
-            c.a
-        ));
+        config.insert(
+            "grid-color",
+            format!(
+                "rgba({}, {}, {}, {})",
+                (c.r * 255.0) as u8,
+                (c.g * 255.0) as u8,
+                (c.b * 255.0) as u8,
+                c.a
+            ),
+        );
         config.insert("grid-spacing", grid.spacing.to_string());
         config.insert("grid-line-width", grid.line_width.to_string());
         config.insert("grid-perspective", grid.perspective.to_string());
@@ -723,24 +786,42 @@ fn configure_effects_from_theme(effects_renderer: &mut EffectsRenderer, theme: &
 
     // Starfield effect configuration from theme
     if let Some(ref starfield) = theme.starfield {
-        config.insert("starfield-enabled", if starfield.enabled { "true" } else { "false" });
+        config.insert(
+            "starfield-enabled",
+            if starfield.enabled { "true" } else { "false" },
+        );
         // Convert Color to rgba() string
         let c = starfield.color;
-        config.insert("starfield-color", format!(
-            "rgba({}, {}, {}, {})",
-            (c.r * 255.0) as u8,
-            (c.g * 255.0) as u8,
-            (c.b * 255.0) as u8,
-            c.a
-        ));
+        config.insert(
+            "starfield-color",
+            format!(
+                "rgba({}, {}, {}, {})",
+                (c.r * 255.0) as u8,
+                (c.g * 255.0) as u8,
+                (c.b * 255.0) as u8,
+                c.a
+            ),
+        );
         config.insert("starfield-density", starfield.density.to_string());
         config.insert("starfield-layers", starfield.layers.to_string());
         config.insert("starfield-speed", starfield.speed.to_string());
-        config.insert("starfield-direction", starfield.direction.as_str().to_string());
+        config.insert(
+            "starfield-direction",
+            starfield.direction.as_str().to_string(),
+        );
         config.insert("starfield-glow-radius", starfield.glow_radius.to_string());
-        config.insert("starfield-glow-intensity", starfield.glow_intensity.to_string());
-        config.insert("starfield-twinkle", if starfield.twinkle { "true" } else { "false" });
-        config.insert("starfield-twinkle-speed", starfield.twinkle_speed.to_string());
+        config.insert(
+            "starfield-glow-intensity",
+            starfield.glow_intensity.to_string(),
+        );
+        config.insert(
+            "starfield-twinkle",
+            if starfield.twinkle { "true" } else { "false" },
+        );
+        config.insert(
+            "starfield-twinkle-speed",
+            starfield.twinkle_speed.to_string(),
+        );
         config.insert("starfield-min-size", starfield.min_size.to_string());
         config.insert("starfield-max-size", starfield.max_size.to_string());
     }
@@ -749,13 +830,16 @@ fn configure_effects_from_theme(effects_renderer: &mut EffectsRenderer, theme: &
     if let Some(ref rain) = theme.rain {
         config.insert("rain-enabled", if rain.enabled { "true" } else { "false" });
         let c = rain.color;
-        config.insert("rain-color", format!(
-            "rgba({}, {}, {}, {})",
-            (c.r * 255.0) as u8,
-            (c.g * 255.0) as u8,
-            (c.b * 255.0) as u8,
-            c.a
-        ));
+        config.insert(
+            "rain-color",
+            format!(
+                "rgba({}, {}, {}, {})",
+                (c.r * 255.0) as u8,
+                (c.g * 255.0) as u8,
+                (c.b * 255.0) as u8,
+                c.a
+            ),
+        );
         config.insert("rain-density", rain.density.to_string());
         config.insert("rain-speed", rain.speed.to_string());
         config.insert("rain-angle", rain.angle.to_string());
@@ -767,35 +851,53 @@ fn configure_effects_from_theme(effects_renderer: &mut EffectsRenderer, theme: &
 
     // Particle effect configuration from theme
     if let Some(ref particles) = theme.particles {
-        config.insert("particles-enabled", if particles.enabled { "true" } else { "false" });
+        config.insert(
+            "particles-enabled",
+            if particles.enabled { "true" } else { "false" },
+        );
         let c = particles.color;
-        config.insert("particles-color", format!(
-            "rgba({}, {}, {}, {})",
-            (c.r * 255.0) as u8,
-            (c.g * 255.0) as u8,
-            (c.b * 255.0) as u8,
-            c.a
-        ));
+        config.insert(
+            "particles-color",
+            format!(
+                "rgba({}, {}, {}, {})",
+                (c.r * 255.0) as u8,
+                (c.g * 255.0) as u8,
+                (c.b * 255.0) as u8,
+                c.a
+            ),
+        );
         config.insert("particles-count", particles.count.to_string());
         config.insert("particles-shape", particles.shape.as_str().to_string());
-        config.insert("particles-behavior", particles.behavior.as_str().to_string());
+        config.insert(
+            "particles-behavior",
+            particles.behavior.as_str().to_string(),
+        );
         config.insert("particles-size", particles.size.to_string());
         config.insert("particles-speed", particles.speed.to_string());
         config.insert("particles-glow-radius", particles.glow_radius.to_string());
-        config.insert("particles-glow-intensity", particles.glow_intensity.to_string());
+        config.insert(
+            "particles-glow-intensity",
+            particles.glow_intensity.to_string(),
+        );
     }
 
     // Matrix effect configuration from theme
     if let Some(ref matrix) = theme.matrix {
-        config.insert("matrix-enabled", if matrix.enabled { "true" } else { "false" });
+        config.insert(
+            "matrix-enabled",
+            if matrix.enabled { "true" } else { "false" },
+        );
         let c = matrix.color;
-        config.insert("matrix-color", format!(
-            "rgba({}, {}, {}, {})",
-            (c.r * 255.0) as u8,
-            (c.g * 255.0) as u8,
-            (c.b * 255.0) as u8,
-            c.a
-        ));
+        config.insert(
+            "matrix-color",
+            format!(
+                "rgba({}, {}, {}, {})",
+                (c.r * 255.0) as u8,
+                (c.g * 255.0) as u8,
+                (c.b * 255.0) as u8,
+                c.a
+            ),
+        );
         config.insert("matrix-density", matrix.density.to_string());
         config.insert("matrix-speed", matrix.speed.to_string());
         config.insert("matrix-font-size", matrix.font_size.to_string());
@@ -804,41 +906,53 @@ fn configure_effects_from_theme(effects_renderer: &mut EffectsRenderer, theme: &
 
     // Shape effect configuration from theme
     if let Some(ref shape) = theme.shape {
-        config.insert("shape-enabled", if shape.enabled { "true" } else { "false" });
+        config.insert(
+            "shape-enabled",
+            if shape.enabled { "true" } else { "false" },
+        );
         config.insert("shape-type", shape.shape_type.as_str().to_string());
         config.insert("shape-size", shape.size.to_string());
         if let Some(ref fill) = shape.fill {
-            config.insert("shape-fill", format!(
-                "rgba({}, {}, {}, {})",
-                (fill.r * 255.0) as u8,
-                (fill.g * 255.0) as u8,
-                (fill.b * 255.0) as u8,
-                fill.a
-            ));
+            config.insert(
+                "shape-fill",
+                format!(
+                    "rgba({}, {}, {}, {})",
+                    (fill.r * 255.0) as u8,
+                    (fill.g * 255.0) as u8,
+                    (fill.b * 255.0) as u8,
+                    fill.a
+                ),
+            );
         } else {
             config.insert("shape-fill", "none".to_string());
         }
         if let Some(ref stroke) = shape.stroke {
-            config.insert("shape-stroke", format!(
-                "rgba({}, {}, {}, {})",
-                (stroke.r * 255.0) as u8,
-                (stroke.g * 255.0) as u8,
-                (stroke.b * 255.0) as u8,
-                stroke.a
-            ));
+            config.insert(
+                "shape-stroke",
+                format!(
+                    "rgba({}, {}, {}, {})",
+                    (stroke.r * 255.0) as u8,
+                    (stroke.g * 255.0) as u8,
+                    (stroke.b * 255.0) as u8,
+                    stroke.a
+                ),
+            );
         } else {
             config.insert("shape-stroke", "none".to_string());
         }
         config.insert("shape-stroke-width", shape.stroke_width.to_string());
         config.insert("shape-glow-radius", shape.glow_radius.to_string());
         if let Some(ref glow_color) = shape.glow_color {
-            config.insert("shape-glow-color", format!(
-                "rgba({}, {}, {}, {})",
-                (glow_color.r * 255.0) as u8,
-                (glow_color.g * 255.0) as u8,
-                (glow_color.b * 255.0) as u8,
-                glow_color.a
-            ));
+            config.insert(
+                "shape-glow-color",
+                format!(
+                    "rgba({}, {}, {}, {})",
+                    (glow_color.r * 255.0) as u8,
+                    (glow_color.g * 255.0) as u8,
+                    (glow_color.b * 255.0) as u8,
+                    glow_color.a
+                ),
+            );
         }
         config.insert("shape-rotation", shape.rotation.as_str().to_string());
         config.insert("shape-rotation-speed", shape.rotation_speed.to_string());
@@ -871,7 +985,9 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
-        let Some(state) = self.windows.get_mut(&id) else { return };
+        let Some(state) = self.windows.get_mut(&id) else {
+            return;
+        };
 
         match event {
             WindowEvent::CloseRequested => {
@@ -882,7 +998,9 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::Focused(focused) => {
-                if focused { self.focused_window = Some(id); }
+                if focused {
+                    self.focused_window = Some(id);
+                }
             }
 
             WindowEvent::Occluded(occluded) => {
@@ -892,10 +1010,14 @@ impl ApplicationHandler for App {
                 }
             }
 
-            WindowEvent::ModifiersChanged(m) => { self.modifiers = m; }
+            WindowEvent::ModifiersChanged(m) => {
+                self.modifiers = m;
+            }
 
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
-                let Some(state) = self.windows.get_mut(&id) else { return };
+                let Some(state) = self.windows.get_mut(&id) else {
+                    return;
+                };
 
                 #[cfg(target_os = "macos")]
                 let mod_pressed = self.modifiers.state().super_key();
@@ -939,7 +1061,9 @@ impl ApplicationHandler for App {
                 }
 
                 // Handle tab editing first
-                if let TabEditResult::Handled = handle_tab_editing(state, &event.logical_key, mod_pressed) {
+                if let TabEditResult::Handled =
+                    handle_tab_editing(state, &event.logical_key, mod_pressed)
+                {
                     return;
                 }
 
@@ -959,7 +1083,8 @@ impl ApplicationHandler for App {
                         Key::Named(NamedKey::Enter) => {
                             // Next match on Enter
                             if !state.search.matches.is_empty() {
-                                state.search.current_match = (state.search.current_match + 1) % state.search.matches.len();
+                                state.search.current_match =
+                                    (state.search.current_match + 1) % state.search.matches.len();
                                 scroll_to_current_match(state);
                                 state.force_active_tab_redraw();
                                 state.window.request_redraw();
@@ -1008,7 +1133,10 @@ impl ApplicationHandler for App {
                             }
                             return;
                         }
-                        Key::Character(c) if c.as_str() == "q" => { event_loop.exit(); return; }
+                        Key::Character(c) if c.as_str() == "q" => {
+                            event_loop.exit();
+                            return;
+                        }
                         Key::Character(c) if c.as_str() == "w" => {
                             if state.gpu.tab_bar.tab_count() > 1 {
                                 if let Some(tab_id) = state.gpu.tab_bar.active_tab_id() {
@@ -1035,7 +1163,10 @@ impl ApplicationHandler for App {
                             let cwd = state.active_shell_cwd();
                             let tab_num = state.gpu.tab_bar.tab_count() + 1;
                             let tab_id = state.gpu.tab_bar.add_tab(format!("Terminal {}", tab_num));
-                            state.gpu.tab_bar.select_tab_index(state.gpu.tab_bar.tab_count() - 1);
+                            state
+                                .gpu
+                                .tab_bar
+                                .select_tab_index(state.gpu.tab_bar.tab_count() - 1);
                             state.create_shell_for_tab_with_cwd(tab_id, cwd);
                             state.dirty = true;
                             state.window.request_redraw();
@@ -1068,7 +1199,8 @@ impl ApplicationHandler for App {
                                     }
                                 } else {
                                     // Next match
-                                    state.search.current_match = (state.search.current_match + 1) % state.search.matches.len();
+                                    state.search.current_match = (state.search.current_match + 1)
+                                        % state.search.matches.len();
                                 }
                                 scroll_to_current_match(state);
                                 state.force_active_tab_redraw();
@@ -1076,13 +1208,17 @@ impl ApplicationHandler for App {
                             }
                             return;
                         }
-                        Key::Character(c) if c.as_str() == "[" && self.modifiers.state().shift_key() => {
+                        Key::Character(c)
+                            if c.as_str() == "[" && self.modifiers.state().shift_key() =>
+                        {
                             state.gpu.tab_bar.prev_tab();
                             state.force_active_tab_redraw();
                             state.window.request_redraw();
                             return;
                         }
-                        Key::Character(c) if c.as_str() == "]" && self.modifiers.state().shift_key() => {
+                        Key::Character(c)
+                            if c.as_str() == "]" && self.modifiers.state().shift_key() =>
+                        {
                             state.gpu.tab_bar.next_tab();
                             state.force_active_tab_redraw();
                             state.window.request_redraw();
@@ -1105,7 +1241,13 @@ impl ApplicationHandler for App {
                 // Send to shell (clears selection on input)
                 let ctrl_pressed = self.modifiers.state().control_key();
                 let alt_pressed = self.modifiers.state().alt_key();
-                if handle_shell_input(state, &event.logical_key, mod_pressed, ctrl_pressed, alt_pressed) {
+                if handle_shell_input(
+                    state,
+                    &event.logical_key,
+                    mod_pressed,
+                    ctrl_pressed,
+                    alt_pressed,
+                ) {
                     clear_terminal_selection(state);
                 }
             }
@@ -1158,7 +1300,11 @@ impl ApplicationHandler for App {
                 }
             }
 
-            WindowEvent::MouseInput { state: button_state, button, .. } => {
+            WindowEvent::MouseInput {
+                state: button_state,
+                button,
+                ..
+            } => {
                 let (x, y) = state.cursor_position;
 
                 // Check for Cmd+click (Super on macOS, Ctrl on Linux) to open URLs
@@ -1223,7 +1369,9 @@ impl ApplicationHandler for App {
                 }
 
                 // Right-click shows context menu
-                if button == winit::event::MouseButton::Right && button_state == ElementState::Pressed {
+                if button == winit::event::MouseButton::Right
+                    && button_state == ElementState::Pressed
+                {
                     state.context_menu.show(x, y);
                     state.dirty = true;
                     state.window.request_redraw();
@@ -1241,7 +1389,8 @@ impl ApplicationHandler for App {
                     match button_state {
                         ElementState::Pressed => {
                             // Try terminal (mouse reporting or selection) first, then tab bar
-                            if !handle_terminal_mouse_button(state, x, y, Instant::now(), btn, true) {
+                            if !handle_terminal_mouse_button(state, x, y, Instant::now(), btn, true)
+                            {
                                 if btn == MOUSE_BUTTON_LEFT {
                                     handle_tab_click(state, x, y, Instant::now());
                                 }
@@ -1305,7 +1454,9 @@ impl ApplicationHandler for App {
         }
 
         // Check for config/theme file changes - collect events first to avoid borrow issues
-        let events: Vec<_> = self.config_watcher.as_mut()
+        let events: Vec<_> = self
+            .config_watcher
+            .as_mut()
             .map(|w| std::iter::from_fn(|| w.poll()).collect())
             .unwrap_or_default();
 
@@ -1455,23 +1606,24 @@ fn handle_context_menu_action(state: &mut WindowState, item: ContextMenuItem) {
             // Select all visible content
             if let Some(tab_id) = state.gpu.tab_bar.active_tab_id() {
                 if let Some(shell) = state.shells.get_mut(&tab_id) {
-                    use crt_core::{Point, Line, Column, SelectionType};
+                    use crt_core::{Column, Line, Point, SelectionType};
                     let terminal = shell.terminal_mut();
                     let screen_lines = terminal.screen_lines();
                     let columns = terminal.columns();
 
                     // Start selection at top-left
                     terminal.start_selection(
-                        Point { line: Line(0), column: Column(0) },
+                        Point {
+                            line: Line(0),
+                            column: Column(0),
+                        },
                         SelectionType::Simple,
                     );
                     // Extend to bottom-right
-                    terminal.update_selection(
-                        Point {
-                            line: Line(screen_lines as i32 - 1),
-                            column: Column(columns - 1),
-                        },
-                    );
+                    terminal.update_selection(Point {
+                        line: Line(screen_lines as i32 - 1),
+                        column: Column(columns - 1),
+                    });
                     state.dirty = true;
                 }
             }
@@ -1480,7 +1632,8 @@ fn handle_context_menu_action(state: &mut WindowState, item: ContextMenuItem) {
 }
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn,crt=info")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn,crt=info"))
+        .init();
     log::info!("CRT Terminal starting");
 
     // Initialize profiling (enabled via CRT_PROFILE=1)

@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crt_core::{Size, Terminal, ShellTerminal};
+use crt_core::{ShellTerminal, Size, Terminal};
 use tempfile::TempDir;
 
 /// Test environment with isolated config directory
@@ -29,26 +29,29 @@ impl TestEnvironment {
         std::fs::create_dir_all(config_dir.join("themes"))
             .expect("Failed to create themes directory");
 
-        Self { temp_dir, config_dir }
+        Self {
+            temp_dir,
+            config_dir,
+        }
     }
 
     /// Write a test config file
     pub fn write_config(&self, content: &str) {
         let config_path = self.config_dir.join("config.toml");
-        std::fs::write(&config_path, content)
-            .expect("Failed to write test config");
+        std::fs::write(&config_path, content).expect("Failed to write test config");
     }
 
     /// Write a test theme file
     pub fn write_theme(&self, name: &str, content: &str) {
         let theme_path = self.config_dir.join("themes").join(format!("{}.css", name));
-        std::fs::write(&theme_path, content)
-            .expect("Failed to write test theme");
+        std::fs::write(&theme_path, content).expect("Failed to write test theme");
     }
 
     /// Get config directory path for setting CRT_CONFIG_DIR
     pub fn config_dir_str(&self) -> &str {
-        self.config_dir.to_str().expect("Path should be valid UTF-8")
+        self.config_dir
+            .to_str()
+            .expect("Path should be valid UTF-8")
     }
 }
 
@@ -116,9 +119,7 @@ impl TerminalTestHarness {
         }
 
         // Trim trailing spaces from each line
-        lines.iter()
-            .map(|l| l.trim_end().to_string())
-            .collect()
+        lines.iter().map(|l| l.trim_end().to_string()).collect()
     }
 
     /// Get visible content as a single string (lines joined by newlines)
@@ -135,24 +136,44 @@ impl TerminalTestHarness {
     /// Assert cursor is at specific position
     pub fn assert_cursor_at(&self, row: i32, col: usize) {
         let (r, c) = self.cursor_position();
-        assert_eq!((r, c), (row, col), "Expected cursor at ({}, {}), got ({}, {})", row, col, r, c);
+        assert_eq!(
+            (r, c),
+            (row, col),
+            "Expected cursor at ({}, {}), got ({}, {})",
+            row,
+            col,
+            r,
+            c
+        );
     }
 
     /// Assert line contains specific text
     pub fn assert_line_contains(&self, line_num: usize, expected: &str) {
         let lines = self.visible_lines();
-        assert!(line_num < lines.len(), "Line {} out of range (total: {})", line_num, lines.len());
+        assert!(
+            line_num < lines.len(),
+            "Line {} out of range (total: {})",
+            line_num,
+            lines.len()
+        );
         assert!(
             lines[line_num].contains(expected),
             "Line {} doesn't contain '{}'. Actual: '{}'",
-            line_num, expected, lines[line_num]
+            line_num,
+            expected,
+            lines[line_num]
         );
     }
 
     /// Assert line equals specific text
     pub fn assert_line_eq(&self, line_num: usize, expected: &str) {
         let lines = self.visible_lines();
-        assert!(line_num < lines.len(), "Line {} out of range (total: {})", line_num, lines.len());
+        assert!(
+            line_num < lines.len(),
+            "Line {} out of range (total: {})",
+            line_num,
+            lines.len()
+        );
         assert_eq!(
             lines[line_num], expected,
             "Line {} mismatch. Expected: '{}', Actual: '{}'",
@@ -227,7 +248,10 @@ impl ShellTestHarness {
     }
 
     /// Wait for output to stabilize (no new output for given duration)
-    pub fn wait_for_stable_output(&mut self, stability_duration: Duration) -> anyhow::Result<String> {
+    pub fn wait_for_stable_output(
+        &mut self,
+        stability_duration: Duration,
+    ) -> anyhow::Result<String> {
         let start = Instant::now();
         let mut last_output_time = Instant::now();
         let mut accumulated = String::new();
@@ -268,7 +292,8 @@ impl ShellTestHarness {
             self.process_output();
 
             let lines = self.shell.terminal().all_lines_text();
-            let content: String = lines.iter()
+            let content: String = lines
+                .iter()
                 .map(|(_, l)| l.as_str())
                 .collect::<Vec<_>>()
                 .join("\n");
@@ -278,7 +303,11 @@ impl ShellTestHarness {
             }
 
             if start.elapsed() > self.timeout {
-                anyhow::bail!("Timeout waiting for text '{}'. Current content: {}", expected, content);
+                anyhow::bail!(
+                    "Timeout waiting for text '{}'. Current content: {}",
+                    expected,
+                    content
+                );
             }
 
             std::thread::sleep(Duration::from_millis(10));
@@ -305,14 +334,14 @@ impl ShellTestHarness {
             }
         }
 
-        lines.iter()
-            .map(|l| l.trim_end().to_string())
-            .collect()
+        lines.iter().map(|l| l.trim_end().to_string()).collect()
     }
 
     /// Get all terminal content (including history)
     pub fn all_content(&self) -> String {
-        self.shell.terminal().all_lines_text()
+        self.shell
+            .terminal()
+            .all_lines_text()
             .iter()
             .map(|(_, l)| l.as_str())
             .collect::<Vec<_>>()
@@ -366,12 +395,14 @@ impl MemoryStats {
 
     /// Format RSS in human-readable form
     pub fn rss_human(&self) -> String {
-        self.rss.map_or("N/A".to_string(), |bytes| format_bytes(bytes))
+        self.rss
+            .map_or("N/A".to_string(), |bytes| format_bytes(bytes))
     }
 
     /// Format virtual size in human-readable form
     pub fn vsize_human(&self) -> String {
-        self.vsize.map_or("N/A".to_string(), |bytes| format_bytes(bytes))
+        self.vsize
+            .map_or("N/A".to_string(), |bytes| format_bytes(bytes))
     }
 }
 

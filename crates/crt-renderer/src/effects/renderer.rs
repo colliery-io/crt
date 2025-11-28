@@ -7,7 +7,7 @@
 use std::sync::{Arc, Mutex};
 
 use vello::kurbo::Rect;
-use vello::{peniko, AaConfig, RenderParams, Renderer, Scene};
+use vello::{AaConfig, RenderParams, Renderer, Scene, peniko};
 
 use super::{BackdropEffect, EffectConfig};
 

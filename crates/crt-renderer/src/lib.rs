@@ -19,26 +19,33 @@ pub mod tab_bar;
 pub mod terminal_vello;
 pub mod traits;
 
-pub use background_image::{BackgroundImageState, BackgroundTexture, LoadedImage, ImageFrame};
-pub use effects::{BackdropEffect, EffectConfig, EffectsRenderer, GridEffect, MatrixEffect, MotionBehavior, ParticleEffect, Position, RainEffect, ShapeEffect, SpriteEffect, StarfieldEffect};
-pub use sprite_renderer::{SpriteRenderer, SpriteSheet, SpriteTexture, SpriteAnimationState, SpriteConfig, SpritePosition, SpriteMotion};
-pub use glyph_cache::{GlyphCache, GlyphKey, GlyphStyle, FontVariants, CachedGlyph, PositionedGlyph};
+pub use background_image::{BackgroundImageState, BackgroundTexture, ImageFrame, LoadedImage};
+pub use effects::{
+    BackdropEffect, EffectConfig, EffectsRenderer, GridEffect, MatrixEffect, MotionBehavior,
+    ParticleEffect, Position, RainEffect, ShapeEffect, SpriteEffect, StarfieldEffect,
+};
+pub use glyph_cache::{
+    CachedGlyph, FontVariants, GlyphCache, GlyphKey, GlyphStyle, PositionedGlyph,
+};
 pub use grid_renderer::GridRenderer;
+pub use mock::{MockRenderer, RenderCall};
 pub use rect_renderer::RectRenderer;
-pub use tab_bar::{TabBar, Tab, TabRect, EditState, TabBarState, TabLayout, VelloTabBarRenderer};
-pub use terminal_vello::{TerminalVelloRenderer, CursorShape, CursorState};
+pub use sprite_renderer::{
+    SpriteAnimationState, SpriteConfig, SpriteMotion, SpritePosition, SpriteRenderer, SpriteSheet,
+    SpriteTexture,
+};
+pub use tab_bar::{EditState, Tab, TabBar, TabBarState, TabLayout, TabRect, VelloTabBarRenderer};
+pub use terminal_vello::{CursorShape, CursorState, TerminalVelloRenderer};
 pub use traits::{
     BackdropRenderer, CellContent, Color, ContextMenuItem, CursorInfo,
     CursorShape as TraitCursorShape, GridPosition, Rect, SearchHighlight, SelectionRange,
     TabRenderInfo, TextRenderer, UiRenderer,
 };
-pub use mock::{MockRenderer, RenderCall};
 
 use bytemuck::cast_slice;
 use crt_theme::Theme;
 use shaders::builtin;
 use wgpu::util::DeviceExt;
-
 
 /// Background pipeline - renders gradient + animated grid
 pub struct BackgroundPipeline {
@@ -58,18 +65,16 @@ impl BackgroundPipeline {
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Background Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
-            ],
+                count: None,
+            }],
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -119,12 +124,10 @@ impl BackgroundPipeline {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Background Bind Group"),
             layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-            ],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
         });
 
         Self {
@@ -314,7 +317,11 @@ impl BackgroundImagePipeline {
         queue.write_buffer(&self.uniform_buffer, 0, cast_slice(&[uniforms]));
     }
 
-    pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>, bind_group: &'a wgpu::BindGroup) {
+    pub fn render<'a>(
+        &'a self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        bind_group: &'a wgpu::BindGroup,
+    ) {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, bind_group, &[]);
         render_pass.draw(0..4, 0..1);
@@ -471,7 +478,11 @@ impl CompositePipeline {
         queue.write_buffer(&self.uniform_buffer, 0, cast_slice(&[uniforms]));
     }
 
-    pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>, bind_group: &'a wgpu::BindGroup) {
+    pub fn render<'a>(
+        &'a self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        bind_group: &'a wgpu::BindGroup,
+    ) {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, bind_group, &[]);
         render_pass.draw(0..4, 0..1);
@@ -521,7 +532,11 @@ impl EffectPipeline {
     }
 
     // Old render method - kept for compatibility but should migrate to new approach
-    pub fn render<'a>(&'a self, _render_pass: &mut wgpu::RenderPass<'a>, _bind_group: &'a wgpu::BindGroup) {
+    pub fn render<'a>(
+        &'a self,
+        _render_pass: &mut wgpu::RenderPass<'a>,
+        _bind_group: &'a wgpu::BindGroup,
+    ) {
         panic!("Use render_background() and render_composite() separately");
     }
 }
@@ -534,17 +549,17 @@ const CRT_REFERENCE_HEIGHT: f32 = 1080.0;
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CrtUniforms {
-    pub screen_size: [f32; 2],       // 8 bytes
-    pub time: f32,                    // 4 bytes
-    pub scanline_intensity: f32,      // 4 bytes = 16 bytes
-    pub scanline_frequency: f32,      // 4 bytes
-    pub curvature: f32,               // 4 bytes
-    pub vignette: f32,                // 4 bytes
-    pub chromatic_aberration: f32,    // 4 bytes = 32 bytes
-    pub bloom: f32,                   // 4 bytes
-    pub flicker: f32,                 // 4 bytes
-    pub reference_height: f32,        // 4 bytes - baseline resolution for scaling
-    pub _pad: [f32; 5],               // 20 bytes = 64 bytes total
+    pub screen_size: [f32; 2],     // 8 bytes
+    pub time: f32,                 // 4 bytes
+    pub scanline_intensity: f32,   // 4 bytes = 16 bytes
+    pub scanline_frequency: f32,   // 4 bytes
+    pub curvature: f32,            // 4 bytes
+    pub vignette: f32,             // 4 bytes
+    pub chromatic_aberration: f32, // 4 bytes = 32 bytes
+    pub bloom: f32,                // 4 bytes
+    pub flicker: f32,              // 4 bytes
+    pub reference_height: f32,     // 4 bytes - baseline resolution for scaling
+    pub _pad: [f32; 5],            // 20 bytes = 64 bytes total
 }
 
 /// CRT post-processing pipeline - applies scanlines, curvature, vignette
@@ -728,7 +743,11 @@ impl CrtPipeline {
         queue.write_buffer(&self.uniform_buffer, 0, cast_slice(&[uniforms]));
     }
 
-    pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>, bind_group: &'a wgpu::BindGroup) {
+    pub fn render<'a>(
+        &'a self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        bind_group: &'a wgpu::BindGroup,
+    ) {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, bind_group, &[]);
         render_pass.draw(0..4, 0..1);

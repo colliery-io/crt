@@ -8,12 +8,12 @@
 //! Text and glow effects are rendered separately via the text pipeline,
 //! triggered by CSS properties like `text-shadow`.
 
-mod state;
 mod layout;
+mod state;
 mod vello_renderer;
 
-pub use state::{Tab, EditState, TabBarState};
-pub use layout::{TabRect, TabLayout};
+pub use layout::{TabLayout, TabRect};
+pub use state::{EditState, Tab, TabBarState};
 pub use vello_renderer::VelloTabBarRenderer;
 
 use crt_theme::TabTheme;
@@ -135,9 +135,9 @@ impl TabBar {
     /// Hit test - returns (tab_id, is_close_button) if hit
     pub fn hit_test(&self, x: f32, y: f32) -> Option<(u64, bool)> {
         let tabs = self.state.tabs();
-        self.layout.hit_test(x, y).map(|(idx, is_close)| {
-            (tabs[idx].id, is_close)
-        })
+        self.layout
+            .hit_test(x, y)
+            .map(|(idx, is_close)| (tabs[idx].id, is_close))
     }
 
     /// Update a tab's title by ID (from OSC escape sequences)
@@ -263,16 +263,18 @@ impl TabBar {
 
     /// Get text shadow for inactive tabs (if any)
     pub fn inactive_tab_text_shadow(&self) -> Option<(f32, [f32; 4])> {
-        self.theme.tab.text_shadow.map(|s| {
-            (s.radius, color_to_array(&s.color))
-        })
+        self.theme
+            .tab
+            .text_shadow
+            .map(|s| (s.radius, color_to_array(&s.color)))
     }
 
     /// Get text shadow for active tabs (if any)
     pub fn active_tab_text_shadow(&self) -> Option<(f32, [f32; 4])> {
-        self.theme.active.text_shadow.map(|s| {
-            (s.radius, color_to_array(&s.color))
-        })
+        self.theme
+            .active
+            .text_shadow
+            .map(|s| (s.radius, color_to_array(&s.color)))
     }
 
     // ---- Rendering ----
@@ -284,21 +286,27 @@ impl TabBar {
         let font_height = 14.0 * s;
         let edit_state = self.state.edit_state();
 
-        self.layout.tab_rects().iter().zip(self.state.tabs().iter()).enumerate().map(|(i, (rect, tab))| {
-            let text_x = rect.x + tab_padding_x;
-            let text_y = rect.y + (rect.height - font_height) / 2.0;
-            let is_active = i == self.state.active_tab_index();
+        self.layout
+            .tab_rects()
+            .iter()
+            .zip(self.state.tabs().iter())
+            .enumerate()
+            .map(|(i, (rect, tab))| {
+                let text_x = rect.x + tab_padding_x;
+                let text_y = rect.y + (rect.height - font_height) / 2.0;
+                let is_active = i == self.state.active_tab_index();
 
-            let (display_text, is_editing) = if edit_state.tab_id == Some(tab.id) {
-                let mut text = edit_state.text.clone();
-                text.insert(edit_state.cursor, '|');
-                (text, true)
-            } else {
-                (tab.title.clone(), false)
-            };
+                let (display_text, is_editing) = if edit_state.tab_id == Some(tab.id) {
+                    let mut text = edit_state.text.clone();
+                    text.insert(edit_state.cursor, '|');
+                    (text, true)
+                } else {
+                    (tab.title.clone(), false)
+                };
 
-            (text_x, text_y, display_text, is_active, is_editing)
-        }).collect()
+                (text_x, text_y, display_text, is_active, is_editing)
+            })
+            .collect()
     }
 
     /// Prepare the tab bar for rendering (builds vello scene)
@@ -309,7 +317,8 @@ impl TabBar {
         }
 
         // Build vello scene for shapes
-        self.vello_renderer.prepare(device, &self.state, &self.layout, &self.theme);
+        self.vello_renderer
+            .prepare(device, &self.state, &self.layout, &self.theme);
     }
 
     /// Render vello scene to internal texture using shared renderer
@@ -319,7 +328,8 @@ impl TabBar {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Result<(), vello::Error> {
-        self.vello_renderer.render_to_texture(renderer, device, queue)
+        self.vello_renderer
+            .render_to_texture(renderer, device, queue)
     }
 
     /// Get vello texture view for compositing
@@ -378,7 +388,13 @@ impl TabBar {
             if is_active {
                 let accent = color_to_array(&self.theme.active.accent);
                 let accent_height = 2.0 * s;
-                rect_renderer.push_rect(rect.x, rect.y + rect.height - accent_height, rect.width, accent_height, accent);
+                rect_renderer.push_rect(
+                    rect.x,
+                    rect.y + rect.height - accent_height,
+                    rect.width,
+                    accent_height,
+                    accent,
+                );
             }
         }
 
@@ -394,8 +410,20 @@ impl TabBar {
             let thickness = s * 1.5;
 
             // Draw X as two overlapping rectangles (simplified)
-            rect_renderer.push_rect(cx - size, cy - thickness * 0.5, size * 2.0, thickness, close_color);
-            rect_renderer.push_rect(cx - thickness * 0.5, cy - size, thickness, size * 2.0, close_color);
+            rect_renderer.push_rect(
+                cx - size,
+                cy - thickness * 0.5,
+                size * 2.0,
+                thickness,
+                close_color,
+            );
+            rect_renderer.push_rect(
+                cx - thickness * 0.5,
+                cy - size,
+                thickness,
+                size * 2.0,
+                close_color,
+            );
         }
     }
 }

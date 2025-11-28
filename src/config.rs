@@ -29,7 +29,10 @@ impl ConfigPaths {
             if path.is_absolute() {
                 return Some(Self::new(path));
             }
-            log::warn!("CRT_CONFIG_DIR must be an absolute path, ignoring: {:?}", path);
+            log::warn!(
+                "CRT_CONFIG_DIR must be an absolute path, ignoring: {:?}",
+                path
+            );
         }
 
         // Fall back to default
@@ -430,8 +433,7 @@ impl Config {
 
     /// Get theme CSS with paths from environment or default
     pub fn theme_css_with_path(&self) -> Option<(String, PathBuf)> {
-        ConfigPaths::from_env_or_default()
-            .and_then(|paths| self.theme_css_with_paths(&paths))
+        ConfigPaths::from_env_or_default().and_then(|paths| self.theme_css_with_paths(&paths))
     }
 
     /// Get theme CSS content and the theme file's directory using specified paths
@@ -468,7 +470,10 @@ mod tests {
     fn test_config_paths_new() {
         let paths = ConfigPaths::new(PathBuf::from("/test/config"));
         assert_eq!(paths.config_dir, PathBuf::from("/test/config"));
-        assert_eq!(paths.config_path(), PathBuf::from("/test/config/config.toml"));
+        assert_eq!(
+            paths.config_path(),
+            PathBuf::from("/test/config/config.toml")
+        );
         assert_eq!(paths.themes_dir(), PathBuf::from("/test/config/themes"));
         assert_eq!(
             paths.theme_path("synthwave"),

@@ -19,9 +19,9 @@
 //! - `--starfield-min-size: <number>` (minimum star size in pixels)
 //! - `--starfield-max-size: <number>` (maximum star size in pixels)
 
+use vello::Scene;
 use vello::kurbo::{Affine, Circle, Point, Rect};
 use vello::peniko::{Brush, Color};
-use vello::Scene;
 
 use super::{BackdropEffect, EffectConfig};
 
@@ -501,7 +501,10 @@ mod tests {
 
     #[test]
     fn test_direction_parsing() {
-        assert_eq!(StarDirection::from_str("static"), Some(StarDirection::Static));
+        assert_eq!(
+            StarDirection::from_str("static"),
+            Some(StarDirection::Static)
+        );
         assert_eq!(StarDirection::from_str("UP"), Some(StarDirection::Up));
         assert_eq!(StarDirection::from_str("down"), Some(StarDirection::Down));
         assert_eq!(StarDirection::from_str("LEFT"), Some(StarDirection::Left));
