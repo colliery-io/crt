@@ -279,6 +279,30 @@ pub fn handle_shell_input(
             shell.send_input(b"\x1b[D");
             input_sent = true;
         }
+        Key::Named(NamedKey::Home) => {
+            shell.send_input(b"\x1b[H");
+            input_sent = true;
+        }
+        Key::Named(NamedKey::End) => {
+            shell.send_input(b"\x1b[F");
+            input_sent = true;
+        }
+        Key::Named(NamedKey::PageUp) => {
+            shell.send_input(b"\x1b[5~");
+            input_sent = true;
+        }
+        Key::Named(NamedKey::PageDown) => {
+            shell.send_input(b"\x1b[6~");
+            input_sent = true;
+        }
+        Key::Named(NamedKey::Insert) => {
+            shell.send_input(b"\x1b[2~");
+            input_sent = true;
+        }
+        Key::Named(NamedKey::Delete) => {
+            shell.send_input(b"\x1b[3~");
+            input_sent = true;
+        }
         Key::Named(NamedKey::Space) => {
             shell.send_input(b" ");
             input_sent = true;
