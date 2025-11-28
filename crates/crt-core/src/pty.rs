@@ -7,6 +7,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, PtySize};
+use std::path::PathBuf;
 
 /// Messages sent to the PTY writer thread
 pub enum PtyInput {
@@ -25,12 +26,22 @@ pub struct Pty {
     /// Channel to receive output from the PTY
     output_rx: Receiver<Vec<u8>>,
     /// Child process handle
-    _child: Box<dyn Child + Send + Sync>,
+    child: Box<dyn Child + Send + Sync>,
 }
 
 impl Pty {
     /// Spawn a new shell in a PTY
     pub fn spawn(shell: Option<&str>, cols: u16, rows: u16) -> anyhow::Result<Self> {
+        Self::spawn_with_cwd(shell, cols, rows, None)
+    }
+
+    /// Spawn a new shell in a PTY with a specific working directory
+    pub fn spawn_with_cwd(
+        shell: Option<&str>,
+        cols: u16,
+        rows: u16,
+        cwd: Option<PathBuf>,
+    ) -> anyhow::Result<Self> {
         let pty_system = native_pty_system();
 
         let size = PtySize {
@@ -57,6 +68,10 @@ impl Pty {
         cmd.env("TERM", "xterm-256color");
         // COLORTERM indicates 24-bit true color support
         cmd.env("COLORTERM", "truecolor");
+        // Set working directory if specified
+        if let Some(dir) = cwd {
+            cmd.cwd(dir);
+        }
         let child = pair.slave.spawn_command(cmd)?;
 
         // Set up channels for communication
@@ -123,8 +138,20 @@ impl Pty {
         Ok(Self {
             input_tx,
             output_rx,
-            _child: child,
+            child,
         })
+    }
+
+    /// Get the process ID of the shell
+    pub fn process_id(&self) -> Option<u32> {
+        self.child.process_id()
+    }
+
+    /// Get the current working directory of the shell process
+    /// Uses platform-specific methods to query the foreground process's cwd
+    pub fn working_directory(&self) -> Option<PathBuf> {
+        let pid = self.process_id()?;
+        get_process_cwd(pid)
     }
 
     /// Write data to the PTY (keyboard input)
@@ -161,6 +188,50 @@ impl Drop for Pty {
     fn drop(&mut self) {
         self.shutdown();
     }
+}
+
+/// Get the current working directory of a process by PID
+#[cfg(target_os = "macos")]
+fn get_process_cwd(pid: u32) -> Option<PathBuf> {
+    use std::process::Command;
+
+    // Use lsof to get the current working directory of the process
+    // lsof -p PID -a -d cwd -Fn outputs the cwd in a parseable format
+    let output = Command::new("lsof")
+        .args(["-p", &pid.to_string(), "-a", "-d", "cwd", "-Fn"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Parse lsof output - look for lines starting with 'n' (name field)
+    for line in stdout.lines() {
+        if let Some(path) = line.strip_prefix('n') {
+            let path = PathBuf::from(path);
+            if path.is_dir() {
+                return Some(path);
+            }
+        }
+    }
+
+    None
+}
+
+/// Get the current working directory of a process by PID
+#[cfg(target_os = "linux")]
+fn get_process_cwd(pid: u32) -> Option<PathBuf> {
+    // On Linux, we can read /proc/PID/cwd symlink
+    let cwd_path = format!("/proc/{}/cwd", pid);
+    std::fs::read_link(&cwd_path).ok()
+}
+
+/// Fallback for other platforms
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn get_process_cwd(_pid: u32) -> Option<PathBuf> {
+    None
 }
 
 #[cfg(test)]

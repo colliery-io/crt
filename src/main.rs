@@ -449,10 +449,12 @@ impl App {
         match action {
             MenuAction::NewTab => {
                 if let Some(state) = self.focused_window_mut() {
+                    // Get current shell's working directory for the new tab
+                    let cwd = state.active_shell_cwd();
                     let tab_num = state.gpu.tab_bar.tab_count() + 1;
                     let tab_id = state.gpu.tab_bar.add_tab(format!("Terminal {}", tab_num));
                     state.gpu.tab_bar.select_tab_index(state.gpu.tab_bar.tab_count() - 1);
-                    state.create_shell_for_tab(tab_id);
+                    state.create_shell_for_tab_with_cwd(tab_id, cwd);
                     state.dirty = true;
                     state.window.request_redraw();
                 }
@@ -1019,10 +1021,12 @@ impl ApplicationHandler for App {
                             return;
                         }
                         Key::Character(c) if c.as_str() == "t" => {
+                            // Get current shell's working directory for the new tab
+                            let cwd = state.active_shell_cwd();
                             let tab_num = state.gpu.tab_bar.tab_count() + 1;
                             let tab_id = state.gpu.tab_bar.add_tab(format!("Terminal {}", tab_num));
                             state.gpu.tab_bar.select_tab_index(state.gpu.tab_bar.tab_count() - 1);
-                            state.create_shell_for_tab(tab_id);
+                            state.create_shell_for_tab_with_cwd(tab_id, cwd);
                             state.dirty = true;
                             state.window.request_redraw();
                             return;

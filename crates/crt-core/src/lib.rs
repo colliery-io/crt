@@ -422,12 +422,25 @@ impl ShellTerminal {
         Ok(Self { terminal, pty })
     }
 
+    /// Create a new shell terminal with a specific working directory
+    pub fn with_cwd(size: Size, cwd: std::path::PathBuf) -> anyhow::Result<Self> {
+        let terminal = Terminal::new(size);
+        let pty = Pty::spawn_with_cwd(None, size.columns as u16, size.lines as u16, Some(cwd))?;
+
+        Ok(Self { terminal, pty })
+    }
+
     /// Create a new shell terminal with a specific shell
     pub fn with_shell(size: Size, shell: &str) -> anyhow::Result<Self> {
         let terminal = Terminal::new(size);
         let pty = Pty::spawn(Some(shell), size.columns as u16, size.lines as u16)?;
 
         Ok(Self { terminal, pty })
+    }
+
+    /// Get the current working directory of the shell process
+    pub fn working_directory(&self) -> Option<std::path::PathBuf> {
+        self.pty.working_directory()
     }
 
     /// Process any available PTY output through the terminal

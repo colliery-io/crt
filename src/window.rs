@@ -644,9 +644,22 @@ impl WindowState {
         })
     }
 
-    /// Create a shell for a new tab
+    /// Create a shell for a new tab, optionally in the specified working directory
     pub fn create_shell_for_tab(&mut self, tab_id: u64) {
-        match ShellTerminal::new(Size::new(self.cols, self.rows)) {
+        self.create_shell_for_tab_with_cwd(tab_id, None);
+    }
+
+    /// Create a shell for a new tab with a specific working directory
+    pub fn create_shell_for_tab_with_cwd(&mut self, tab_id: u64, cwd: Option<std::path::PathBuf>) {
+        let size = Size::new(self.cols, self.rows);
+        let result = if let Some(dir) = cwd {
+            log::info!("Spawning shell in directory: {:?}", dir);
+            ShellTerminal::with_cwd(size, dir)
+        } else {
+            ShellTerminal::new(size)
+        };
+
+        match result {
             Ok(shell) => {
                 log::info!("Shell spawned for tab {}", tab_id);
                 self.shells.insert(tab_id, shell);
@@ -656,6 +669,13 @@ impl WindowState {
                 log::error!("Failed to spawn shell for tab {}: {}", tab_id, e);
             }
         }
+    }
+
+    /// Get the current working directory of the active tab's shell
+    pub fn active_shell_cwd(&self) -> Option<std::path::PathBuf> {
+        let tab_id = self.gpu.tab_bar.active_tab_id()?;
+        let shell = self.shells.get(&tab_id)?;
+        shell.working_directory()
     }
 
     /// Remove shell for a closed tab
