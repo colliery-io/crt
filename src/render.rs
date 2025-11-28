@@ -49,6 +49,8 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         if let Some(shell) = state.shells.get_mut(&tab_id) {
             if shell.process_pty_output() {
                 state.dirty = true;
+                // Invalidate content hash to ensure re-render captures all changes
+                state.content_hashes.insert(tab_id, 0);
             }
 
             // Check for terminal events (title changes and bell)
