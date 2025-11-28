@@ -22,7 +22,7 @@
     --matrix-font-size: 14;
     --matrix-charset: "ATGC";
 
-    /* CRT post-processing */
+    /* CRT post-processing - disabled due to redraw issues
     --crt-enabled: true;
     --crt-scanline-intensity: 0.06;
     --crt-scanline-frequency: 1.0;
@@ -30,6 +30,7 @@
     --crt-vignette: 0.15;
     --crt-chromatic-aberration: 0.15;
     --crt-flicker: 0.005;
+    */
 }
 
 :terminal::selection {
