@@ -3,6 +3,8 @@
 //! This module provides testable tab management without requiring GPU or window
 //! dependencies. Tab state tracks the list of tabs, active tab, and metadata.
 
+use std::collections::HashMap;
+
 /// Unique identifier for a tab
 pub type TabId = u64;
 
@@ -43,6 +45,8 @@ pub struct TabState {
     active_index: usize,
     /// Next ID to assign to a new tab
     next_id: TabId,
+    /// Content hash per tab (used to detect changes and skip unnecessary redraws)
+    content_hashes: HashMap<TabId, u64>,
 }
 
 impl Default for TabState {
@@ -58,6 +62,7 @@ impl TabState {
             tabs: Vec::new(),
             active_index: 0,
             next_id: 1,
+            content_hashes: HashMap::new(),
         }
     }
 
@@ -67,6 +72,7 @@ impl TabState {
             tabs: Vec::new(),
             active_index: 0,
             next_id: start_id,
+            content_hashes: HashMap::new(),
         }
     }
 
@@ -301,6 +307,46 @@ impl TabState {
         }
 
         true
+    }
+
+    // === Content hash management ===
+
+    /// Get the content hash for a tab
+    pub fn content_hash(&self, tab_id: TabId) -> Option<u64> {
+        self.content_hashes.get(&tab_id).copied()
+    }
+
+    /// Set the content hash for a tab
+    pub fn set_content_hash(&mut self, tab_id: TabId, hash: u64) {
+        self.content_hashes.insert(tab_id, hash);
+    }
+
+    /// Invalidate (clear) the content hash for a tab, forcing a redraw
+    pub fn invalidate_content_hash(&mut self, tab_id: TabId) {
+        self.content_hashes.insert(tab_id, 0);
+    }
+
+    /// Invalidate content hashes for all tabs
+    pub fn invalidate_all_content_hashes(&mut self) {
+        for hash in self.content_hashes.values_mut() {
+            *hash = 0;
+        }
+    }
+
+    /// Remove content hash for a tab (when tab is closed)
+    pub fn remove_content_hash(&mut self, tab_id: TabId) {
+        self.content_hashes.remove(&tab_id);
+    }
+
+    /// Invalidate the active tab's content hash, forcing a redraw
+    /// Returns true if there was an active tab to invalidate
+    pub fn invalidate_active_tab_content(&mut self) -> bool {
+        if let Some(tab_id) = self.active_id() {
+            self.content_hashes.insert(tab_id, 0);
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -695,5 +741,92 @@ mod tests {
         let cloned = state.clone();
         assert_eq!(cloned.len(), 2);
         assert_eq!(cloned.active_index(), 1);
+    }
+
+    // === Content hash management ===
+
+    #[test]
+    fn test_content_hash_get_set() {
+        let mut state = TabState::new();
+        let id = state.add_tab("Tab 1");
+
+        // Initially no hash
+        assert_eq!(state.content_hash(id), None);
+
+        // Set hash
+        state.set_content_hash(id, 12345);
+        assert_eq!(state.content_hash(id), Some(12345));
+
+        // Update hash
+        state.set_content_hash(id, 67890);
+        assert_eq!(state.content_hash(id), Some(67890));
+    }
+
+    #[test]
+    fn test_content_hash_invalidate() {
+        let mut state = TabState::new();
+        let id = state.add_tab("Tab 1");
+        state.set_content_hash(id, 12345);
+
+        state.invalidate_content_hash(id);
+        assert_eq!(state.content_hash(id), Some(0));
+    }
+
+    #[test]
+    fn test_content_hash_invalidate_all() {
+        let mut state = TabState::new();
+        let id1 = state.add_tab("Tab 1");
+        let id2 = state.add_tab("Tab 2");
+        state.set_content_hash(id1, 111);
+        state.set_content_hash(id2, 222);
+
+        state.invalidate_all_content_hashes();
+        assert_eq!(state.content_hash(id1), Some(0));
+        assert_eq!(state.content_hash(id2), Some(0));
+    }
+
+    #[test]
+    fn test_content_hash_remove() {
+        let mut state = TabState::new();
+        let id = state.add_tab("Tab 1");
+        state.set_content_hash(id, 12345);
+
+        state.remove_content_hash(id);
+        assert_eq!(state.content_hash(id), None);
+    }
+
+    #[test]
+    fn test_invalidate_active_tab_content() {
+        let mut state = TabState::new();
+
+        // No active tab
+        assert!(!state.invalidate_active_tab_content());
+
+        // With active tab
+        let id1 = state.add_tab_and_activate("Tab 1");
+        let id2 = state.add_tab("Tab 2");
+        state.set_content_hash(id1, 111);
+        state.set_content_hash(id2, 222);
+
+        assert!(state.invalidate_active_tab_content());
+        assert_eq!(state.content_hash(id1), Some(0)); // Active tab invalidated
+        assert_eq!(state.content_hash(id2), Some(222)); // Other tab unchanged
+    }
+
+    #[test]
+    fn test_invalidate_active_after_close() {
+        let mut state = TabState::new();
+        let id1 = state.add_tab_and_activate("Tab 1");
+        let id2 = state.add_tab("Tab 2");
+        state.set_content_hash(id1, 111);
+        state.set_content_hash(id2, 222);
+
+        // Close active tab - simulates the tab close flow
+        state.close_tab(id1);
+        state.remove_content_hash(id1);
+
+        // Now tab 2 is active, invalidate it
+        assert!(state.invalidate_active_tab_content());
+        assert_eq!(state.content_hash(id2), Some(0));
     }
 }
