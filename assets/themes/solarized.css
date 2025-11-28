@@ -44,6 +44,134 @@
     --color-13: #6c71c4;  /* violet (bright magenta) */
     --color-14: #93a1a1;  /* base1 (bright cyan) */
     --color-15: #fdf6e3;  /* base3 (bright white) */
+
+    /* Extended 256-color palette mapped to Solarized */
+    /* Blues -> Solarized blue */
+    --color-17: #073642;
+    --color-18: #073642;
+    --color-19: #073642;
+    --color-20: #268bd2;
+    --color-21: #268bd2;
+    --color-24: #073642;
+    --color-25: #268bd2;
+    --color-26: #268bd2;
+    --color-27: #268bd2;
+    --color-30: #268bd2;   /* directories */
+    --color-31: #268bd2;
+    --color-32: #268bd2;
+    --color-33: #268bd2;
+    --color-34: #268bd2;
+    --color-37: #2aa198;   /* cyan */
+    --color-38: #2aa198;
+    --color-39: #2aa198;
+
+    /* Greens -> Solarized green */
+    --color-40: #859900;   /* archives */
+    --color-41: #859900;   /* python */
+    --color-42: #859900;
+    --color-43: #859900;
+    --color-44: #859900;
+    --color-45: #2aa198;
+    --color-46: #859900;
+    --color-47: #859900;
+    --color-48: #859900;
+    --color-49: #859900;
+    --color-51: #2aa198;
+
+    /* Cyans -> Solarized cyan */
+    --color-64: #859900;
+    --color-66: #2aa198;   /* fonts */
+    --color-68: #268bd2;
+    --color-73: #2aa198;
+    --color-74: #2aa198;
+    --color-76: #859900;
+    --color-78: #859900;   /* csv */
+    --color-80: #2aa198;
+    --color-81: #268bd2;   /* source code */
+    --color-86: #2aa198;
+    --color-87: #2aa198;
+
+    /* Purples/Magentas -> Solarized violet/magenta */
+    --color-89: #6c71c4;
+    --color-90: #6c71c4;
+    --color-91: #d33682;
+    --color-92: #d33682;
+    --color-93: #6c71c4;
+    --color-97: #d33682;   /* images */
+    --color-99: #6c71c4;   /* vector */
+
+    /* Light blues/cyans -> Solarized blue/cyan */
+    --color-110: #268bd2;  /* headers */
+    --color-111: #268bd2;  /* docs */
+    --color-112: #859900;  /* spreadsheets */
+    --color-113: #859900;
+    --color-114: #d33682;  /* video */
+    --color-115: #859900;
+    --color-116: #2aa198;
+    --color-117: #b58900;  /* subtitles */
+    --color-121: #859900;
+    --color-125: #cb4b16;  /* css/html */
+    --color-126: #cb4b16;
+    --color-127: #cb4b16;
+
+    /* Oranges/Yellows -> Solarized yellow/orange */
+    --color-136: #b58900;  /* audio lossless */
+    --color-137: #b58900;  /* audio */
+    --color-139: #6c71c4;
+    --color-141: #b58900;  /* ebooks */
+    --color-142: #b58900;
+    --color-155: #859900;  /* makefiles */
+    --color-166: #cb4b16;  /* presentations */
+    --color-168: #6c71c4;  /* terraform */
+    --color-172: #859900;  /* shell scripts */
+    --color-178: #b58900;
+    --color-184: #b58900;
+    --color-190: #859900;
+    --color-192: #859900;
+
+    /* Reds -> Solarized red/orange */
+    --color-124: #dc322f;
+    --color-160: #dc322f;
+    --color-196: #dc322f;
+    --color-197: #dc322f;
+    --color-203: #cb4b16;
+    --color-208: #cb4b16;  /* executables */
+    --color-213: #d33682;
+    --color-214: #cb4b16;
+    --color-215: #cb4b16;
+    --color-216: #cb4b16;
+    --color-219: #d33682;
+    --color-220: #b58900;
+    --color-222: #b58900;
+    --color-226: #b58900;
+    --color-227: #b58900;
+    --color-228: #b58900;
+
+    /* Grayscale -> Solarized base tones */
+    --color-232: #002b36;
+    --color-233: #002b36;
+    --color-234: #073642;
+    --color-235: #073642;
+    --color-236: #073642;
+    --color-237: #073642;
+    --color-238: #586e75;
+    --color-239: #586e75;
+    --color-240: #586e75;
+    --color-241: #586e75;
+    --color-242: #657b83;
+    --color-243: #657b83;
+    --color-244: #657b83;
+    --color-245: #839496;
+    --color-246: #839496;
+    --color-247: #839496;
+    --color-248: #93a1a1;
+    --color-249: #93a1a1;
+    --color-250: #93a1a1;
+    --color-251: #eee8d5;
+    --color-252: #eee8d5;
+    --color-253: #eee8d5;
+    --color-254: #fdf6e3;
+    --color-255: #fdf6e3;
 }
 
 /* Tab bar */

@@ -1,97 +1,227 @@
-/* Synthwave Theme - The Extra AF Terminal Experience - DEBUG */
+/* Synthwave Theme - Neon 80s Retrowave */
 
 :terminal {
-    /* Typography */
     font-family: "MesloLGS NF", "Fira Code", monospace;
     font-size: 14;
-    line-height: 1.5;
-    font-bold: "MesloLGS NF Bold";
-    font-italic: "MesloLGS NF Italic";
-    font-bold-italic: "MesloLGS NF Bold Italic";
+    line-height: 1.4;
     ligatures: true;
 
-    /* Base colors - teal text like synthwave.rs example */
-    color: #61e2fe;
-    background: linear-gradient(to bottom, #1a0a2e, #16213e);
-    cursor-color: #00ffff;
+    /* Gold neon text on deep purple */
+    color: #ffd700;
+    background: linear-gradient(to bottom, #1a0a20, #2a1030);
+    cursor-color: #ff00ff;
 
-    /* Text glow effect - strong teal glow */
-    text-shadow: 0 0 20px rgba(97, 226, 254, 1.0);
+    /* Neon glow */
+    text-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
 }
 
 :terminal::selection {
-    background: #44475a;
-    color: #f8f8f2;
+    background: #ff00ff;
+    color: #000000;
 }
 
 :terminal::highlight {
-    background: #e6db74;
-    color: #1a1a1a;
+    background: #ffff00;
+    color: #0a0018;
 }
 
 :terminal::backdrop {
-    /* Perspective grid */
+    /* Subtle magenta perspective grid */
     --grid-enabled: true;
-    --grid-color: rgba(255, 0, 255, 0.3);
+    --grid-color: rgba(255, 0, 255, 0.2);
     --grid-spacing: 8;
     --grid-line-width: 1.5;
-    --grid-perspective: 2;
-    --grid-horizon: 0.35;
-    --grid-animation-speed: 0.5;
-    --grid-glow-radius: 8;
-    --grid-glow-intensity: 0.8;
-    --grid-vanishing-spread: 0.4;
+    --grid-perspective: 2.5;
+    --grid-horizon: 0.8;
+    --grid-animation-speed: 0.4;
+    --grid-glow-radius: 6;
+    --grid-glow-intensity: 0.3;
+    --grid-vanishing-spread: 0.25;
     --grid-curved: true;
+
+    /* Subtle CRT for retro feel */
+    --crt-enabled: true;
+    --crt-scanline-intensity: 0.03;
+    --crt-scanline-frequency: 1.0;
+    --crt-curvature: 0.01;
+    --crt-vignette: 0.2;
+    --crt-chromatic-aberration: 0.05;
+    --crt-flicker: 0.0;
 }
 
-/* ANSI 16-color palette */
+/* Synthwave neon palette */
 :terminal::palette {
-    /* Normal colors */
-    --color-0: #0d0d0d;   /* black */
-    --color-1: #ff5555;   /* red */
-    --color-2: #50fa7b;   /* green */
-    --color-3: #f1fa8c;   /* yellow */
-    --color-4: #bd93f9;   /* blue */
-    --color-5: #ff79c6;   /* magenta */
-    --color-6: #8be9fd;   /* cyan */
-    --color-7: #f8f8f2;   /* white */
+    --color-0: #1a0a20;   /* black - deep purple */
+    --color-1: #ff0055;   /* red - hot pink */
+    --color-2: #00ff88;   /* green - neon green */
+    --color-3: #ffff00;   /* yellow - electric */
+    --color-4: #00aaff;   /* blue - neon blue */
+    --color-5: #ff00ff;   /* magenta - hot magenta */
+    --color-6: #00ffff;   /* cyan - neon cyan */
+    --color-7: #ffffff;   /* white */
 
-    /* Bright colors */
-    --color-8: #4d4d4d;   /* bright black */
-    --color-9: #ff6e6e;   /* bright red */
-    --color-10: #69ff94;  /* bright green */
-    --color-11: #ffffa5;  /* bright yellow */
-    --color-12: #d6acff;  /* bright blue */
-    --color-13: #ff92df;  /* bright magenta */
-    --color-14: #a4ffff;  /* bright cyan */
+    --color-8: #2a1a3a;   /* bright black - purple gray */
+    --color-9: #ff3388;   /* bright red - pink */
+    --color-10: #33ffaa;  /* bright green */
+    --color-11: #ffff66;  /* bright yellow */
+    --color-12: #33ccff;  /* bright blue */
+    --color-13: #ff66ff;  /* bright magenta */
+    --color-14: #66ffff;  /* bright cyan */
     --color-15: #ffffff;  /* bright white */
+
+    /* Extended 256-color - synthwave neons */
+    --color-17: #1a0030;
+    --color-18: #2a0040;
+    --color-19: #3a0050;
+    --color-20: #00aaff;
+    --color-21: #00ccff;
+    --color-24: #1a0040;
+    --color-25: #00aaff;
+    --color-26: #00ccff;
+    --color-27: #00ddff;
+    --color-30: #00aaff;   /* directories */
+    --color-31: #00ccff;
+    --color-32: #00ddff;
+    --color-33: #00eeff;
+    --color-34: #00ffff;
+    --color-37: #00ffff;   /* cyan */
+    --color-38: #33ffff;
+    --color-39: #66ffff;
+
+    /* Greens -> neon green */
+    --color-40: #00cc66;   /* archives */
+    --color-41: #00dd77;   /* python */
+    --color-42: #00ee88;
+    --color-43: #00ff88;
+    --color-44: #33ff99;
+    --color-45: #00ffaa;
+    --color-46: #00ff88;
+    --color-47: #33ff99;
+    --color-48: #66ffaa;
+    --color-49: #00ffbb;
+    --color-51: #00ffcc;
+
+    /* Cyans */
+    --color-64: #00dd88;
+    --color-66: #00ffcc;   /* fonts */
+    --color-68: #00ddff;
+    --color-73: #00ffdd;
+    --color-74: #00ffee;
+    --color-76: #00ff88;
+    --color-78: #00ff99;   /* csv */
+    --color-80: #00ffdd;
+    --color-81: #00ccff;   /* source code */
+    --color-86: #00ffee;
+    --color-87: #00ffff;
+
+    /* Magentas/Pinks */
+    --color-89: #cc00ff;
+    --color-90: #dd00ff;
+    --color-91: #ff00dd;
+    --color-92: #ff00cc;
+    --color-93: #ee00ff;
+    --color-97: #ff00aa;   /* images */
+    --color-99: #dd00ff;   /* vector */
+
+    /* Blues/Purples */
+    --color-110: #00aaff;  /* headers */
+    --color-111: #00bbff;  /* docs */
+    --color-112: #00ee88;  /* spreadsheets */
+    --color-113: #00ff99;
+    --color-114: #ff00aa;  /* video */
+    --color-115: #00ffaa;
+    --color-116: #00ffdd;
+    --color-117: #ffff00;  /* subtitles */
+    --color-121: #00ff88;
+    --color-125: #ff6600;  /* css/html */
+    --color-126: #ff7700;
+    --color-127: #ff8800;
+
+    /* Yellows/Oranges */
+    --color-136: #ffcc00;  /* audio lossless */
+    --color-137: #ffdd00;  /* audio */
+    --color-139: #cc00ff;
+    --color-141: #ffee00;  /* ebooks */
+    --color-142: #ffff00;
+    --color-155: #00ff88;  /* makefiles */
+    --color-166: #ff6600;  /* presentations */
+    --color-168: #cc00ff;  /* terraform */
+    --color-172: #00ff88;  /* shell scripts */
+    --color-178: #ffdd00;
+    --color-184: #ffff00;
+    --color-190: #ccff00;
+    --color-192: #aaff00;
+
+    /* Reds/Pinks */
+    --color-124: #ff0055;
+    --color-160: #ff0055;
+    --color-196: #ff0044;
+    --color-197: #ff0055;
+    --color-203: #ff3366;
+    --color-208: #ff6600;  /* executables */
+    --color-213: #ff00aa;
+    --color-214: #ff5500;
+    --color-215: #ff6600;
+    --color-216: #ff7700;
+    --color-219: #ff00bb;
+    --color-220: #ffcc00;
+    --color-222: #ffdd00;
+    --color-226: #ffff00;
+    --color-227: #ffff33;
+    --color-228: #ffff66;
+
+    /* Grayscale -> purple tinted */
+    --color-232: #0a0018;
+    --color-233: #0f001f;
+    --color-234: #140026;
+    --color-235: #19002d;
+    --color-236: #1e0034;
+    --color-237: #23003b;
+    --color-238: #2a1a3a;
+    --color-239: #30203f;
+    --color-240: #362645;
+    --color-241: #3c2c4b;
+    --color-242: #423251;
+    --color-243: #483857;
+    --color-244: #4e3e5d;
+    --color-245: #544463;
+    --color-246: #5a4a69;
+    --color-247: #60506f;
+    --color-248: #665675;
+    --color-249: #6c5c7b;
+    --color-250: #726281;
+    --color-251: #786887;
+    --color-252: #7e6e8d;
+    --color-253: #847493;
+    --color-254: #8a7a99;
+    --color-255: #90809f;
 }
 
-/* Tab bar styling */
+/* Tab bar - bold pink border */
 :terminal::tab-bar {
-    background: #1a0a2e;
-    border-color: #4a3a5e;
+    background: #1a0a20;
+    border-color: #ff00ff;
     height: 36px;
     padding: 4px;
 }
 
 :tab {
-    background: #2a1a3e;
-    color: #8888aa;
-    border-radius: 4px;
+    background: #200e28;
+    color: #886688;
+    border-radius: 0;
     min-width: 80px;
     max-width: 200px;
 }
 
 :tab.active {
-    background: #3a2a4e;
+    background: #2a1435;
     color: #ffd700;
-    accent-color: #ffd700;
-    text-shadow: 0 0 15px rgba(255, 215, 0, 0.9);
+    accent-color: #ff00ff;
+    text-shadow: 0 0 12px rgba(255, 215, 0, 0.9);
 }
 
 :terminal::tab-close {
-    color: #666688;
-    --hover-background: #ff5555;
+    color: #886688;
+    --hover-background: #ff0055;
     --hover-color: #ffffff;
 }

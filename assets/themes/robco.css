@@ -36,6 +36,15 @@
 :terminal::backdrop {
     /* Disable grid - image has its own scanlines */
     --grid-enabled: false;
+
+    /* CRT post-processing */
+    --crt-enabled: true;
+    --crt-scanline-intensity: 0.08;
+    --crt-scanline-frequency: 1.0;
+    --crt-curvature: 0.02;
+    --crt-vignette: 0.25;
+    --crt-chromatic-aberration: 0.2;
+    --crt-flicker: 0.01;
 }
 
 /* ANSI 16-color palette - Pip-Boy green monochrome */

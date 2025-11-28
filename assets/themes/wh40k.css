@@ -27,9 +27,9 @@
     --color-1: #8b0000;   /* red - Mars red */
     --color-2: #4a6741;   /* green - camo green */
     --color-3: #8b7355;   /* yellow - bronze/tan */
-    --color-4: #2f4f4f;   /* blue - dark slate */
+    --color-4: #4a3528;   /* blue -> dark brown */
     --color-5: #722f37;   /* magenta - wine/maroon */
-    --color-6: #5f9ea0;   /* cyan - cadet blue */
+    --color-6: #6b4423;   /* cyan -> rust brown */
     --color-7: #3a3a3a;   /* white - dark for contrast */
 
     /* Bright colors */
@@ -37,33 +37,112 @@
     --color-9: #cc0000;   /* bright red - Mars bright */
     --color-10: #6b8e23;  /* bright green - olive */
     --color-11: #8b7355;  /* bright yellow - bronze */
-    --color-12: #4682b4;  /* bright blue - steel blue */
+    --color-12: #5c4033;  /* bright blue -> brown */
     --color-13: #8b4513;  /* bright magenta - saddle brown */
-    --color-14: #5f9ea0;  /* bright cyan - cadet */
+    --color-14: #7a5230;  /* bright cyan -> rust */
     --color-15: #2a2a2a;  /* bright white - dark for contrast */
 
-    /* Extended 256-color palette for powerlevel10k */
-    /* Greens -> muted military greens (prompt char) */
-    --color-46: #4a6741;  /* bright green -> camo green */
+    /* Extended 256-color palette - Mechanicus colors */
+    /* Blues -> dark browns/iron */
+    --color-17: #2a1a10;
+    --color-18: #2f1f15;
+    --color-19: #34241a;
+    --color-20: #3a291f;
+    --color-21: #3f2e24;
+    --color-24: #2f1f15;
+    --color-25: #3a291f;
+    --color-26: #453429;
+    --color-27: #50392e;
+    --color-30: #5c4033;   /* directories -> brown */
+    --color-31: #674538;
+    --color-32: #724a3d;
+    --color-33: #4a3528;   /* blue -> dark brown */
+    --color-34: #5c4033;
+    --color-37: #6b4423;   /* cyan -> rust */
+    --color-38: #7a5230;
+    --color-39: #89603d;
 
-    /* Blues -> dark slate/iron */
-    --color-33: #2f4f4f;  /* blue -> dark slate */
+    /* Greens -> muted military/camo */
+    --color-40: #3a4a30;   /* archives */
+    --color-41: #4a6741;   /* python - camo green */
+    --color-42: #4a5a38;
+    --color-43: #5a6a48;
+    --color-44: #5a7a50;
+    --color-45: #4a6741;
+    --color-46: #4a6741;   /* bright green -> camo */
+    --color-47: #5a7751;
+    --color-48: #6a8761;
+    --color-49: #5a7a50;
+    --color-51: #4a6741;
 
-    /* Cyans -> cadet/teal */
-    --color-37: #5f9ea0;  /* cyan -> cadet blue */
+    /* Cyans -> rust/bronze */
+    --color-64: #6b4423;
+    --color-66: #7a5230;   /* fonts */
+    --color-68: #5c4033;
+    --color-73: #89603d;
+    --color-74: #8b6914;
+    --color-76: #6b8e23;   /* olive */
+    --color-78: #8b7355;   /* csv -> bronze */
+    --color-80: #7a5230;
+    --color-81: #6b4423;   /* source code -> rust */
+    --color-86: #89603d;
+    --color-87: #8b7355;
 
-    /* Purples -> wine/maroon */
-    --color-134: #722f37; /* purple -> mechanicus wine */
+    /* Purples/Magentas -> wine/maroon */
+    --color-89: #5c2a30;
+    --color-90: #662d35;
+    --color-91: #722f37;
+    --color-92: #7c323a;
+    --color-93: #86353d;
+    --color-97: #8b0000;   /* images -> Mars red */
+    --color-99: #722f37;   /* vector -> wine */
 
-    /* Yellows/golds -> bronze/tan (directories, common in prompts) */
-    --color-178: #8b7355; /* gold -> bronze */
+    /* Light blues -> browns */
+    --color-110: #5c4033;  /* headers */
+    --color-111: #674538;  /* docs */
+    --color-112: #6b8e23;  /* spreadsheets -> olive */
+    --color-113: #7a9a33;
+    --color-114: #8b0000;  /* video -> Mars red */
+    --color-115: #6b8e23;
+    --color-116: #7a5230;
+    --color-117: #8b7355;  /* subtitles -> bronze */
+    --color-121: #6b8e23;
+    --color-125: #8b4513;  /* css/html -> saddle brown */
+    --color-126: #9a5420;
+    --color-127: #a9632d;
+
+    /* Oranges/Yellows -> bronze/rust */
+    --color-136: #8b7355;  /* audio lossless -> bronze */
+    --color-137: #8b6914;  /* audio -> bronze */
+    --color-139: #722f37;
+    --color-141: #8b7355;  /* ebooks -> bronze */
+    --color-142: #9a8264;
+    --color-155: #6b8e23;  /* makefiles -> olive */
+    --color-166: #8b4513;  /* presentations -> brown */
+    --color-168: #722f37;  /* terraform -> wine */
+    --color-172: #6b8e23;  /* shell scripts -> olive */
+    --color-178: #8b7355;  /* gold -> bronze */
     --color-179: #9a8264;
-    --color-180: #a99173; /* tan -> bronze */
+    --color-180: #a99173;
     --color-184: #8b7355;
-    --color-190: #6b8e23; /* yellow-green -> olive */
-    --color-214: #8b4513; /* orange -> saddle brown */
-    --color-220: #8b7355; /* gold -> bronze */
-    --color-226: #8b7355; /* yellow -> bronze (directory path) */
+    --color-190: #6b8e23;  /* yellow-green -> olive */
+    --color-192: #7a9a33;
+
+    /* Reds -> Mars red shades */
+    --color-124: #6b0000;
+    --color-160: #8b0000;
+    --color-196: #cc0000;
+    --color-197: #aa0000;
+    --color-203: #990000;
+    --color-208: #8b4513;  /* executables -> brown */
+    --color-213: #722f37;
+    --color-214: #8b4513;  /* orange -> saddle brown */
+    --color-215: #9a5420;
+    --color-216: #a9632d;
+    --color-219: #86353d;
+    --color-220: #8b7355;  /* gold -> bronze */
+    --color-222: #9a8264;
+    --color-226: #8b7355;  /* yellow -> bronze */
     --color-227: #9a8264;
     --color-228: #a99173;
     --color-229: #b8a082;
@@ -80,8 +159,8 @@
     --color-240: #424242;
     --color-241: #474747;
     --color-242: #4c4c4c;
-    --color-243: #515151; /* gray (common in prompts) */
-    --color-244: #565656; /* gray for frame */
+    --color-243: #515151;
+    --color-244: #565656;
     --color-245: #5b5b5b;
     --color-246: #606060;
     --color-247: #656565;
@@ -92,7 +171,7 @@
     --color-252: #7e7e7e;
     --color-253: #838383;
     --color-254: #888888;
-    --color-255: #2a2a2a; /* white -> dark for contrast on cream bg */
+    --color-255: #2a2a2a;
 }
 
 :terminal::backdrop {

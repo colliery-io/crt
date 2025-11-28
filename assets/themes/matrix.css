@@ -4,7 +4,7 @@
 
 :terminal {
     font-family: "MesloLGS NF", "Fira Code", monospace;
-    font-size: 14;
+    font-size: 20;
     line-height: 1.4;
 
     color: #00ff46;
@@ -21,6 +21,15 @@
     --matrix-speed: 8;
     --matrix-font-size: 14;
     --matrix-charset: "ATGC";
+
+    /* CRT post-processing */
+    --crt-enabled: true;
+    --crt-scanline-intensity: 0.06;
+    --crt-scanline-frequency: 1.0;
+    --crt-curvature: 0.01;
+    --crt-vignette: 0.15;
+    --crt-chromatic-aberration: 0.15;
+    --crt-flicker: 0.005;
 }
 
 :terminal::selection {
@@ -34,22 +43,129 @@
 }
 
 :terminal::palette {
-    --color-0: #0a0a0a;
-    --color-1: #ff5555;
-    --color-2: #00ff46;
-    --color-3: #88ff88;
-    --color-4: #00aa00;
-    --color-5: #44ff88;
-    --color-6: #00dd66;
-    --color-7: #00ff46;
-    --color-8: #1a1a1a;
-    --color-9: #ff6666;
-    --color-10: #44ff66;
-    --color-11: #aaffaa;
-    --color-12: #00cc00;
-    --color-13: #66ff99;
-    --color-14: #00ee77;
-    --color-15: #ccffcc;
+    /* Base 16 ANSI - green monochrome */
+    --color-0: #0a0a0a;   /* black */
+    --color-1: #ff3333;   /* red - keep for errors */
+    --color-2: #00ff46;   /* green - matrix green */
+    --color-3: #66ff66;   /* yellow -> light green */
+    --color-4: #009930;   /* blue -> dark green */
+    --color-5: #44ff88;   /* magenta -> cyan-green */
+    --color-6: #00dd55;   /* cyan -> green */
+    --color-7: #00ff46;   /* white -> matrix green */
+    --color-8: #0a1a0a;   /* bright black - dim green */
+    --color-9: #ff5555;   /* bright red */
+    --color-10: #44ff66;  /* bright green */
+    --color-11: #88ff88;  /* bright yellow -> pale green */
+    --color-12: #00cc44;  /* bright blue -> green */
+    --color-13: #66ff99;  /* bright magenta -> light green */
+    --color-14: #00ee66;  /* bright cyan -> green */
+    --color-15: #aaffaa;  /* bright white -> pale green */
+
+    /* Extended 256-color palette - all greens */
+    /* Very dark greens */
+    --color-17: #001a00;
+    --color-57: #002a00;
+    --color-60: #003300;
+    --color-89: #003a00;
+
+    /* Dark greens */
+    --color-29: #004400;
+    --color-30: #004d00;   /* directories */
+    --color-33: #005500;
+    --color-39: #005e00;
+    --color-45: #006600;
+
+    /* Medium greens */
+    --color-40: #007700;   /* archives */
+    --color-41: #008000;   /* python */
+    --color-49: #008800;
+    --color-51: #009000;
+    --color-64: #009900;
+    --color-66: #008b00;   /* fonts */
+    --color-68: #009400;
+    --color-73: #009d00;
+    --color-74: #00a500;
+    --color-76: #00a000;
+    --color-78: #00aa00;   /* csv */
+    --color-81: #00b000;   /* source code */
+    --color-86: #00b500;
+
+    /* Standard greens */
+    --color-97: #00c000;   /* images */
+    --color-99: #00c500;   /* vector */
+    --color-110: #00cc00;  /* headers */
+    --color-111: #00d100;  /* docs */
+    --color-112: #00d600;  /* spreadsheets */
+    --color-113: #00db00;
+    --color-114: #00e000;  /* video */
+    --color-115: #00e500;
+    --color-116: #00ea00;
+    --color-117: #00ef00;  /* subtitles */
+    --color-121: #00f000;
+    --color-125: #00cc33;  /* css/html */
+    --color-126: #00d444;
+    --color-127: #00dc55;
+
+    /* Bright greens */
+    --color-136: #00e800;  /* audio lossless */
+    --color-137: #00ee00;  /* audio */
+    --color-139: #00f400;
+    --color-141: #00f600;  /* ebooks */
+    --color-142: #00f800;
+    --color-155: #33ff33;  /* makefiles */
+    --color-166: #22ee22;  /* presentations */
+    --color-168: #44ff44;  /* terraform */
+    --color-172: #55ff55;  /* shell scripts */
+    --color-178: #00ff46;  /* gold -> matrix green */
+    --color-184: #33ff55;
+    --color-190: #44ff66;
+    --color-192: #55ff77;
+
+    /* Very bright greens */
+    --color-203: #66ff66;
+    --color-208: #77ff77;  /* executables */
+    --color-213: #88ff88;
+    --color-214: #66ff55;
+    --color-215: #77ff66;
+    --color-216: #88ff77;
+    --color-219: #99ff88;
+    --color-220: #55ff44;
+    --color-222: #66ff55;
+    --color-226: #00ff46;  /* matrix green */
+    --color-227: #44ff66;
+    --color-228: #66ff88;
+
+    /* Reds for errors/warnings */
+    --color-196: #ff3333;
+    --color-197: #ff4444;
+    --color-160: #ff3333;
+    --color-124: #cc2222;
+
+    /* Grayscale -> green scale */
+    --color-232: #000a00;
+    --color-233: #001100;
+    --color-234: #001800;
+    --color-235: #001f00;
+    --color-236: #002600;
+    --color-237: #002d00;
+    --color-238: #003400;
+    --color-239: #003b00;
+    --color-240: #004200;
+    --color-241: #004900;
+    --color-242: #005000;
+    --color-243: #005700;
+    --color-244: #005e00;
+    --color-245: #006500;
+    --color-246: #006c00;
+    --color-247: #007300;
+    --color-248: #007a00;
+    --color-249: #008100;
+    --color-250: #008800;
+    --color-251: #008f00;
+    --color-252: #009600;
+    --color-253: #009d00;
+    --color-254: #00a400;
+    --color-255: #00ab00;
 }
 
 /* Tab bar */
