@@ -869,6 +869,8 @@ pub struct SpriteEffect {
     pub enabled: bool,
     /// Path to sprite sheet image
     pub path: Option<String>,
+    /// Base directory for resolving relative paths (typically the theme directory)
+    pub base_dir: Option<std::path::PathBuf>,
     /// Width of each frame in pixels
     pub frame_width: u32,
     /// Height of each frame in pixels
@@ -898,6 +900,7 @@ impl Default for SpriteEffect {
         Self {
             enabled: false,
             path: None,
+            base_dir: None,
             frame_width: 64,
             frame_height: 64,
             columns: 1,
@@ -1186,9 +1189,14 @@ impl Theme {
         base_dir: impl AsRef<Path>,
     ) -> Result<Self, parser::ThemeParseError> {
         let mut theme = parser::parse_theme(css)?;
+        let base_path = base_dir.as_ref().to_path_buf();
         // Set base_dir on background_image if present
         if let Some(ref mut bg) = theme.background_image {
-            bg.base_dir = Some(base_dir.as_ref().to_path_buf());
+            bg.base_dir = Some(base_path.clone());
+        }
+        // Set base_dir on sprite if present
+        if let Some(ref mut sprite) = theme.sprite {
+            sprite.base_dir = Some(base_path);
         }
         Ok(theme)
     }

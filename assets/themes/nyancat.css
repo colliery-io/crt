@@ -1,0 +1,130 @@
+/* Nyan Cat Theme - Pop-Tart Powered Terminal */
+/* Maximum lulz mode activated */
+
+:terminal {
+    /* Typography */
+    font-family: "MesloLGS NF", "Comic Sans MS", "Fira Code", monospace;
+    font-size: 14;
+    line-height: 1.4;
+    ligatures: true;
+
+    /* Pink cat body vibes */
+    color: #ffaad5;
+    background: linear-gradient(to bottom, #0b0b2a, #050510);
+    background-image: url("nyancat/pixel.png");
+    cursor-color: #ff69b4;
+
+    /* Rainbow glow because of course */
+    text-shadow: 0 0 10px rgba(255, 182, 193, 0.6);
+}
+
+:terminal::selection {
+    background: #ff69b4;
+    color: #0b0b2a;
+}
+
+:terminal::highlight {
+    background: #ffb347;
+    color: #0b0b2a;
+}
+
+:terminal::backdrop {
+    /* Stars flying past like we're zooming through space */
+    --starfield-enabled: true;
+    --starfield-color: rgba(255, 255, 255, 0.95);
+    --starfield-density: 150;
+    --starfield-layers: 4;
+    --starfield-speed: 0.8;
+    --starfield-direction: left;
+    --starfield-glow-radius: 4;
+    --starfield-glow-intensity: 0.6;
+    --starfield-twinkle: true;
+    --starfield-twinkle-speed: 3.0;
+    --starfield-min-size: 0.5;
+    --starfield-max-size: 3.0;
+
+    /* Sparkle particles because we're fabulous */
+    --particles-enabled: true;
+    --particles-color: #ffff00;
+    --particles-count: 30;
+    --particles-shape: sparkle;
+    --particles-behavior: float;
+    --particles-size: 8;
+    --particles-speed: 0.4;
+    --particles-glow-radius: 6;
+    --particles-glow-intensity: 0.5;
+
+    /* THE NYAN CAT - bouncing across your terminal */
+    --sprite-enabled: true;
+    --sprite-path: "nyancat/nyan-cat.png";
+    --sprite-frame-width: 64;
+    --sprite-frame-height: 31;
+    --sprite-columns: 4;
+    --sprite-rows: 1;
+    --sprite-frame-count: 4;
+    --sprite-fps: 12;
+    --sprite-scale: 3.0;
+    --sprite-opacity: 0.25;
+    --sprite-motion: bounce;
+    --sprite-motion-speed: 1.0;
+}
+
+/* RAINBOW PALETTE - the whole spectrum baby */
+:terminal::palette {
+    /* Normal colors - rainbow ordered */
+    --color-0: #0b0b2a;   /* black - deep space */
+    --color-1: #ff6b6b;   /* red - rainbow stripe 1 */
+    --color-2: #98fb98;   /* green - rainbow stripe 4 */
+    --color-3: #ffff6b;   /* yellow - rainbow stripe 3 */
+    --color-4: #6b6bff;   /* blue - rainbow stripe 5 */
+    --color-5: #ff6bff;   /* magenta - pink cat */
+    --color-6: #6bffff;   /* cyan - rainbow stripe 6 */
+    --color-7: #ffaad5;   /* white - pop-tart pink */
+
+    /* Bright colors - MAXIMUM SATURATION */
+    --color-8: #4a4a6a;   /* bright black */
+    --color-9: #ff9999;   /* bright red */
+    --color-10: #99ff99;  /* bright green */
+    --color-11: #ffff99;  /* bright yellow */
+    --color-12: #9999ff;  /* bright blue */
+    --color-13: #ff99ff;  /* bright magenta */
+    --color-14: #99ffff;  /* bright cyan */
+    --color-15: #ffffff;  /* bright white */
+
+    /* Extended palette - rainbow gradients */
+    --color-196: #ff0000; /* pure red */
+    --color-202: #ff5f00; /* orange */
+    --color-226: #ffff00; /* yellow */
+    --color-46: #00ff00;  /* green */
+    --color-21: #0000ff;  /* blue */
+    --color-129: #af00ff; /* purple */
+}
+
+/* Tab bar - space station control panel */
+:terminal::tab-bar {
+    background: #0b0b2a;
+    border-color: #ff69b4;
+    height: 36px;
+    padding: 4px;
+}
+
+:tab {
+    background: #1a1a4a;
+    color: #ff99cc;
+    border-radius: 8px;
+    min-width: 80px;
+    max-width: 200px;
+}
+
+:tab.active {
+    background: #2a2a6a;
+    color: #ff69b4;
+    accent-color: #ffff00;
+    text-shadow: 0 0 12px rgba(255, 105, 180, 0.8);
+}
+
+:terminal::tab-close {
+    color: #ff99cc;
+    --hover-background: #ff6b6b;
+    --hover-color: #ffffff;
+}

@@ -67,7 +67,7 @@ Configuration lives at `~/.config/crt/config.toml`:
 
 ## Themes
 
-CRT includes 14 built-in themes:
+CRT includes 15 built-in themes:
 
 | Theme | Description |
 |-------|-------------|
@@ -75,6 +75,7 @@ CRT includes 14 built-in themes:
 | `dracula` | Classic Dracula color scheme |
 | `matrix` | Green falling code with CRT effect |
 | `minimal` | Clean, pure black background |
+| `nyancat` | Bouncing Nyan Cat with stars and sparkles |
 | `particles` | Floating particle effect |
 | `rain` | Animated rain drops |
 | `robco` | Fallout Pip-Boy green phosphor CRT |

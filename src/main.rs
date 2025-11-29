@@ -277,13 +277,9 @@ impl App {
                 if let Some(ref path_str) = sprite.path {
                     // Resolve path relative to theme base directory
                     let path = std::path::PathBuf::from(path_str);
-                    let resolved_path = if let Some(ref bg) = theme.background_image {
-                        if let Some(ref base_dir) = bg.base_dir {
-                            if path.is_relative() {
-                                base_dir.join(&path)
-                            } else {
-                                path.clone()
-                            }
+                    let resolved_path = if let Some(ref base_dir) = sprite.base_dir {
+                        if path.is_relative() {
+                            base_dir.join(&path)
                         } else {
                             path.clone()
                         }
