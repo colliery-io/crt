@@ -19,6 +19,16 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     let mut timing = FrameTiming::default();
     state.frame_count = state.frame_count.saturating_add(1);
 
+    // Log every 300 frames (~5 seconds at 60fps) or on frame 1
+    if state.frame_count == 1 || state.frame_count % 300 == 0 {
+        log::debug!(
+            "Frame {} starting (dirty={}, effects_enabled={})",
+            state.frame_count,
+            state.dirty,
+            state.gpu.effects_renderer.has_enabled_effects()
+        );
+    }
+
     // Periodically reset vello renderer to clean up accumulated texture atlas resources
     // This prevents unbounded GPU memory growth from vello's internal caches
     // NOTE: The primary memory fix is frame throttling in main.rs (see about_to_wait).

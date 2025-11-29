@@ -7,7 +7,10 @@
 
     color: #f8f8f2;
     background: linear-gradient(to bottom, #282a36, #1e1f29);
-    cursor-color: #f8f8f2;
+}
+
+:terminal::cursor {
+    background: #f8f8f2;
 }
 
 :terminal::selection {

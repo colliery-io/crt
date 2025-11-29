@@ -73,6 +73,7 @@ impl FrameStats {
 
 /// Memory statistics
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct MemoryStats {
     rss_bytes: u64,
     timestamp: Instant,

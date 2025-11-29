@@ -11,6 +11,7 @@ edition = "2024"
 vte = "0.15"
 alacritty_terminal = "0.25"
 portable-pty = "0.9"
+termwiz = "0.22"
 
 # Rendering
 wgpu = "26"
@@ -81,6 +82,7 @@ arboard = "3.6.1"
 regex = "1.12.2"
 open = "5.3.3"
 fontdb = { workspace = true }
+termwiz = { workspace = true }
 
 [dev-dependencies]
 criterion = { version = "0.7.0", features = ["html_reports"] }

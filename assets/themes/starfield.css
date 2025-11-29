@@ -13,10 +13,13 @@
     /* Base colors - silver/white text on deep space */
     color: #e0e0e0;
     background: linear-gradient(to bottom, #0a0a1a, #000008);
-    cursor-color: #00ffff;
 
     /* Subtle text glow */
     text-shadow: 0 0 8px rgba(200, 220, 255, 0.4);
+}
+
+:terminal::cursor {
+    background: #00ffff;
 }
 
 :terminal::selection {

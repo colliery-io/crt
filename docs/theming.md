@@ -74,11 +74,14 @@ CRT Terminal uses CSS-like syntax for theming. Themes are stored in `~/.config/c
     background: #1a1a1a;
     background: linear-gradient(to bottom, #1a0a2e, #16213e);
 
-    /* Cursor color */
-    cursor-color: #ffffff;
-
     /* Text glow effect */
     text-shadow: 0 0 8px rgba(255, 176, 0, 0.6);
+}
+
+/* Cursor color and glow */
+:terminal::cursor {
+    background: #ffffff;
+    text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);  /* optional glow */
 }
 ```
 
@@ -193,8 +196,8 @@ Effects are rendered behind the terminal content.
     --particles-enabled: true;
     --particles-color: #ff00ff;
     --particles-count: 50;
-    --particles-shape: circle;  /* circle, square, triangle */
-    --particles-behavior: float; /* float, fall, rise, swirl */
+    --particles-shape: circle;  /* dot, circle, star, heart, sparkle */
+    --particles-behavior: float; /* float, drift, rise, fall */
     --particles-size: 4.0;
     --particles-speed: 0.5;
 }
@@ -218,16 +221,16 @@ Effects are rendered behind the terminal content.
 ```css
 :terminal::backdrop {
     --shape-enabled: true;
-    --shape-type: hexagon;  /* circle, square, triangle, hexagon, star, polygon */
+    --shape-type: polygon;  /* circle, rect, ellipse, triangle, star, heart, polygon */
     --shape-size: 100.0;
     --shape-fill: rgba(255, 0, 255, 0.2);
     --shape-stroke: #ff00ff;
     --shape-stroke-width: 2.0;
     --shape-glow-radius: 20.0;
     --shape-glow-color: #ff00ff;
-    --shape-rotation: clockwise;  /* none, clockwise, counterclockwise */
+    --shape-rotation: spin;  /* none, spin, wobble */
     --shape-rotation-speed: 1.0;
-    --shape-motion: float;  /* none, float, bounce, orbit */
+    --shape-motion: float;  /* none, bounce, scroll, float, orbit */
     --shape-motion-speed: 1.0;
     --shape-polygon-sides: 6;  /* for polygon type */
 }
@@ -248,7 +251,7 @@ Effects are rendered behind the terminal content.
     --sprite-scale: 1.0;
     --sprite-opacity: 1.0;
     --sprite-position: bottom-right;  /* center, corners, edges */
-    --sprite-motion: none;  /* none, float, bounce, pace */
+    --sprite-motion: none;  /* none, bounce, scroll, float, orbit */
     --sprite-motion-speed: 1.0;
 }
 ```
@@ -338,8 +341,12 @@ Applies authentic CRT monitor effects as a post-processing pass.
     background-size: cover;
     --background-opacity: 0.7;
 
-    cursor-color: #ffb000;
     text-shadow: 0 0 8px rgba(255, 176, 0, 0.6);
+}
+
+:terminal::cursor {
+    background: #ffb000;
+    text-shadow: 0 0 12px rgba(255, 176, 0, 0.8);
 }
 
 :terminal::selection {

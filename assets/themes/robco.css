@@ -17,10 +17,13 @@
     background-size: contain;
     background-position: center;
     --background-opacity: 0.15;
-    cursor-color: #61fe71;
 
     /* Green text glow - stronger for visibility */
     text-shadow: 0 0 15px rgba(97, 254, 113, 0.5);
+}
+
+:terminal::cursor {
+    background: #61fe71;
 }
 
 :terminal::selection {

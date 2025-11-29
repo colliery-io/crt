@@ -61,6 +61,21 @@ cd crt
 cargo build --release
 ```
 
+## Quick Start
+
+After installation:
+
+1. Launch CRT from Applications (macOS) or run `crt` (Linux)
+2. Try different themes by editing `~/.config/crt/config.toml`:
+   ```toml
+   [theme]
+   name = "matrix"  # or "nyancat", "synthwave", "minimal", etc.
+   ```
+3. Save the file and press `Cmd+N` to open a new window with the theme
+4. See all available themes: `ls ~/.config/crt/themes/`
+
+> **Note:** Colors and effects hot-reload on save, but background images and sprites require a new window (`Cmd+N`) to load.
+
 ## Configuration
 
 Configuration lives at `~/.config/crt/config.toml`:
@@ -96,16 +111,64 @@ See the [Theming Guide](docs/theming.md) for details, or jump to:
 - [How to Create a Custom Theme](docs/how-to/create-custom-theme.md)
 - [CSS Properties Reference](docs/reference/theme-css-properties.md)
 
-## Basic Keyboard Shortcuts
+## Keyboard Shortcuts
 
+### Windows & Tabs
 | Shortcut | Action |
 |----------|--------|
+| Cmd+N | New window |
 | Cmd+T | New tab |
 | Cmd+W | Close tab |
 | Cmd+1-9 | Switch to tab 1-9 |
+| Cmd+Shift+[ | Previous tab |
+| Cmd+Shift+] | Next tab |
+| Double-click tab | Rename tab |
+
+### Navigation
+| Shortcut | Action |
+|----------|--------|
+| Page Up | Scroll up through history |
+| Page Down | Scroll down through history |
+| Home | Jump to top of scrollback |
+| End | Jump to bottom |
+| Cmd+Click | Open URL under cursor |
+
+### Search
+| Shortcut | Action |
+|----------|--------|
+| Cmd+F | Open search |
+| Enter | Find next match |
+| Escape | Close search |
+
+### Font Size
+| Shortcut | Action |
+|----------|--------|
 | Cmd+= | Increase font size |
 | Cmd+- | Decrease font size |
 | Cmd+0 | Reset font size |
+
+### Other
+| Shortcut | Action |
+|----------|--------|
+| Cmd+C | Copy selection |
+| Cmd+V | Paste |
+| Right-click | Context menu |
+| Cmd+Option+P | Toggle profiling |
+
+## Troubleshooting
+
+**Fonts look wrong or missing characters**
+- CRT bundles MesloLGS NF (a Nerd Font) which is installed to `~/.config/crt/fonts/`
+- If you see boxes or missing glyphs, the font may not be loading - check the config font family setting
+
+**Theme not loading**
+- Check that the theme file exists at `~/.config/crt/themes/{name}.css`
+- Check the terminal output for CSS parsing errors
+- Colors and effects hot-reload on save; background images and sprites need a new window (`Cmd+N`)
+
+**Performance issues**
+- Themes with multiple backdrop effects (particles + matrix + sprites) use more resources than simpler themes
+- Try `minimal` or `dracula` if you want a lightweight option
 
 ## Reporting Issues
 

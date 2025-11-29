@@ -57,6 +57,7 @@ pub struct TerminalVelloRenderer {
     // Cursor state
     cursor_shape: CursorShape,
     cursor_color: [f32; 4],
+    cursor_glow: Option<([f32; 4], f32, f32)>, // (color, radius, intensity)
     cursor_state: CursorState,
     // Cursor blink state
     blink_enabled: bool,
@@ -81,6 +82,7 @@ impl TerminalVelloRenderer {
             target_size: (0, 0),
             cursor_shape: CursorShape::Block,
             cursor_color: [0.8, 0.8, 0.2, 0.9],
+            cursor_glow: None,
             cursor_state: CursorState::default(),
             blink_enabled: true,
             blink_interval: Duration::from_millis(Self::DEFAULT_BLINK_INTERVAL_MS),
@@ -137,6 +139,11 @@ impl TerminalVelloRenderer {
     /// Get the current cursor color
     pub fn cursor_color(&self) -> [f32; 4] {
         self.cursor_color
+    }
+
+    /// Set cursor glow effect (color, radius, intensity)
+    pub fn set_cursor_glow(&mut self, glow: Option<([f32; 4], f32, f32)>) {
+        self.cursor_glow = glow;
     }
 
     /// Get the current cursor shape
@@ -208,6 +215,60 @@ impl TerminalVelloRenderer {
     /// Build cursor shape into scene
     fn build_cursor(&mut self) {
         let cursor = &self.cursor_state;
+
+        // Get base cursor rect dimensions
+        let (base_x, base_y, base_w, base_h) = match self.cursor_shape {
+            CursorShape::Block => (
+                cursor.x,
+                cursor.y,
+                cursor.cell_width,
+                cursor.cell_height,
+            ),
+            CursorShape::Bar => (cursor.x, cursor.y, 2.0, cursor.cell_height),
+            CursorShape::Underline => (
+                cursor.x,
+                cursor.y + cursor.cell_height - 2.0,
+                cursor.cell_width,
+                2.0,
+            ),
+        };
+
+        // Render glow effect first (behind cursor)
+        if let Some((glow_color, radius, intensity)) = self.cursor_glow {
+            // Render multiple layers with decreasing opacity for soft glow
+            let layers = 5;
+            for i in (1..=layers).rev() {
+                let layer_radius = radius * (i as f32 / layers as f32);
+                let layer_alpha = intensity * (1.0 - (i as f32 / (layers + 1) as f32)) * 0.4;
+
+                let glow_brush = peniko::Brush::Solid(color_from_f32(
+                    glow_color[0],
+                    glow_color[1],
+                    glow_color[2],
+                    layer_alpha,
+                ));
+
+                let glow_rect = kurbo::Rect::new(
+                    (base_x - layer_radius) as f64,
+                    (base_y - layer_radius) as f64,
+                    (base_x + base_w + layer_radius) as f64,
+                    (base_y + base_h + layer_radius) as f64,
+                );
+
+                // Use rounded rect for softer glow appearance
+                let rounded = kurbo::RoundedRect::from_rect(glow_rect, layer_radius as f64);
+
+                self.scene.fill(
+                    peniko::Fill::NonZero,
+                    kurbo::Affine::IDENTITY,
+                    &glow_brush,
+                    None,
+                    &rounded,
+                );
+            }
+        }
+
+        // Render solid cursor on top
         let brush = peniko::Brush::Solid(color_from_f32(
             self.cursor_color[0],
             self.cursor_color[1],
@@ -215,32 +276,12 @@ impl TerminalVelloRenderer {
             self.cursor_color[3],
         ));
 
-        let rect = match self.cursor_shape {
-            CursorShape::Block => kurbo::Rect::new(
-                cursor.x as f64,
-                cursor.y as f64,
-                (cursor.x + cursor.cell_width) as f64,
-                (cursor.y + cursor.cell_height) as f64,
-            ),
-            CursorShape::Bar => {
-                // 2-pixel wide bar on the left
-                kurbo::Rect::new(
-                    cursor.x as f64,
-                    cursor.y as f64,
-                    (cursor.x + 2.0) as f64,
-                    (cursor.y + cursor.cell_height) as f64,
-                )
-            }
-            CursorShape::Underline => {
-                // 2-pixel tall underline at the bottom
-                kurbo::Rect::new(
-                    cursor.x as f64,
-                    (cursor.y + cursor.cell_height - 2.0) as f64,
-                    (cursor.x + cursor.cell_width) as f64,
-                    (cursor.y + cursor.cell_height) as f64,
-                )
-            }
-        };
+        let rect = kurbo::Rect::new(
+            base_x as f64,
+            base_y as f64,
+            (base_x + base_w) as f64,
+            (base_y + base_h) as f64,
+        );
 
         self.scene.fill(
             peniko::Fill::NonZero,

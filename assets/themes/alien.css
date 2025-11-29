@@ -14,10 +14,13 @@
     background-size: cover;
     background-position: center;
     --background-opacity: 0.7;
-    cursor-color: #ffb000;
 
     /* CRT phosphor glow */
     text-shadow: 0 0 8px rgba(255, 176, 0, 0.6);
+}
+
+:terminal::cursor {
+    background: #ffb000;
 }
 
 :terminal::selection {

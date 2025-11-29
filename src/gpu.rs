@@ -24,6 +24,7 @@ pub struct SharedGpuState {
 impl SharedGpuState {
     /// Initialize shared GPU resources
     pub fn new() -> Self {
+        log::debug!("Initializing shared GPU state");
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
 
         // Request adapter without a surface first (we'll create surfaces per-window)
@@ -38,12 +39,20 @@ impl SharedGpuState {
                 .expect("Failed to find suitable GPU adapter")
         });
 
+        log::debug!(
+            "GPU adapter: {:?} ({:?})",
+            adapter.get_info().name,
+            adapter.get_info().backend
+        );
+
         let (device, queue) = pollster::block_on(async {
             adapter
                 .request_device(&wgpu::DeviceDescriptor::default())
                 .await
                 .expect("Failed to create device")
         });
+
+        log::debug!("GPU device created successfully");
 
         // Vello renderer is lazy-loaded only when CSS effects need it
         // (rounded corners, gradients, shadows, backdrop effects, complex paths)

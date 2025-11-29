@@ -155,6 +155,44 @@ pub fn event(category: &str, message: &str) {
     with_profiler(|p| p.log_event(category, message));
 }
 
+/// Forward a log message to the profile file
+/// Call this from debug!/info!/warn! handlers to capture logs in the profile
+pub fn log_message(level: &str, target: &str, message: &str) {
+    if !is_enabled() {
+        return;
+    }
+    with_profiler(|p| p.write(&format!("[LOG:{}] [{}] {}", level, target, message)));
+}
+
+/// Convenience macro for logging that also forwards to profiler
+#[macro_export]
+macro_rules! profile_log {
+    (debug, $($arg:tt)*) => {
+        log::debug!($($arg)*);
+        if $crate::profiling::is_enabled() {
+            $crate::profiling::log_message("DEBUG", module_path!(), &format!($($arg)*));
+        }
+    };
+    (info, $($arg:tt)*) => {
+        log::info!($($arg)*);
+        if $crate::profiling::is_enabled() {
+            $crate::profiling::log_message("INFO", module_path!(), &format!($($arg)*));
+        }
+    };
+    (warn, $($arg:tt)*) => {
+        log::warn!($($arg)*);
+        if $crate::profiling::is_enabled() {
+            $crate::profiling::log_message("WARN", module_path!(), &format!($($arg)*));
+        }
+    };
+    (error, $($arg:tt)*) => {
+        log::error!($($arg)*);
+        if $crate::profiling::is_enabled() {
+            $crate::profiling::log_message("ERROR", module_path!(), &format!($($arg)*));
+        }
+    };
+}
+
 /// Record memory stats
 pub fn record_memory() {
     if !is_enabled() {
@@ -289,6 +327,7 @@ impl TimingStats {
 /// Memory sample
 #[derive(Debug, Clone, Copy)]
 struct MemorySample {
+    #[allow(dead_code)]
     timestamp_ms: u64,
     rss_kb: u64,
 }

@@ -9,9 +9,13 @@
 
     color: #00ff46;
     background: #0a0a0a;
-    cursor-color: #00ff46;
 
     text-shadow: 0 0 8px rgba(0, 255, 70, 0.5);
+}
+
+:terminal::cursor {
+    background: #00ff46;
+    text-shadow: 0 0 12px rgba(0, 255, 70, 0.8);
 }
 
 :terminal::backdrop {

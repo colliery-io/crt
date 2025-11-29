@@ -2,20 +2,9 @@
 //!
 //! Keyboard and mouse input processing for terminal and tab bar.
 
-mod commands;
-mod keyboard;
-mod mouse;
-mod url_detection;
+mod key_encoder;
 
-pub use commands::{Command, SelectionMode};
-pub use keyboard::{Modifiers, is_app_shortcut, key_to_terminal_bytes, shortcut_to_command};
-pub use mouse::{
-    CellMetrics, SelectionRange, cell_to_pixel, cell_to_pixel_center, determine_click_count,
-    expand_to_line, expand_to_word, is_in_grid, pixel_to_cell, pixel_to_cell_clamped,
-};
-pub use url_detection::{
-    UrlMatch, detect_url_at_column, detect_urls, url_at_column, url_index_at_column,
-};
+pub use key_encoder::encode_key;
 
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -236,11 +225,17 @@ pub fn handle_tab_editing(state: &mut WindowState, key: &Key, mod_pressed: bool)
 }
 
 /// Handle shell input (send to PTY)
+///
+/// Uses termwiz for key-to-escape-sequence encoding, with platform-specific
+/// overrides for macOS word navigation. Falls back to the event's text field
+/// for any keys termwiz doesn't handle.
 pub fn handle_shell_input(
     state: &mut WindowState,
     key: &Key,
+    text: Option<&str>,
     mod_pressed: bool,
     ctrl_pressed: bool,
+    shift_pressed: bool,
     alt_pressed: bool,
 ) -> bool {
     let tab_id = state.gpu.tab_bar.active_tab_id();
@@ -249,135 +244,64 @@ pub fn handle_shell_input(
         return false;
     };
 
+    log::debug!(
+        "Shell input: key={:?} text={:?} mod={} ctrl={} shift={} alt={}",
+        key, text, mod_pressed, ctrl_pressed, shift_pressed, alt_pressed
+    );
+
     let mut input_sent = false;
-    match key {
-        Key::Named(NamedKey::Escape) => {
-            shell.send_input(b"\x1b");
-            input_sent = true;
-        }
-        Key::Named(NamedKey::Enter) => {
-            shell.send_input(b"\r");
-            input_sent = true;
-        }
-        Key::Named(NamedKey::Backspace) => {
-            // macOS: Option+Backspace = Delete word backward
-            #[cfg(target_os = "macos")]
-            if alt_pressed {
+
+    // macOS-specific word navigation shortcuts (Option+Arrow, Cmd+Arrow, Option+Backspace)
+    // These override standard encoding because macOS users expect this behavior
+    #[cfg(target_os = "macos")]
+    {
+        match key {
+            Key::Named(NamedKey::Backspace) if alt_pressed => {
                 shell.send_input(b"\x1b\x7f"); // ESC DEL = delete word backward
                 input_sent = true;
             }
-            if !input_sent {
-                shell.send_input(b"\x7f");
+            Key::Named(NamedKey::ArrowRight) if mod_pressed => {
+                shell.send_input(b"\x1b[F"); // End of line
                 input_sent = true;
             }
-        }
-        Key::Named(NamedKey::Tab) => {
-            shell.send_input(b"\t");
-            input_sent = true;
-        }
-        Key::Named(NamedKey::ArrowUp) => {
-            shell.send_input(b"\x1b[A");
-            input_sent = true;
-        }
-        Key::Named(NamedKey::ArrowDown) => {
-            shell.send_input(b"\x1b[B");
-            input_sent = true;
-        }
-        Key::Named(NamedKey::ArrowRight) => {
-            // macOS: Cmd+Right = End of line, Option+Right = Word forward
-            #[cfg(target_os = "macos")]
-            if mod_pressed {
-                shell.send_input(b"\x1b[F"); // End
-                input_sent = true;
-            } else if alt_pressed {
+            Key::Named(NamedKey::ArrowRight) if alt_pressed => {
                 shell.send_input(b"\x1bf"); // ESC f = forward word
                 input_sent = true;
             }
-            #[cfg(target_os = "macos")]
-            if !input_sent {
-                shell.send_input(b"\x1b[C");
+            Key::Named(NamedKey::ArrowLeft) if mod_pressed => {
+                shell.send_input(b"\x1b[H"); // Beginning of line
                 input_sent = true;
             }
-            #[cfg(not(target_os = "macos"))]
-            {
-                shell.send_input(b"\x1b[C");
-                input_sent = true;
-            }
-        }
-        Key::Named(NamedKey::ArrowLeft) => {
-            // macOS: Cmd+Left = Home (beginning of line), Option+Left = Word backward
-            #[cfg(target_os = "macos")]
-            if mod_pressed {
-                shell.send_input(b"\x1b[H"); // Home
-                input_sent = true;
-            } else if alt_pressed {
+            Key::Named(NamedKey::ArrowLeft) if alt_pressed => {
                 shell.send_input(b"\x1bb"); // ESC b = backward word
                 input_sent = true;
             }
-            #[cfg(target_os = "macos")]
-            if !input_sent {
-                shell.send_input(b"\x1b[D");
+            _ => {}
+        }
+    }
+
+    // If not handled by platform-specific code, use termwiz encoding
+    if !input_sent {
+        // Don't send Cmd+key combinations to terminal (they're app shortcuts)
+        if !mod_pressed {
+            if let Some(bytes) = encode_key(key, ctrl_pressed, shift_pressed, alt_pressed) {
+                shell.send_input(&bytes);
                 input_sent = true;
-            }
-            #[cfg(not(target_os = "macos"))]
-            {
-                shell.send_input(b"\x1b[D");
-                input_sent = true;
-            }
-        }
-        Key::Named(NamedKey::Home) => {
-            shell.send_input(b"\x1b[H");
-            input_sent = true;
-        }
-        Key::Named(NamedKey::End) => {
-            shell.send_input(b"\x1b[F");
-            input_sent = true;
-        }
-        Key::Named(NamedKey::PageUp) => {
-            shell.send_input(b"\x1b[5~");
-            input_sent = true;
-        }
-        Key::Named(NamedKey::PageDown) => {
-            shell.send_input(b"\x1b[6~");
-            input_sent = true;
-        }
-        Key::Named(NamedKey::Insert) => {
-            shell.send_input(b"\x1b[2~");
-            input_sent = true;
-        }
-        Key::Named(NamedKey::Delete) => {
-            shell.send_input(b"\x1b[3~");
-            input_sent = true;
-        }
-        Key::Named(NamedKey::Space) => {
-            shell.send_input(b" ");
-            input_sent = true;
-        }
-        Key::Character(c) => {
-            if ctrl_pressed && !mod_pressed {
-                // Convert Ctrl+letter to control character (ASCII 1-26)
-                // Ctrl+A = 0x01, Ctrl+B = 0x02, ..., Ctrl+Z = 0x1A
-                if let Some(ch) = c.chars().next() {
-                    let ctrl_char = match ch.to_ascii_lowercase() {
-                        'a'..='z' => Some((ch.to_ascii_lowercase() as u8) - b'a' + 1),
-                        '[' => Some(0x1b),  // Ctrl+[ = Escape
-                        '\\' => Some(0x1c), // Ctrl+\
-                        ']' => Some(0x1d),  // Ctrl+]
-                        '^' => Some(0x1e),  // Ctrl+^
-                        '_' => Some(0x1f),  // Ctrl+_
-                        _ => None,
-                    };
-                    if let Some(byte) = ctrl_char {
-                        shell.send_input(&[byte]);
-                        input_sent = true;
-                    }
-                }
-            } else if !mod_pressed {
-                shell.send_input(c.as_bytes());
-                input_sent = true;
+                log::debug!("Sent via termwiz: {:?}", bytes);
             }
         }
-        _ => {}
+    }
+
+    // Final fallback: use the text field from the key event
+    // This catches any keys termwiz doesn't handle
+    if !input_sent {
+        if let Some(t) = text {
+            if !t.is_empty() && !mod_pressed {
+                shell.send_input(t.as_bytes());
+                input_sent = true;
+                log::debug!("Forwarded via text field: {:?}", t);
+            }
+        }
     }
 
     if input_sent {

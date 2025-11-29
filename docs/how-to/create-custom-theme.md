@@ -26,12 +26,15 @@ Start with the essential properties:
     /* Colors */
     color: #e0e0e0;
     background: #1a1a1a;
-    cursor-color: #ffffff;
 
     /* Typography */
     font-family: "JetBrains Mono", monospace;
     font-size: 14;
     line-height: 1.4;
+}
+
+:terminal::cursor {
+    background: #ffffff;
 }
 
 :terminal::selection {

@@ -8,11 +8,9 @@ mod config;
 mod font;
 mod gpu;
 mod input;
-mod managers;
 mod menu;
 pub mod profiling;
 mod render;
-mod state;
 mod watcher;
 mod window;
 
@@ -108,6 +106,7 @@ impl App {
     }
 
     fn create_window(&mut self, event_loop: &ActiveEventLoop) -> WindowId {
+        log::debug!("Creating new window");
         self.init_shared_gpu();
         let shared = self.shared_gpu.as_ref().unwrap();
 
@@ -120,6 +119,10 @@ impl App {
         let rows = self.config.window.rows;
         let width = (cols as f32 * approx_cell_width) as u32 + 20;
         let height = (rows as f32 * line_height) as u32 + 20 + tab_bar_height;
+        log::debug!(
+            "Window dimensions: {}x{} ({}cols x {}rows, font_size={})",
+            width, height, cols, rows, font_size
+        );
 
         // Build window
         let mut window_attrs = Window::default_attributes()
@@ -239,6 +242,9 @@ impl App {
             theme.cursor_color.b,
             theme.cursor_color.a,
         ]);
+        terminal_vello.set_cursor_glow(theme.cursor_glow.map(|g| {
+            ([g.color.r, g.color.g, g.color.b, g.color.a], g.radius, g.intensity)
+        }));
 
         // Rect renderer for cell backgrounds and tab bar
         let rect_renderer = RectRenderer::new(&shared.device, format);
@@ -431,9 +437,6 @@ impl App {
             search: Default::default(),
             bell: window::BellState::from_config(&self.config.bell),
             context_menu: window::ContextMenu::default(),
-            // New testable state modules
-            tab_state: state::TabState::new(),
-            ui_state: state::UiState::new(),
         };
 
         self.windows.insert(window_id, window_state);
@@ -447,8 +450,10 @@ impl App {
     }
 
     fn load_theme(&self) -> Theme {
+        log::debug!("Loading theme: {}", self.config.theme.name);
         match self.config.theme_css_with_path() {
             Some((css, base_dir)) => {
+                log::debug!("Theme CSS loaded from {:?} ({} bytes)", base_dir, css.len());
                 Theme::from_css_with_base(&css, &base_dir).unwrap_or_else(|e| {
                     log::warn!("Failed to parse theme: {:?}", e);
                     Theme::default()
@@ -710,10 +715,21 @@ impl App {
     /// Reload config from disk and apply changes
     fn reload_config(&mut self) {
         log::info!("Reloading config...");
+        log::debug!(
+            "Current theme: {}, font: {:?} @ {}pt",
+            self.config.theme.name,
+            self.config.font.family,
+            self.config.font.size
+        );
         let new_config = Config::load();
 
         // Check if theme changed
         let theme_changed = new_config.theme.name != self.config.theme.name;
+        log::debug!(
+            "New theme: {}, theme_changed: {}",
+            new_config.theme.name,
+            theme_changed
+        );
 
         self.config = new_config;
 
@@ -723,6 +739,7 @@ impl App {
         }
 
         // Apply other config changes to all windows
+        log::debug!("Applying config to {} windows", self.windows.len());
         for state in self.windows.values_mut() {
             // Force redraw
             state.dirty = true;
@@ -737,6 +754,24 @@ impl App {
         log::info!("Reloading theme...");
         let theme = self.load_theme();
 
+        log::debug!(
+            "Theme loaded: fg=#{:02x}{:02x}{:02x}, cursor=#{:02x}{:02x}{:02x}, cursor_glow={}",
+            (theme.foreground.r * 255.0) as u8,
+            (theme.foreground.g * 255.0) as u8,
+            (theme.foreground.b * 255.0) as u8,
+            (theme.cursor_color.r * 255.0) as u8,
+            (theme.cursor_color.g * 255.0) as u8,
+            (theme.cursor_color.b * 255.0) as u8,
+            theme.cursor_glow.is_some()
+        );
+        log::debug!(
+            "Theme effects: grid={}, starfield={}, particles={}, matrix={}",
+            theme.grid.as_ref().map_or(false, |g| g.enabled),
+            theme.starfield.as_ref().map_or(false, |s| s.enabled),
+            theme.particles.as_ref().map_or(false, |p| p.enabled),
+            theme.matrix.as_ref().map_or(false, |m| m.enabled)
+        );
+
         for state in self.windows.values_mut() {
             // Update effect pipeline with new theme
             state.gpu.effect_pipeline.set_theme(theme.clone());
@@ -747,12 +782,31 @@ impl App {
             // Update tab bar theme
             state.gpu.tab_bar.set_theme(theme.tabs.clone());
 
+            // Update cursor color and glow
+            state.gpu.terminal_vello.set_cursor_color([
+                theme.cursor_color.r,
+                theme.cursor_color.g,
+                theme.cursor_color.b,
+                theme.cursor_color.a,
+            ]);
+            state
+                .gpu
+                .terminal_vello
+                .set_cursor_glow(theme.cursor_glow.map(|g| {
+                    (
+                        [g.color.r, g.color.g, g.color.b, g.color.a],
+                        g.radius,
+                        g.intensity,
+                    )
+                }));
+
             // Force full redraw
             state.dirty = true;
             for hash in state.content_hashes.values_mut() {
                 *hash = 0;
             }
         }
+        log::debug!("Theme applied to {} windows", self.windows.len());
     }
 }
 
@@ -1246,8 +1300,10 @@ impl ApplicationHandler for App {
                 if handle_shell_input(
                     state,
                     &event.logical_key,
+                    event.text.as_ref().map(|s| s.as_str()),
                     mod_pressed,
                     ctrl_pressed,
+                    shift_pressed,
                     alt_pressed,
                 ) {
                     clear_terminal_selection(state);
@@ -1257,6 +1313,26 @@ impl ApplicationHandler for App {
             WindowEvent::Resized(size) => {
                 let shared = self.shared_gpu.as_ref().unwrap();
                 handle_resize(state, shared, size.width, size.height);
+            }
+
+            WindowEvent::ScaleFactorChanged {
+                scale_factor,
+                inner_size_writer: _,
+            } => {
+                let new_scale = scale_factor as f32;
+                let old_scale = state.scale_factor;
+
+                if (new_scale - old_scale).abs() > 0.001 {
+                    log::debug!(
+                        "Scale factor changed: {} -> {} (window {:?})",
+                        old_scale,
+                        new_scale,
+                        id
+                    );
+
+                    let shared = self.shared_gpu.as_ref().unwrap();
+                    handle_scale_factor_change(state, shared, &self.config, new_scale);
+                }
             }
 
             WindowEvent::CursorMoved { position, .. } => {
@@ -1633,10 +1709,123 @@ fn handle_context_menu_action(state: &mut WindowState, item: ContextMenuItem) {
     }
 }
 
+/// Handle scale factor change (display DPI change)
+///
+/// When a window moves between displays with different DPI (e.g., Retina to external monitor),
+/// we need to recreate glyph caches with the new scaled font sizes and update all renderers.
+fn handle_scale_factor_change(
+    state: &mut WindowState,
+    shared: &SharedGpuState,
+    config: &Config,
+    new_scale: f32,
+) {
+    use crt_core::Size;
+
+    // Update scale factor
+    state.scale_factor = new_scale;
+
+    // Recreate glyph cache with new scaled font size
+    let scaled_font_size = config.font.size * new_scale * state.font_scale;
+    let line_height_multiplier = config.font.line_height;
+    let font_variants = font::load_font_variants(&config.font);
+
+    let mut glyph_cache = GlyphCache::with_variants(
+        &shared.device,
+        font_variants.clone(),
+        scaled_font_size,
+        line_height_multiplier,
+    )
+    .expect("Failed to create glyph cache");
+    glyph_cache.precache_ascii();
+    glyph_cache.flush(&shared.queue);
+
+    // Update grid renderers with new glyph cache
+    state
+        .gpu
+        .grid_renderer
+        .set_glyph_cache(&shared.device, &glyph_cache);
+    state
+        .gpu
+        .output_grid_renderer
+        .set_glyph_cache(&shared.device, &glyph_cache);
+
+    state.gpu.glyph_cache = glyph_cache;
+
+    // Recreate tab glyph cache with new scaled tab font size
+    let tab_font_size = 12.0 * new_scale;
+    let mut tab_glyph_cache =
+        GlyphCache::with_variants(&shared.device, font_variants, tab_font_size, 1.3)
+            .expect("Failed to create tab glyph cache");
+    tab_glyph_cache.precache_ascii();
+    tab_glyph_cache.flush(&shared.queue);
+
+    // Update tab title renderer with new glyph cache
+    state
+        .gpu
+        .tab_title_renderer
+        .set_glyph_cache(&shared.device, &tab_glyph_cache);
+
+    state.gpu.tab_glyph_cache = tab_glyph_cache;
+
+    // Update tab bar scale factor
+    state.gpu.tab_bar.set_scale_factor(new_scale);
+
+    // Recalculate terminal dimensions with new cell sizes
+    let size = state.window.inner_size();
+    let cell_width = state.gpu.glyph_cache.cell_width();
+    let line_height = state.gpu.glyph_cache.line_height();
+    let tab_bar_height = state.gpu.tab_bar.height();
+
+    let padding_physical = 20.0 * new_scale;
+    let tab_bar_physical = tab_bar_height * new_scale;
+
+    let content_width = (size.width as f32 - padding_physical).max(60.0);
+    let content_height = (size.height as f32 - padding_physical - tab_bar_physical).max(40.0);
+
+    let new_cols = ((content_width / cell_width) as usize).max(10);
+    let new_rows = ((content_height / line_height) as usize).max(4);
+
+    state.cols = new_cols;
+    state.rows = new_rows;
+
+    // Resize all shells
+    for shell in state.shells.values_mut() {
+        shell.resize(Size::new(new_cols, new_rows));
+    }
+
+    // Mark as dirty and invalidate content hashes
+    state.dirty = true;
+    for hash in state.content_hashes.values_mut() {
+        *hash = 0;
+    }
+    state.window.request_redraw();
+
+    log::info!(
+        "Scale factor updated to {}: font size {}px, grid {}x{}",
+        new_scale,
+        scaled_font_size,
+        new_cols,
+        new_rows
+    );
+}
+
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn,crt=info"))
+    // Enable debug logging when profiling is enabled
+    let profiling_enabled = std::env::var("CRT_PROFILE").is_ok();
+    let default_filter = if profiling_enabled {
+        "warn,crt=debug,crt_renderer=debug,crt_theme=debug,crt_core=debug"
+    } else {
+        "warn,crt=info"
+    };
+
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(default_filter))
         .init();
-    log::info!("CRT Terminal starting");
+
+    if profiling_enabled {
+        log::info!("CRT Terminal starting (profiling mode - debug logging enabled)");
+    } else {
+        log::info!("CRT Terminal starting");
+    }
 
     // Initialize profiling (enabled via CRT_PROFILE=1)
     profiling::init();

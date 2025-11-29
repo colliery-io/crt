@@ -90,12 +90,13 @@ impl SpritePosition {
 
 /// Sprite sheet configuration
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct SpriteSheet {
     /// Cached ImageData for vello (created once, reused every frame)
     image_data: ImageData,
-    /// Width of full sprite sheet
+    /// Width of full sprite sheet (kept for debugging/validation)
     sheet_width: u32,
-    /// Height of full sprite sheet
+    /// Height of full sprite sheet (kept for debugging/validation)
     sheet_height: u32,
     /// Width of each frame
     frame_width: u32,

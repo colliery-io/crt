@@ -374,11 +374,6 @@ impl Config {
         ConfigPaths::from_env_or_default().map(|p| p.config_dir)
     }
 
-    /// Get the config file path
-    pub fn config_path() -> Option<PathBuf> {
-        ConfigPaths::from_env_or_default().map(|p| p.config_path())
-    }
-
     /// Load config from default path (respects CRT_CONFIG_DIR env var)
     pub fn load() -> Self {
         match ConfigPaths::from_env_or_default() {
@@ -419,16 +414,6 @@ impl Config {
     pub fn load_with_paths(paths: &ConfigPaths) -> Self {
         let config_path = paths.config_path();
         Self::load_from(&config_path)
-    }
-
-    /// Get the themes directory path
-    pub fn themes_dir() -> Option<PathBuf> {
-        ConfigPaths::from_env_or_default().map(|p| p.themes_dir())
-    }
-
-    /// Get theme CSS content
-    pub fn theme_css(&self) -> Option<String> {
-        self.theme_css_with_path().map(|(css, _)| css)
     }
 
     /// Get theme CSS with paths from environment or default

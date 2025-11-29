@@ -865,6 +865,10 @@ fn apply_cursor_properties(
     if let Some(bg) = standard.get("background") {
         theme.cursor_color = parse_color(bg)?;
     }
+    // Cursor glow uses same syntax as text-shadow
+    if let Some(shadow) = standard.get("text-shadow") {
+        theme.cursor_glow = Some(parse_text_shadow(shadow)?);
+    }
     Ok(())
 }
 
@@ -1727,5 +1731,31 @@ mod tests {
         // Non-overridden extended color should return None
         let color_100 = theme.palette.get_extended(100);
         assert!(color_100.is_none());
+    }
+
+    #[test]
+    fn test_parse_cursor_with_glow() {
+        let css = r#"
+            :terminal::cursor {
+                background: #ff00ff;
+                text-shadow: 0 0 15px rgba(255, 0, 255, 0.8);
+            }
+        "#;
+
+        let theme = parse_theme(css).unwrap();
+
+        // Check cursor color
+        assert!((theme.cursor_color.r - 1.0).abs() < 0.01); // #ff00ff
+        assert!((theme.cursor_color.g - 0.0).abs() < 0.01);
+        assert!((theme.cursor_color.b - 1.0).abs() < 0.01);
+
+        // Check cursor glow
+        assert!(theme.cursor_glow.is_some());
+        let glow = theme.cursor_glow.unwrap();
+        assert!((glow.radius - 15.0).abs() < 0.01);
+        assert!((glow.color.r - 1.0).abs() < 0.01);
+        assert!((glow.color.g - 0.0).abs() < 0.01);
+        assert!((glow.color.b - 1.0).abs() < 0.01);
+        assert!((glow.color.a - 0.8).abs() < 0.01);
     }
 }

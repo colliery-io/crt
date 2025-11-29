@@ -1092,6 +1092,7 @@ pub struct Theme {
     pub selection: SelectionStyle,
     pub highlight: HighlightStyle,
     pub cursor_color: Color,
+    pub cursor_glow: Option<TextShadow>,
 
     // Effects
     pub text_shadow: Option<TextShadow>,
@@ -1138,6 +1139,7 @@ impl Theme {
             selection: SelectionStyle::default(),
             highlight: HighlightStyle::default(),
             cursor_color: Color::from_hex(0x00ffff),
+            cursor_glow: None,
             text_shadow: Some(TextShadow::default()),
             grid: Some(GridEffect::default()),
             starfield: None,
@@ -1165,6 +1167,7 @@ impl Theme {
             selection: SelectionStyle::default(),
             highlight: HighlightStyle::default(),
             cursor_color: Color::from_hex(0xffffff),
+            cursor_glow: None,
             text_shadow: None,
             grid: None,
             starfield: None,

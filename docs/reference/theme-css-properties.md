@@ -9,6 +9,7 @@ Complete reference of all CSS properties supported by CRT Terminal themes.
 | `:terminal` | Main terminal styling (typography, colors, background) |
 | `:terminal::selection` | Text selection appearance |
 | `:terminal::highlight` | Search match highlighting |
+| `:terminal::cursor` | Cursor appearance |
 | `:terminal::backdrop` | Background effects (grid, particles, CRT, etc.) |
 | `:terminal::palette` | ANSI color palette (colors 0-255) |
 | `:terminal::tab-bar` | Tab bar container |
@@ -37,7 +38,6 @@ Complete reference of all CSS properties supported by CRT Terminal themes.
 |----------|------|---------|-------------|
 | `color` | color | #c8c8c8 | Foreground text color |
 | `background` | color/gradient | #1a1a1a | Background color or gradient |
-| `cursor-color` | color | #ffffff | Cursor color |
 | `text-shadow` | shadow | none | Text glow effect |
 
 ### Background Image
@@ -68,6 +68,15 @@ Complete reference of all CSS properties supported by CRT Terminal themes.
 | `background` | color | yellow | Search match background |
 | `color` | color | black | Search match text color |
 | `--current-background` | color | orange | Current match background |
+
+---
+
+## :terminal::cursor Properties
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `background` | color | #ffffff | Cursor color |
+| `text-shadow` | shadow | none | Cursor glow effect |
 
 ---
 
@@ -165,8 +174,8 @@ Can also use `--ansi-{name}` in `:terminal`:
 | `--particles-enabled` | bool | false | Enable particles |
 | `--particles-color` | color | white | Particle color |
 | `--particles-count` | number | 50 | Number of particles |
-| `--particles-shape` | keyword | circle | `circle`, `square`, `triangle` |
-| `--particles-behavior` | keyword | float | `float`, `fall`, `rise`, `swirl` |
+| `--particles-shape` | keyword | dot | `dot`, `circle`, `star`, `heart`, `sparkle` |
+| `--particles-behavior` | keyword | float | `float`, `drift`, `rise`, `fall` |
 | `--particles-size` | number | 4.0 | Particle size |
 | `--particles-speed` | number | 0.5 | Movement speed |
 | `--particles-glow-radius` | number | 0.0 | Glow radius |
@@ -188,16 +197,16 @@ Can also use `--ansi-{name}` in `:terminal`:
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `--shape-enabled` | bool | false | Enable shape |
-| `--shape-type` | keyword | circle | `circle`, `square`, `triangle`, `hexagon`, `star`, `polygon` |
+| `--shape-type` | keyword | circle | `circle`, `rect`, `ellipse`, `triangle`, `star`, `heart`, `polygon` |
 | `--shape-size` | number | 100.0 | Shape size |
 | `--shape-fill` | color | none | Fill color |
 | `--shape-stroke` | color | none | Stroke color |
 | `--shape-stroke-width` | number | 2.0 | Stroke thickness |
 | `--shape-glow-radius` | number | 0.0 | Glow radius |
 | `--shape-glow-color` | color | stroke | Glow color |
-| `--shape-rotation` | keyword | none | `none`, `clockwise`, `counterclockwise` |
+| `--shape-rotation` | keyword | none | `none`, `spin`, `wobble` |
 | `--shape-rotation-speed` | number | 1.0 | Rotation speed |
-| `--shape-motion` | keyword | none | `none`, `float`, `bounce`, `orbit` |
+| `--shape-motion` | keyword | bounce | `none`, `bounce`, `scroll`, `float`, `orbit` |
 | `--shape-motion-speed` | number | 1.0 | Motion speed |
 | `--shape-polygon-sides` | number | 6 | Sides for polygon type |
 
@@ -216,7 +225,7 @@ Can also use `--ansi-{name}` in `:terminal`:
 | `--sprite-scale` | number | 1.0 | Display scale |
 | `--sprite-opacity` | number | 1.0 | Sprite opacity |
 | `--sprite-position` | keyword | center | Position on screen |
-| `--sprite-motion` | keyword | none | `none`, `float`, `bounce`, `pace` |
+| `--sprite-motion` | keyword | none | `none`, `bounce`, `scroll`, `float`, `orbit` |
 | `--sprite-motion-speed` | number | 1.0 | Motion speed |
 
 ### CRT Post-Processing

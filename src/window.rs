@@ -15,7 +15,9 @@ use winit::window::Window;
 
 use crate::gpu::{SharedGpuState, WindowGpuState};
 use crate::input::detect_urls_in_line;
-use crate::state::{TabId, TabState, UiState};
+
+/// Unique identifier for a terminal tab
+pub type TabId = u64;
 
 /// Map alacritty_terminal AnsiColor to RGBA array using theme palette
 fn ansi_color_to_rgba(
@@ -133,11 +135,6 @@ pub struct WindowState {
     // Context menu state
     pub context_menu: ContextMenu,
 
-    // === New testable state modules (Phase 1 of migration) ===
-    /// Tab management state (testable, no GPU dependencies)
-    pub tab_state: TabState,
-    /// Aggregated UI state (testable, no GPU dependencies)
-    pub ui_state: UiState,
 }
 
 /// Bell visual flash state
@@ -657,11 +654,6 @@ impl WindowState {
             },
             decorations,
         })
-    }
-
-    /// Create a shell for a new tab, optionally in the specified working directory
-    pub fn create_shell_for_tab(&mut self, tab_id: u64) {
-        self.create_shell_for_tab_with_cwd(tab_id, None);
     }
 
     /// Create a shell for a new tab with a specific working directory

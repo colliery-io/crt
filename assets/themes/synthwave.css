@@ -9,10 +9,14 @@
     /* Gold neon text on deep purple */
     color: #61e2fe;
     background: linear-gradient(to bottom, #0a0c24, #080118);
-    cursor-color: #ff00ff;
 
     /* Neon glow */
     text-shadow: 0 0 12px rgba(97, 226, 254, 0.5);
+}
+
+:terminal::cursor {
+    background: #ff00ff;
+    text-shadow: 0 0 15px rgba(255, 0, 255, 0.8);
 }
 
 :terminal::selection {

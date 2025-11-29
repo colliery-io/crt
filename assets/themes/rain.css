@@ -13,10 +13,13 @@
     /* Base colors - muted blue-gray */
     color: #c0d0e0;
     background: linear-gradient(to bottom, #1a2030, #0a1020);
-    cursor-color: #6090c0;
 
     /* Subtle text glow */
     text-shadow: 0 0 6px rgba(100, 150, 200, 0.3);
+}
+
+:terminal::cursor {
+    background: #6090c0;
 }
 
 :terminal::selection {

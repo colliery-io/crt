@@ -12,10 +12,14 @@
     color: #ffaad5;
     background: linear-gradient(to bottom, #0b0b2a, #050510);
     background-image: url("nyancat/pixel.png");
-    cursor-color: #ff69b4;
 
     /* Rainbow glow because of course */
     text-shadow: 0 0 10px rgba(255, 182, 193, 0.6);
+}
+
+:terminal::cursor {
+    background: #ff69b4;
+    text-shadow: 0 0 10px rgba(255, 105, 180, 0.8);
 }
 
 :terminal::selection {

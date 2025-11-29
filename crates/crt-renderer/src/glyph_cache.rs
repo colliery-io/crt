@@ -260,7 +260,6 @@ impl GlyphCache {
 
         let ascent = metrics.ascent as f32 * scale;
         let descent = metrics.descent as f32 * scale;
-        let line_gap = metrics.leading as f32 * scale;
 
         // Line height is font_size * line_height_multiplier (from theme)
         // This gives consistent spacing regardless of font metrics

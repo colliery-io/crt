@@ -8,9 +8,12 @@
 
     color: #ffb0c8;
     background: linear-gradient(to bottom, #1a0a1a, #0f050f);
-    cursor-color: #ff6b9d;
 
     text-shadow: 0 0 6px rgba(255, 107, 157, 0.4);
+}
+
+:terminal::cursor {
+    background: #ff6b9d;
 }
 
 :terminal::backdrop {
