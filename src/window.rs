@@ -422,6 +422,17 @@ impl WindowState {
         let content = terminal.renderable_content();
         hasher.write_i32(content.cursor.point.line.0);
         hasher.write_usize(content.cursor.point.column.0);
+        // Include cursor shape in hash - programs like Claude Code change cursor style
+        let cursor_shape_discriminant = match content.cursor.shape {
+            crt_core::CursorShape::Block => 0u8,
+            crt_core::CursorShape::Underline => 1u8,
+            crt_core::CursorShape::Beam => 2u8,
+            crt_core::CursorShape::HollowBlock => 3u8,
+            crt_core::CursorShape::Hidden => 4u8,
+        };
+        hasher.write_u8(cursor_shape_discriminant);
+        // Include cursor visibility mode
+        hasher.write_u8(if terminal.cursor_mode_visible() { 1 } else { 0 });
         for cell in content.display_iter {
             hasher.write_u32(cell.c as u32);
         }
@@ -525,16 +536,25 @@ impl WindowState {
             }
 
             // Get background color and add decoration if non-default
-            let bg_color = ansi_color_to_rgba(bg_ansi, palette, default_fg, default_bg);
-            if bg_color != default_bg {
-                decorations.push(TextDecoration {
-                    x,
-                    y,
-                    cell_width,
-                    cell_height: line_height,
-                    color: bg_color,
-                    kind: DecorationKind::Background,
-                });
+            // Skip spacer cells (for wide characters) and hidden cells - they shouldn't have
+            // their own background decorations as this causes visual artifacts
+            let is_spacer = flags.intersects(
+                CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER,
+            );
+            let is_hidden = flags.contains(CellFlags::HIDDEN);
+
+            if !is_spacer && !is_hidden {
+                let bg_color = ansi_color_to_rgba(bg_ansi, palette, default_fg, default_bg);
+                if bg_color != default_bg {
+                    decorations.push(TextDecoration {
+                        x,
+                        y,
+                        cell_width,
+                        cell_height: line_height,
+                        color: bg_color,
+                        kind: DecorationKind::Background,
+                    });
+                }
             }
 
             // Collect underline decorations

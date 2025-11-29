@@ -523,33 +523,78 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
                 if cursor.visible {
                     let cursor_color = state.gpu.terminal_vello.cursor_color();
 
-                    // Use the terminal's requested cursor shape, not our configured shape
-                    let cursor_rect = match cursor.shape {
-                        crt_core::CursorShape::Block => {
-                            Some((cursor.x, cursor.y, cursor.cell_width, cursor.cell_height))
+                    // Use configured cursor shape as default, but allow terminal/apps to override
+                    // via escape sequences (DECSCUSR). If the terminal explicitly requests a
+                    // non-Block shape, use that; otherwise use the user's configured preference.
+                    let configured_shape = state.gpu.terminal_vello.cursor_shape();
+                    let terminal_shape = cursor.shape;
+
+                    // Determine effective cursor shape:
+                    // - If terminal explicitly set non-Block shape, use it
+                    // - If terminal shape is Hidden, honor that
+                    // - Otherwise use user's configured shape
+                    let cursor_rect = if terminal_shape == crt_core::CursorShape::Hidden {
+                        None
+                    } else if terminal_shape != crt_core::CursorShape::Block {
+                        // Terminal explicitly requested a non-default shape
+                        match terminal_shape {
+                            crt_core::CursorShape::Beam => {
+                                Some((cursor.x, cursor.y, 2.0, cursor.cell_height))
+                            }
+                            crt_core::CursorShape::Underline => {
+                                Some((
+                                    cursor.x,
+                                    cursor.y + cursor.cell_height - 2.0,
+                                    cursor.cell_width,
+                                    2.0,
+                                ))
+                            }
+                            crt_core::CursorShape::HollowBlock => {
+                                // For now, render as regular block - TODO: implement hollow
+                                Some((cursor.x, cursor.y, cursor.cell_width, cursor.cell_height))
+                            }
+                            _ => Some((cursor.x, cursor.y, cursor.cell_width, cursor.cell_height)),
                         }
-                        crt_core::CursorShape::Beam => {
-                            // 2-pixel wide bar on the left
-                            Some((cursor.x, cursor.y, 2.0, cursor.cell_height))
+                    } else {
+                        // Use user's configured shape
+                        match configured_shape {
+                            crt_renderer::CursorShape::Block => {
+                                Some((cursor.x, cursor.y, cursor.cell_width, cursor.cell_height))
+                            }
+                            crt_renderer::CursorShape::Bar => {
+                                Some((cursor.x, cursor.y, 2.0, cursor.cell_height))
+                            }
+                            crt_renderer::CursorShape::Underline => {
+                                Some((
+                                    cursor.x,
+                                    cursor.y + cursor.cell_height - 2.0,
+                                    cursor.cell_width,
+                                    2.0,
+                                ))
+                            }
                         }
-                        crt_core::CursorShape::Underline => {
-                            // 2-pixel tall underline at the bottom
-                            Some((
-                                cursor.x,
-                                cursor.y + cursor.cell_height - 2.0,
-                                cursor.cell_width,
-                                2.0,
-                            ))
-                        }
-                        crt_core::CursorShape::HollowBlock => {
-                            // Hollow block - just the outline (we'll draw 4 rects for the border)
-                            // For now, render as a regular block - TODO: implement hollow
-                            Some((cursor.x, cursor.y, cursor.cell_width, cursor.cell_height))
-                        }
-                        crt_core::CursorShape::Hidden => None,
                     };
 
                     if let Some((rect_x, rect_y, rect_w, rect_h)) = cursor_rect {
+                        // Render cursor glow effect (layered rectangles with decreasing opacity)
+                        if let Some((glow_color, radius, intensity)) = state.gpu.terminal_vello.cursor_glow() {
+                            let layers = 5;
+                            for i in (1..=layers).rev() {
+                                let layer_factor = i as f32 / layers as f32;
+                                let expand = radius * layer_factor;
+                                let alpha = glow_color[3] * intensity * (1.0 - layer_factor) * 0.3;
+
+                                state.gpu.overlay_rect_renderer.push_rect(
+                                    rect_x - expand,
+                                    rect_y - expand,
+                                    rect_w + expand * 2.0,
+                                    rect_h + expand * 2.0,
+                                    [glow_color[0], glow_color[1], glow_color[2], alpha],
+                                );
+                            }
+                        }
+
+                        // Render cursor
                         state.gpu.overlay_rect_renderer.push_rect(
                             rect_x,
                             rect_y,

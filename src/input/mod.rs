@@ -733,8 +733,90 @@ pub fn get_terminal_selection_text(state: &WindowState) -> Option<String> {
 }
 
 /// Get clipboard content from system clipboard
+///
+/// Handles three types of clipboard content:
+/// 1. Text - returns the text directly
+/// 2. Files (copied from Finder/Explorer) - returns the file path(s)
+/// 3. Images (screenshots) - saves to temp file and returns the path
+///
+/// This allows pasting images into applications like Claude Code that accept file paths.
 pub fn get_clipboard_content() -> Option<String> {
-    arboard::Clipboard::new().ok()?.get_text().ok()
+    let mut clipboard = arboard::Clipboard::new().ok()?;
+
+    // First try to get text (most common case)
+    if let Ok(text) = clipboard.get_text() {
+        if !text.is_empty() {
+            return Some(text);
+        }
+    }
+
+    // Try to get file paths (files copied from Finder/Explorer)
+    if let Ok(files) = clipboard_files::read() {
+        if !files.is_empty() {
+            // Join multiple paths with spaces, quoting paths that contain spaces
+            let paths: Vec<String> = files
+                .into_iter()
+                .map(|p| {
+                    let path_str = p.to_string_lossy().to_string();
+                    if path_str.contains(' ') {
+                        format!("'{}'", path_str)
+                    } else {
+                        path_str
+                    }
+                })
+                .collect();
+            return Some(paths.join(" "));
+        }
+    }
+
+    // Try to get image data (screenshots, copied images)
+    if let Ok(image_data) = clipboard.get_image() {
+        if let Some(path) = save_clipboard_image_to_temp(&image_data) {
+            return Some(path);
+        }
+    }
+
+    None
+}
+
+/// Save clipboard image data to a temporary file and return the path
+fn save_clipboard_image_to_temp(image_data: &arboard::ImageData) -> Option<String> {
+    use image::ImageEncoder;
+    use std::io::Write;
+
+    // Create temp directory if it doesn't exist
+    let temp_dir = std::env::temp_dir().join("crt_clipboard");
+    std::fs::create_dir_all(&temp_dir).ok()?;
+
+    // Generate unique filename with timestamp
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_millis();
+    let filename = format!("clipboard_{}.png", timestamp);
+    let path = temp_dir.join(&filename);
+
+    // Convert RGBA bytes to PNG using the image crate
+    let img = image::RgbaImage::from_raw(
+        image_data.width as u32,
+        image_data.height as u32,
+        image_data.bytes.to_vec(),
+    )?;
+
+    // Save as PNG
+    let mut file = std::fs::File::create(&path).ok()?;
+    let encoder = image::codecs::png::PngEncoder::new(&mut file);
+    encoder
+        .write_image(
+            &img,
+            image_data.width as u32,
+            image_data.height as u32,
+            image::ExtendedColorType::Rgba8,
+        )
+        .ok()?;
+    file.flush().ok()?;
+
+    Some(path.to_string_lossy().to_string())
 }
 
 /// Set clipboard content

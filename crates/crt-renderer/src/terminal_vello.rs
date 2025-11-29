@@ -146,6 +146,11 @@ impl TerminalVelloRenderer {
         self.cursor_glow = glow;
     }
 
+    /// Get cursor glow effect (color, radius, intensity)
+    pub fn cursor_glow(&self) -> Option<([f32; 4], f32, f32)> {
+        self.cursor_glow
+    }
+
     /// Get the current cursor shape
     pub fn cursor_shape(&self) -> CursorShape {
         self.cursor_shape
