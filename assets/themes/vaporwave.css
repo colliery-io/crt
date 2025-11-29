@@ -10,7 +10,7 @@
     background: linear-gradient(to bottom, #080118, #0e0820);
     cursor-color: #fecb00;
 
-    text-shadow: 0 0 15px rgba(97, 226, 254, 0.25);
+    text-shadow: 0 0 20px rgba(97, 226, 254, 0.6);
 }
 
 :terminal::selection {

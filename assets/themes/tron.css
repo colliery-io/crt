@@ -8,12 +8,11 @@
     ligatures: true;
 
     /* Circuit blue on black void */
-    color: #6fc3df;
+    color: #5aa0eb;
     background: linear-gradient(to bottom, #000000, #050510);
-    cursor-color: #ffffff;
 
     /* Electric circuit glow */
-    text-shadow: 0 0 12px rgba(111, 195, 223, 0.7);
+    text-shadow: 0 0 12px rgba(90, 160, 235, 0.7);
 }
 
 :terminal::selection {
@@ -26,18 +25,22 @@
     color: #000000;
 }
 
+:terminal::cursor {
+    background: #5aa0eb;
+}
+
 :terminal::backdrop {
     --grid-enabled: true;
-    --grid-color: rgba(111, 195, 223, 0.25);
+    --grid-color: rgba(90, 160, 235, 0.25);
     --grid-spacing: 5;
     --grid-line-width: 2.0;
     --grid-perspective: 2.0;
     --grid-horizon: 0.75;
     --grid-animation-speed: 0.4;
-    --grid-glow-radius: 10;
-    --grid-glow-intensity: 0.7;
+    --grid-glow-radius: 14;
+    --grid-glow-intensity: 0.9;
     --grid-vanishing-spread: .5;
-    --grid-curved: true;
+    --grid-curved: false;
 }
 
 /* ANSI palette - The Grid */

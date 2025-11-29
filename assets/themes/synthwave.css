@@ -8,11 +8,11 @@
 
     /* Gold neon text on deep purple */
     color: #61e2fe;
-    background: linear-gradient(to bottom, #080118, #0e0820);
+    background: linear-gradient(to bottom, #0a0c24, #080118);
     cursor-color: #ff00ff;
 
     /* Neon glow */
-    text-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+    text-shadow: 0 0 12px rgba(97, 226, 254, 0.5);
 }
 
 :terminal::selection {

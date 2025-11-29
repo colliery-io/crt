@@ -233,6 +233,12 @@ impl App {
         terminal_vello.set_cursor_shape(cursor_shape);
         terminal_vello.set_blink_enabled(self.config.cursor.blink);
         terminal_vello.set_blink_interval_ms(self.config.cursor.blink_interval_ms);
+        terminal_vello.set_cursor_color([
+            theme.cursor_color.r,
+            theme.cursor_color.g,
+            theme.cursor_color.b,
+            theme.cursor_color.a,
+        ]);
 
         // Rect renderer for cell backgrounds and tab bar
         let rect_renderer = RectRenderer::new(&shared.device, format);
