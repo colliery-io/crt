@@ -2,6 +2,31 @@
 //!
 //! All stateless GPU resources that can be shared across windows.
 //! Created once on first window and reused for all subsequent windows.
+//!
+//! # Status: Partially Integrated
+//!
+//! Currently only samplers are implemented. The full vision is to share
+//! render pipelines across windows to save ~50KB per window and reduce
+//! pipeline compilation time.
+//!
+//! # Integration Steps Required
+//!
+//! To fully integrate shared pipelines:
+//!
+//! 1. Extract pipeline creation from each renderer into this module:
+//!    - `GridRenderer` pipeline and bind group layout
+//!    - `RectRenderer` pipeline and bind group layout
+//!    - `BackgroundPipeline`, `CompositePipeline`, `CrtPipeline`
+//!    - `EffectsRenderer` blit pipeline
+//!
+//! 2. Modify renderer constructors to accept `&SharedPipelines` reference
+//!    instead of creating their own pipelines
+//!
+//! 3. Renderers create only per-window resources (bind groups, buffers)
+//!
+//! 4. Update `SharedGpuState` to create `SharedPipelines` once at startup
+
+#![allow(dead_code)]
 
 /// Shared render pipelines and samplers across all windows
 ///

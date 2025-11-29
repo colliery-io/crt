@@ -3,6 +3,27 @@
 //! Pools instance and uniform buffers for reuse across window lifecycles.
 //! Buffers are checked out when windows are created and automatically
 //! returned to the pool when dropped.
+//!
+//! # Status: Not Yet Integrated
+//!
+//! This module is implemented but not yet wired into the renderers.
+//! The texture pool (texture_pool.rs) is integrated and provides the main
+//! memory savings (~32MB per window for render textures).
+//!
+//! # Integration Steps Required
+//!
+//! To integrate buffer pooling (~2MB additional savings per window):
+//!
+//! 1. Move `BufferPool` to `crates/crt-renderer/` or create a shared crate
+//! 2. Modify `GridRenderer::new()` to accept a `PooledBuffer` parameter
+//!    instead of creating its own instance buffer
+//! 3. Modify `RectRenderer::new()` similarly
+//! 4. Update `SharedGpuState` to own the `BufferPool`
+//! 5. Update window creation in `main.rs` to checkout buffers and pass them
+//!
+//! The RAII pattern means buffers auto-return to pool when windows close.
+
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};

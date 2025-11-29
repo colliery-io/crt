@@ -11,9 +11,18 @@ mod buffer_pool;
 mod shared_pipelines;
 mod texture_pool;
 
+// Buffer pool exports - not yet integrated, see buffer_pool.rs for integration steps
+#[allow(unused_imports)]
 pub use buffer_pool::{BufferClass, BufferPool, PooledBuffer, PoolStats};
+
+// Shared pipelines - partially integrated, see shared_pipelines.rs for full integration
+#[allow(unused_imports)]
 pub use shared_pipelines::SharedPipelines;
-pub use texture_pool::{PooledTexture, TextureBucket, TexturePool, TexturePoolStats};
+
+// Texture pool - fully integrated
+pub use texture_pool::{PooledTexture, TexturePool};
+#[allow(unused_imports)]
+pub use texture_pool::{TextureBucket, TexturePoolStats};
 
 use std::sync::{Arc, Mutex};
 
@@ -33,10 +42,14 @@ pub struct SharedGpuState {
     /// Wrapped in Arc<Mutex> for sharing with EffectsRenderer
     pub vello_renderer: Arc<Mutex<Option<vello::Renderer>>>,
     /// Shared render pipelines and samplers (lazy-loaded on first window)
+    /// Not yet integrated - see shared_pipelines.rs for integration steps
+    #[allow(dead_code)]
     pub pipelines: Option<SharedPipelines>,
     /// Buffer pool for reusing instance/uniform buffers
+    /// Not yet integrated - see buffer_pool.rs for integration steps
+    #[allow(dead_code)]
     pub buffer_pool: BufferPool,
-    /// Texture pool for reusing render target textures
+    /// Texture pool for reusing render target textures (fully integrated)
     pub texture_pool: TexturePool,
 }
 
@@ -101,6 +114,8 @@ impl SharedGpuState {
     }
 
     /// Ensure shared pipelines are initialized (lazy initialization on first window)
+    /// Not yet integrated - see shared_pipelines.rs for integration steps
+    #[allow(dead_code)]
     pub fn ensure_pipelines(&mut self, format: wgpu::TextureFormat) {
         if self.pipelines.is_none() {
             log::info!("Creating shared GPU pipelines");
@@ -109,6 +124,8 @@ impl SharedGpuState {
     }
 
     /// Get shared pipelines (panics if not initialized)
+    /// Not yet integrated - see shared_pipelines.rs for integration steps
+    #[allow(dead_code)]
     pub fn pipelines(&self) -> &SharedPipelines {
         self.pipelines.as_ref().expect("SharedPipelines not initialized - call ensure_pipelines first")
     }

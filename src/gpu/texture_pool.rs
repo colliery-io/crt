@@ -189,6 +189,7 @@ impl TexturePool {
     }
 
     /// Get current pool statistics
+    #[allow(dead_code)]
     pub fn stats(&self) -> TexturePoolStats {
         self.inner.lock().unwrap().stats.clone()
     }
@@ -211,7 +212,9 @@ pub struct PooledTexture {
     texture: Option<wgpu::Texture>,
     view: Option<wgpu::TextureView>,
     bucket: TextureBucket,
+    #[allow(dead_code)]
     actual_width: u32,
+    #[allow(dead_code)]
     actual_height: u32,
     pool: Weak<Mutex<TexturePoolInner>>,
 }
@@ -228,16 +231,19 @@ impl PooledTexture {
     }
 
     /// Get the actual requested width (may be smaller than texture width)
+    #[allow(dead_code)]
     pub fn actual_width(&self) -> u32 {
         self.actual_width
     }
 
     /// Get the actual requested height (may be smaller than texture height)
+    #[allow(dead_code)]
     pub fn actual_height(&self) -> u32 {
         self.actual_height
     }
 
     /// Get the bucket (power-of-two) dimensions
+    #[allow(dead_code)]
     pub fn bucket_size(&self) -> (u32, u32) {
         (self.bucket.width, self.bucket.height)
     }
