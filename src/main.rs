@@ -70,8 +70,10 @@ struct App {
     modifiers: Modifiers,
     pending_new_window: bool,
     config_watcher: Option<watcher::ConfigWatcher>,
-    /// Last frame time for throttling redraws (prevents Metal memory leak)
+    /// Last frame time for throttling focused window redraws (~60fps)
     last_frame_time: Instant,
+    /// Last frame time for unfocused windows (~1fps for PTY updates)
+    last_unfocused_frame_time: Instant,
     #[cfg(target_os = "macos")]
     menu: Option<Menu>,
     #[cfg(target_os = "macos")]
@@ -92,6 +94,7 @@ impl App {
             pending_new_window: false,
             config_watcher,
             last_frame_time: Instant::now(),
+            last_unfocused_frame_time: Instant::now(),
             #[cfg(target_os = "macos")]
             menu: None,
             #[cfg(target_os = "macos")]
@@ -329,51 +332,22 @@ impl App {
             None
         };
 
-        // Create intermediate text texture for glow effect
-        let text_texture = shared.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Text Texture"),
-            size: wgpu::Extent3d {
-                width: size.width,
-                height: size.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let text_texture_view = text_texture.create_view(&Default::default());
+        // Create intermediate text texture for glow effect (from pool for memory reuse)
+        let text_texture = shared.texture_pool.checkout(size.width, size.height, format);
         let composite_bind_group = effect_pipeline
             .composite
-            .create_bind_group(&shared.device, &text_texture_view);
+            .create_bind_group(&shared.device, text_texture.view());
 
         // CRT post-processing pipeline
         let mut crt_pipeline = CrtPipeline::new(&shared.device, format);
         crt_pipeline.set_effect(theme.crt);
-        let (crt_texture, crt_texture_view, crt_bind_group) = if crt_pipeline.is_enabled() {
-            log::info!("CRT effect enabled - creating intermediate texture");
-            let texture = shared.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("CRT Intermediate Texture"),
-                size: wgpu::Extent3d {
-                    width: size.width,
-                    height: size.height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            });
-            let view = texture.create_view(&Default::default());
-            let bind_group = crt_pipeline.create_bind_group(&shared.device, &view);
-            (Some(texture), Some(view), Some(bind_group))
+        let (crt_texture, crt_bind_group) = if crt_pipeline.is_enabled() {
+            log::info!("CRT effect enabled - creating intermediate texture from pool");
+            let texture = shared.texture_pool.checkout(size.width, size.height, format);
+            let bind_group = crt_pipeline.create_bind_group(&shared.device, texture.view());
+            (Some(texture), Some(bind_group))
         } else {
-            (None, None, None)
+            (None, None)
         };
 
         let gpu = WindowGpuState {
@@ -395,11 +369,9 @@ impl App {
             background_image_bind_group,
             sprite_state,
             text_texture,
-            text_texture_view,
             composite_bind_group,
             crt_pipeline,
             crt_texture,
-            crt_texture_view,
             crt_bind_group,
         };
 
@@ -424,6 +396,7 @@ impl App {
             dirty: true,
             frame_count: 0,
             occluded: false,
+            focused: true,
             cursor_position: (0.0, 0.0),
             last_click_time: None,
             last_click_tab: None,
@@ -493,6 +466,11 @@ impl App {
             // Poll again after Drop to ensure destroyed resources are freed
             if let Some(ref shared) = self.shared_gpu {
                 let _ = shared.device.poll(wgpu::PollType::Wait);
+
+                // Shrink texture pool to release excess pooled textures
+                // This frees GPU memory from closed windows while keeping
+                // one texture per bucket for quick reuse on next window
+                shared.texture_pool.shrink();
 
                 // Reset Vello renderer to free accumulated texture atlas memory
                 // This prevents unbounded growth from windows being opened/closed
@@ -1076,8 +1054,11 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::Focused(focused) => {
+                state.focused = focused;
                 if focused {
                     self.focused_window = Some(id);
+                    // Redraw immediately when gaining focus to resume effects
+                    state.window.request_redraw();
                 }
             }
 
@@ -1593,12 +1574,31 @@ impl ApplicationHandler for App {
         const TARGET_FRAME_TIME: std::time::Duration = std::time::Duration::from_micros(16666); // ~60fps
         let elapsed = self.last_frame_time.elapsed();
 
+        // Focused window: 60fps for smooth effects
         if elapsed >= TARGET_FRAME_TIME {
             self.last_frame_time = Instant::now();
 
-            for state in self.windows.values() {
-                // Always request redraw at throttled rate to check for PTY output
-                state.window.request_redraw();
+            if let Some(focused_id) = self.focused_window {
+                if let Some(state) = self.windows.get(&focused_id) {
+                    if !state.occluded {
+                        state.window.request_redraw();
+                    }
+                }
+            }
+        }
+
+        // Unfocused windows: 10fps for PTY output updates (saves GPU work)
+        const UNFOCUSED_FRAME_TIME: std::time::Duration = std::time::Duration::from_millis(100);
+        let unfocused_elapsed = self.last_unfocused_frame_time.elapsed();
+
+        if unfocused_elapsed >= UNFOCUSED_FRAME_TIME {
+            self.last_unfocused_frame_time = Instant::now();
+
+            for (id, state) in self.windows.iter() {
+                // Skip focused window (handled above) and occluded windows
+                if Some(*id) != self.focused_window && !state.occluded {
+                    state.window.request_redraw();
+                }
             }
         }
     }

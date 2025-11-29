@@ -1,6 +1,19 @@
 //! GPU state management
 //!
 //! Shared and per-window GPU resources for wgpu rendering.
+//!
+//! ## Module Structure
+//! - `shared_pipelines` - Stateless render pipelines shared across all windows
+//! - `buffer_pool` - Instance/uniform buffer pooling with RAII semantics
+//! - `texture_pool` - Render target texture pooling by size bucket
+
+mod buffer_pool;
+mod shared_pipelines;
+mod texture_pool;
+
+pub use buffer_pool::{BufferClass, BufferPool, PooledBuffer, PoolStats};
+pub use shared_pipelines::SharedPipelines;
+pub use texture_pool::{PooledTexture, TextureBucket, TexturePool, TexturePoolStats};
 
 use std::sync::{Arc, Mutex};
 
@@ -13,12 +26,18 @@ use crt_renderer::{
 pub struct SharedGpuState {
     pub instance: wgpu::Instance,
     pub adapter: wgpu::Adapter,
-    pub device: wgpu::Device,
+    pub device: Arc<wgpu::Device>,
     pub queue: wgpu::Queue,
     /// Shared Vello renderer - lazy loaded only when CSS effects need it
     /// (rounded corners, gradients, shadows, backdrop effects, etc.)
     /// Wrapped in Arc<Mutex> for sharing with EffectsRenderer
     pub vello_renderer: Arc<Mutex<Option<vello::Renderer>>>,
+    /// Shared render pipelines and samplers (lazy-loaded on first window)
+    pub pipelines: Option<SharedPipelines>,
+    /// Buffer pool for reusing instance/uniform buffers
+    pub buffer_pool: BufferPool,
+    /// Texture pool for reusing render target textures
+    pub texture_pool: TexturePool,
 }
 
 impl SharedGpuState {
@@ -54,9 +73,20 @@ impl SharedGpuState {
 
         log::debug!("GPU device created successfully");
 
+        // Wrap device in Arc for sharing with buffer pool
+        let device = Arc::new(device);
+
         // Vello renderer is lazy-loaded only when CSS effects need it
         // (rounded corners, gradients, shadows, backdrop effects, complex paths)
         let vello_renderer = Arc::new(Mutex::new(None));
+
+        // Create buffer pool for reusing instance/uniform buffers
+        // Max 4 buffers per class keeps memory reasonable while allowing reuse
+        let buffer_pool = BufferPool::new(device.clone(), 4);
+
+        // Create texture pool for reusing render target textures
+        // Max 2 textures per bucket since textures are large (~8MB+ each)
+        let texture_pool = TexturePool::new(device.clone(), 2);
 
         Self {
             instance,
@@ -64,7 +94,23 @@ impl SharedGpuState {
             device,
             queue,
             vello_renderer,
+            pipelines: None,
+            buffer_pool,
+            texture_pool,
         }
+    }
+
+    /// Ensure shared pipelines are initialized (lazy initialization on first window)
+    pub fn ensure_pipelines(&mut self, format: wgpu::TextureFormat) {
+        if self.pipelines.is_none() {
+            log::info!("Creating shared GPU pipelines");
+            self.pipelines = Some(SharedPipelines::new(&self.device, format));
+        }
+    }
+
+    /// Get shared pipelines (panics if not initialized)
+    pub fn pipelines(&self) -> &SharedPipelines {
+        self.pipelines.as_ref().expect("SharedPipelines not initialized - call ensure_pipelines first")
     }
 
     /// Ensure the Vello renderer is initialized (lazy initialization)
@@ -166,18 +212,16 @@ pub struct WindowGpuState {
     // Sprite animation rendering (optional, bypasses vello for memory efficiency)
     pub sprite_state: Option<SpriteAnimationState>,
 
-    // Intermediate text texture for glow effect
+    // Intermediate text texture for glow effect (pooled for memory reuse)
     // Text is rendered here first, then composited with Gaussian blur
-    pub text_texture: wgpu::Texture,
-    pub text_texture_view: wgpu::TextureView,
+    pub text_texture: PooledTexture,
     pub composite_bind_group: wgpu::BindGroup,
 
     // CRT post-processing (optional - scanlines, curvature, vignette)
     pub crt_pipeline: CrtPipeline,
-    // Intermediate texture for CRT post-processing
+    // Intermediate texture for CRT post-processing (pooled for memory reuse)
     // When CRT is enabled, everything renders here first, then CRT effect outputs to surface
-    pub crt_texture: Option<wgpu::Texture>,
-    pub crt_texture_view: Option<wgpu::TextureView>,
+    pub crt_texture: Option<PooledTexture>,
     pub crt_bind_group: Option<wgpu::BindGroup>,
 }
 
@@ -186,14 +230,14 @@ impl WindowGpuState {
     ///
     /// Call this before removing WindowState to ensure proper cleanup.
     /// This unconfigures the surface which releases swap chain buffers (IOSurface on macOS).
+    /// Note: PooledTextures (text_texture, crt_texture) are automatically returned
+    /// to the pool when dropped, so we don't explicitly destroy them here.
     pub fn cleanup(&mut self, device: &wgpu::Device) {
         log::debug!("WindowGpuState cleanup - releasing GPU resources");
 
-        // Destroy textures explicitly to release GPU memory immediately
-        self.text_texture.destroy();
-        if let Some(ref texture) = self.crt_texture {
-            texture.destroy();
-        }
+        // Note: text_texture and crt_texture are PooledTextures that will be
+        // returned to the pool automatically when dropped. We don't destroy them
+        // manually - the pool handles cleanup and potential reuse.
 
         // Unconfigure surface to release swap chain buffers (IOSurface on macOS)
         // This signals to the Metal driver that we're done with this surface

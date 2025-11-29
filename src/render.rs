@@ -15,6 +15,11 @@ const VELLO_RESET_INTERVAL: u32 = 300;
 
 /// Render a single frame for a window
 pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
+    // Skip rendering for fully occluded windows (covered by other windows)
+    if state.occluded {
+        return;
+    }
+
     let frame_start = Instant::now();
     let mut timing = FrameTiming::default();
     state.frame_count = state.frame_count.saturating_add(1);
@@ -142,14 +147,9 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     // Determine render target: CRT intermediate texture if enabled, otherwise surface directly
     let crt_enabled = state.gpu.crt_pipeline.is_enabled();
     // Take ownership of CRT view to avoid borrow conflicts
-    let crt_view_clone = state.gpu.crt_texture_view.as_ref().map(|_| {
+    let crt_view_clone = state.gpu.crt_texture.as_ref().map(|pooled| {
         // Create a new view from the texture each frame (cheap operation)
-        state
-            .gpu
-            .crt_texture
-            .as_ref()
-            .unwrap()
-            .create_view(&Default::default())
+        pooled.texture().create_view(&Default::default())
     });
     let render_target: &wgpu::TextureView = if crt_enabled {
         crt_view_clone.as_ref().unwrap_or(&frame_view)
@@ -401,7 +401,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Clear Text Texture Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &state.gpu.text_texture_view,
+                view: state.gpu.text_texture.view(),
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
@@ -419,7 +419,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Terminal Text Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &state.gpu.text_texture_view,
+                view: state.gpu.text_texture.view(),
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
