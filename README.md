@@ -82,7 +82,7 @@ Configuration lives at `~/.config/crt/config.toml`:
 
 ## Themes
 
-CRT includes 15 built-in themes:
+CRT includes 16 built-in themes. See the [Theme Gallery](docs/gallery/README.md) for screenshots of each.
 
 | Theme | Description |
 |-------|-------------|
