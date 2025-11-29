@@ -13,10 +13,10 @@
     /* Pip-Boy green */
     color: #61fe71;
     background: #0a1a0d;
-    background-image: url("images/background.jpg");
-    background-size: contain;
-    background-position: center;
-    --background-opacity: 0.15;
+    background-image: url("scanlines.png");
+    background-size: cover;
+    background-repeat: repeat;
+    --background-opacity: 0.08;
 
     /* Green text glow - stronger for visibility */
     text-shadow: 0 0 15px rgba(97, 254, 113, 0.5);
@@ -37,18 +37,23 @@
 }
 
 :terminal::backdrop {
-    /* Disable grid - image has its own scanlines */
+    /* Disable grid */
     --grid-enabled: false;
 
-    /* CRT post-processing - disabled due to redraw issues
-    --crt-enabled: true;
-    --crt-scanline-intensity: 0.08;
-    --crt-scanline-frequency: 1.0;
-    --crt-curvature: 0.02;
-    --crt-vignette: 0.25;
-    --crt-chromatic-aberration: 0.2;
-    --crt-flicker: 0.01;
-    */
+    /* Animated Pip-Boy sprite - walking Vault Boy */
+    --sprite-enabled: true;
+    --sprite-path: "pipboy-sprite.png";
+    --sprite-frame-width: 320;
+    --sprite-frame-height: 240;
+    --sprite-columns: 8;
+    --sprite-rows: 1;
+    --sprite-frame-count: 8;
+    --sprite-fps: 10;
+    --sprite-scale: 0.8;
+    --sprite-opacity: 0.35;
+    --sprite-motion: none;
+    --sprite-motion-speed: 0;
+    --sprite-position: bottom-right;
 }
 
 /* ANSI 16-color palette - Pip-Boy green monochrome */
