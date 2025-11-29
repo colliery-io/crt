@@ -211,3 +211,11 @@ impl RectRenderer {
         render_pass.draw(0..4, 0..self.instances.len() as u32);
     }
 }
+
+impl Drop for RectRenderer {
+    fn drop(&mut self) {
+        // Destroy buffers to release GPU memory immediately
+        self.globals_buffer.destroy();
+        self.instance_buffer.destroy();
+    }
+}

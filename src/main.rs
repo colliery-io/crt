@@ -471,12 +471,34 @@ impl App {
     }
 
     fn close_window(&mut self, window_id: WindowId) {
+        if let Some(ref shared) = self.shared_gpu {
+            // Poll GPU to complete any pending work for this window before cleanup
+            let _ = shared.device.poll(wgpu::PollType::Wait);
+
+            // Explicitly cleanup GPU resources before dropping
+            // This unconfigures the surface to release IOSurface buffers
+            if let Some(state) = self.windows.get_mut(&window_id) {
+                state.gpu.cleanup(&shared.device);
+            }
+        }
+
+        // Now remove and drop the window state (triggers Drop impls)
         if self.windows.remove(&window_id).is_some() {
             log::info!(
                 "Closed window {:?}, remaining: {}",
                 window_id,
                 self.windows.len()
             );
+
+            // Poll again after Drop to ensure destroyed resources are freed
+            if let Some(ref shared) = self.shared_gpu {
+                let _ = shared.device.poll(wgpu::PollType::Wait);
+
+                // Reset Vello renderer to free accumulated texture atlas memory
+                // This prevents unbounded growth from windows being opened/closed
+                shared.reset_vello_renderer();
+            }
+
             if self.focused_window == Some(window_id) {
                 self.focused_window = self.windows.keys().next().copied();
             }

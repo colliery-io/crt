@@ -754,6 +754,32 @@ impl CrtPipeline {
     }
 }
 
+// Drop implementations to release GPU resources immediately on window close
+
+impl Drop for BackgroundPipeline {
+    fn drop(&mut self) {
+        self.uniform_buffer.destroy();
+    }
+}
+
+impl Drop for CompositePipeline {
+    fn drop(&mut self) {
+        self.uniform_buffer.destroy();
+    }
+}
+
+impl Drop for BackgroundImagePipeline {
+    fn drop(&mut self) {
+        self.uniform_buffer.destroy();
+    }
+}
+
+impl Drop for CrtPipeline {
+    fn drop(&mut self) {
+        self.uniform_buffer.destroy();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

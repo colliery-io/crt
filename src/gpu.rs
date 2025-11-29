@@ -180,3 +180,48 @@ pub struct WindowGpuState {
     pub crt_texture_view: Option<wgpu::TextureView>,
     pub crt_bind_group: Option<wgpu::BindGroup>,
 }
+
+impl WindowGpuState {
+    /// Explicitly release GPU resources before dropping.
+    ///
+    /// Call this before removing WindowState to ensure proper cleanup.
+    /// This unconfigures the surface which releases swap chain buffers (IOSurface on macOS).
+    pub fn cleanup(&mut self, device: &wgpu::Device) {
+        log::debug!("WindowGpuState cleanup - releasing GPU resources");
+
+        // Destroy textures explicitly to release GPU memory immediately
+        self.text_texture.destroy();
+        if let Some(ref texture) = self.crt_texture {
+            texture.destroy();
+        }
+
+        // Unconfigure surface to release swap chain buffers (IOSurface on macOS)
+        // This signals to the Metal driver that we're done with this surface
+        self.surface.configure(
+            device,
+            &wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: self.config.format,
+                width: 1,
+                height: 1,
+                present_mode: wgpu::PresentMode::Fifo,
+                alpha_mode: self.config.alpha_mode,
+                view_formats: vec![],
+                desired_maximum_frame_latency: 1,
+            },
+        );
+
+        // Poll to process the unconfigure
+        let _ = device.poll(wgpu::PollType::Wait);
+    }
+}
+
+impl Drop for WindowGpuState {
+    fn drop(&mut self) {
+        log::debug!("Dropping WindowGpuState");
+        // Note: Most cleanup happens in cleanup() which should be called first.
+        // Surface is cleaned up automatically on drop in wgpu 26+
+        // Other resources (buffers, bind groups, pipelines) in sub-components
+        // are cleaned up by their own Drop implementations
+    }
+}

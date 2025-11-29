@@ -290,3 +290,11 @@ impl GridRenderer {
         self.instances.len()
     }
 }
+
+impl Drop for GridRenderer {
+    fn drop(&mut self) {
+        // Destroy buffers to release GPU memory immediately
+        self.globals_buffer.destroy();
+        self.instance_buffer.destroy();
+    }
+}

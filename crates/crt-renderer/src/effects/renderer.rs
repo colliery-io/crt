@@ -443,3 +443,12 @@ impl EffectsRenderer {
         self.time = 0.0;
     }
 }
+
+impl Drop for EffectsRenderer {
+    fn drop(&mut self) {
+        // Destroy render target texture to release GPU memory
+        if let Some(ref texture) = self.target_texture {
+            texture.destroy();
+        }
+    }
+}

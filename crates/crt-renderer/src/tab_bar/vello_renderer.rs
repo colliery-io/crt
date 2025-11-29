@@ -216,6 +216,15 @@ impl VelloTabBarRenderer {
     }
 }
 
+impl Drop for VelloTabBarRenderer {
+    fn drop(&mut self) {
+        // Destroy render target texture to release GPU memory
+        if let Some(ref texture) = self.target_texture {
+            texture.destroy();
+        }
+    }
+}
+
 /// Convert theme color to vello brush
 fn color_to_brush(color: &Color) -> peniko::Brush {
     peniko::Brush::Solid(peniko::Color::from_rgba8(

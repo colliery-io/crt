@@ -611,3 +611,10 @@ impl GlyphCache {
         self.pending_uploads.clear();
     }
 }
+
+impl Drop for GlyphCache {
+    fn drop(&mut self) {
+        // Destroy the atlas texture to release GPU memory immediately
+        self.atlas_texture.destroy();
+    }
+}
