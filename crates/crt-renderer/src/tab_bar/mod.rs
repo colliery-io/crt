@@ -309,6 +309,23 @@ impl TabBar {
             .collect()
     }
 
+    /// Get close button positions for text rendering (returns x, y position for 'x' glyph)
+    pub fn get_close_button_labels(&self) -> Vec<(f32, f32)> {
+        let s = self.layout.scale_factor();
+        let font_height = 14.0 * s;
+
+        self.layout
+            .tab_rects()
+            .iter()
+            .map(|rect| {
+                // Center the 'x' character in the close button area
+                let x = rect.close_x + (self.theme.close.size * s - font_height * 0.5) * 0.5;
+                let y = rect.y + (rect.height - font_height) / 2.0;
+                (x, y)
+            })
+            .collect()
+    }
+
     /// Prepare the tab bar for rendering (builds vello scene)
     pub fn prepare(&mut self, device: &wgpu::Device, _queue: &wgpu::Queue) {
         // Recalculate layout if dirty
@@ -398,32 +415,6 @@ impl TabBar {
             }
         }
 
-        // Close buttons
-        for (i, rect) in tab_rects.iter().enumerate() {
-            let _is_active = i == active_tab;
-            let close_color = color_to_array(&self.theme.close.foreground);
-
-            // Simple X mark using two crossed rectangles
-            let cx = rect.close_x + self.theme.close.size * s * 0.5;
-            let cy = rect.y + rect.height * 0.5;
-            let size = self.theme.close.size * s * 0.3;
-            let thickness = s * 1.5;
-
-            // Draw X as two overlapping rectangles (simplified)
-            rect_renderer.push_rect(
-                cx - size,
-                cy - thickness * 0.5,
-                size * 2.0,
-                thickness,
-                close_color,
-            );
-            rect_renderer.push_rect(
-                cx - thickness * 0.5,
-                cy - size,
-                thickness,
-                size * 2.0,
-                close_color,
-            );
-        }
+        // Close buttons are rendered as text glyphs in render_tab_titles
     }
 }

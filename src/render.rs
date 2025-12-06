@@ -469,10 +469,14 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     // Pass 5: Render cursor, selection, underlines, strikethroughs via RectRenderer
     // (Direct rendering without intermediate texture saves ~8MB)
     {
-        // Get selection from active terminal (if any)
-        let selection = active_tab_id
+        // Get selection and display_offset from active terminal (if any)
+        let (selection, display_offset) = active_tab_id
             .and_then(|id| state.shells.get(&id))
-            .and_then(|shell| shell.terminal().renderable_content().selection);
+            .map(|shell| {
+                let content = shell.terminal().renderable_content();
+                (content.selection, shell.terminal().display_offset() as i32)
+            })
+            .unwrap_or((None, 0));
 
         // Collect all overlay rectangles (uses separate renderer to avoid buffer conflicts with tab bar)
         state.gpu.overlay_rect_renderer.clear();
@@ -484,7 +488,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
 
         // Add selection rectangles
         if let Some(selection) = selection {
-            render_selection_rects(state, &selection);
+            render_selection_rects(state, &selection, display_offset);
         }
 
         // Add underlines and strikethroughs from cached decorations
@@ -783,27 +787,45 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
 }
 
 /// Render selection rectangles via RectRenderer (direct, no intermediate texture)
-fn render_selection_rects(state: &mut WindowState, selection: &SelectionRange) {
+/// Selection coordinates are in grid space (negative = scrollback history, 0+ = visible screen)
+/// display_offset converts grid coordinates to viewport coordinates for rendering
+fn render_selection_rects(state: &mut WindowState, selection: &SelectionRange, display_offset: i32) {
     let cell_width = state.gpu.glyph_cache.cell_width();
     let line_height = state.gpu.glyph_cache.line_height();
     let (offset_x, offset_y) = state.gpu.tab_bar.content_offset();
     let padding = 10.0 * state.scale_factor;
+    let screen_lines = state.rows as i32;
 
     // Selection highlight color (semi-transparent blue)
     let selection_color = [0.3, 0.4, 0.6, 0.5];
 
-    let start_line = selection.start.line.0;
-    let end_line = selection.end.line.0;
+    // Selection coordinates are in grid space, convert to viewport space for rendering
+    // viewport_line = grid_line + display_offset
+    let start_grid_line = selection.start.line.0;
+    let end_grid_line = selection.end.line.0;
     let start_col = selection.start.column.0;
     let end_col = selection.end.column.0;
+
+    // Convert grid lines to viewport lines
+    let start_viewport_line = start_grid_line + display_offset;
+    let end_viewport_line = end_grid_line + display_offset;
+
+    // Clamp to visible viewport (0 to screen_lines-1)
+    let visible_start = start_viewport_line.max(0);
+    let visible_end = end_viewport_line.min(screen_lines - 1);
+
+    // If selection is entirely outside visible area, skip rendering
+    if visible_start > screen_lines - 1 || visible_end < 0 {
+        return;
+    }
 
     if selection.is_block {
         // Block selection: rectangle from start to end
         let min_col = start_col.min(end_col);
         let max_col = start_col.max(end_col);
 
-        for line in start_line..=end_line {
-            let y = offset_y + padding + (line as f32 * line_height);
+        for viewport_line in visible_start..=visible_end {
+            let y = offset_y + padding + (viewport_line as f32 * line_height);
             let x = offset_x + padding + (min_col as f32 * cell_width);
             let num_cells = max_col - min_col + 1;
             let width = num_cells as f32 * cell_width;
@@ -814,16 +836,19 @@ fn render_selection_rects(state: &mut WindowState, selection: &SelectionRange) {
         }
     } else {
         // Normal selection: spans from start point to end point
-        for line in start_line..=end_line {
-            let y = offset_y + padding + (line as f32 * line_height);
+        for viewport_line in visible_start..=visible_end {
+            let y = offset_y + padding + (viewport_line as f32 * line_height);
 
-            let (line_start_col, line_end_col) = if start_line == end_line {
+            // Convert back to grid line to compare with selection boundaries
+            let grid_line = viewport_line - display_offset;
+
+            let (line_start_col, line_end_col) = if start_grid_line == end_grid_line {
                 // Single line selection
                 (start_col, end_col)
-            } else if line == start_line {
+            } else if grid_line == start_grid_line {
                 // First line: from start column to end of line
                 (start_col, 999)
-            } else if line == end_line {
+            } else if grid_line == end_grid_line {
                 // Last line: from start of line to end column
                 (0, end_col)
             } else {
@@ -930,6 +955,17 @@ fn render_tab_titles(
             .gpu
             .tab_title_renderer
             .push_glyphs(&glyphs, text_color);
+    }
+
+    // Render close button 'x' characters
+    let close_positions = state.gpu.tab_bar.get_close_button_labels();
+    for (x, y) in close_positions {
+        if let Some(glyph) = state.gpu.tab_glyph_cache.position_char('x', x, y) {
+            state
+                .gpu
+                .tab_title_renderer
+                .push_glyphs(&[glyph], inactive_color);
+        }
     }
 
     state.gpu.tab_glyph_cache.flush(&shared.queue);

@@ -4,14 +4,14 @@ level: initiative
 title: "GPU Resource Pooling and Sharing"
 short_code: "CRT-I-0019"
 created_at: 2025-11-29T17:19:07.836909+00:00
-updated_at: 2025-11-29T17:19:07.836909+00:00
+updated_at: 2025-11-29T21:39:04.004679+00:00
 parent: CRT-V-0001
 blocked_by: []
-archived: false
+archived: true
 
 tags:
   - "#initiative"
-  - "#phase/discovery"
+  - "#phase/completed"
 
 
 exit_criteria_met: false

@@ -577,7 +577,13 @@ pub fn handle_terminal_mouse_button(
         state.last_selection_click_pos = Some((col, line));
         state.mouse_pressed = true;
 
-        let point = Point::new(Line(line as i32), Column(col));
+        // Convert viewport coordinates to grid coordinates
+        // Grid coordinates: negative = scrollback history, 0+ = visible screen
+        // Viewport coordinates: 0 = top of visible area
+        // When scrolled back, display_offset > 0, so grid_line = viewport_line - display_offset
+        let display_offset = shell.terminal().display_offset() as i32;
+        let grid_line = line as i32 - display_offset;
+        let point = Point::new(Line(grid_line), Column(col));
 
         // Selection type based on click count
         let selection_type = match click_count {
@@ -637,7 +643,10 @@ pub fn handle_terminal_mouse_move(state: &mut WindowState, x: f32, y: f32) {
         return;
     }
 
-    let point = Point::new(Line(line as i32), Column(col));
+    // Convert viewport coordinates to grid coordinates (same as in mouse button handler)
+    let display_offset = shell.terminal().display_offset() as i32;
+    let grid_line = line as i32 - display_offset;
+    let point = Point::new(Line(grid_line), Column(col));
     shell.update_selection(point);
 
     state.dirty = true;
