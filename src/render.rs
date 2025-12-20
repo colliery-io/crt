@@ -314,8 +314,9 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     state.gpu.terminal_vello.update_blink();
 
     // Update cached decorations when content changes
-    if let Some(ref result) = update_result {
-        state.cached_render.decorations = result.decorations.clone();
+    if let Some(mut result) = update_result {
+        // Use take() to avoid cloning the decorations vector
+        state.cached_render.decorations = std::mem::take(&mut result.decorations);
         state.cached_render.cursor = Some(result.cursor);
     }
 
@@ -885,6 +886,10 @@ fn render_tab_titles(
     let inactive_color = state.gpu.tab_bar.inactive_tab_color();
     let active_shadow = state.gpu.tab_bar.active_tab_text_shadow();
 
+    // Pre-allocate glyph buffer to avoid per-loop allocations
+    // Typical tab title is ~30 chars max, so 64 is plenty
+    let mut glyph_buffer: Vec<crt_renderer::PositionedGlyph> = Vec::with_capacity(64);
+
     // First pass: render glow layers for active tabs
     if let Some((radius, glow_color)) = active_shadow {
         // Tighter glow offsets for a subtle halo effect
@@ -909,20 +914,20 @@ fn render_tab_titles(
         for (x, y, title, is_active, _is_editing) in &tab_labels {
             if *is_active {
                 for (ox, oy) in &offsets {
-                    let mut glyphs = Vec::new();
+                    glyph_buffer.clear();
                     let mut char_x = *x + ox;
                     for c in title.chars() {
                         if let Some(glyph) =
                             state.gpu.tab_glyph_cache.position_char(c, char_x, *y + oy)
                         {
-                            glyphs.push(glyph);
+                            glyph_buffer.push(glyph);
                         }
                         char_x += state.gpu.tab_glyph_cache.cell_width();
                     }
                     state
                         .gpu
                         .tab_title_renderer
-                        .push_glyphs(&glyphs, glow_render_color);
+                        .push_glyphs(&glyph_buffer, glow_render_color);
                 }
             }
         }
@@ -930,11 +935,11 @@ fn render_tab_titles(
 
     // Second pass: render actual text on top
     for (x, y, title, is_active, is_editing) in tab_labels {
-        let mut glyphs = Vec::new();
+        glyph_buffer.clear();
         let mut char_x = x;
         for c in title.chars() {
             if let Some(glyph) = state.gpu.tab_glyph_cache.position_char(c, char_x, y) {
-                glyphs.push(glyph);
+                glyph_buffer.push(glyph);
             }
             char_x += state.gpu.tab_glyph_cache.cell_width();
         }
@@ -954,7 +959,7 @@ fn render_tab_titles(
         state
             .gpu
             .tab_title_renderer
-            .push_glyphs(&glyphs, text_color);
+            .push_glyphs(&glyph_buffer, text_color);
     }
 
     // Render close button 'x' characters

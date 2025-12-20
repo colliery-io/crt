@@ -36,6 +36,8 @@ pub struct RectRenderer {
     instance_capacity: usize,
     /// Pending instances to render
     instances: Vec<RectInstance>,
+    /// Cached screen size to avoid redundant uniform updates
+    cached_screen_size: (f32, f32),
 }
 
 impl RectRenderer {
@@ -157,6 +159,7 @@ impl RectRenderer {
             instance_buffer,
             instance_capacity,
             instances: Vec::with_capacity(Self::MAX_INSTANCES),
+            cached_screen_size: (0.0, 0.0),
         }
     }
 
@@ -181,8 +184,14 @@ impl RectRenderer {
         self.instances.len()
     }
 
-    /// Update screen size uniform
-    pub fn update_screen_size(&self, queue: &wgpu::Queue, width: f32, height: f32) {
+    /// Update screen size uniform (only writes if size changed)
+    pub fn update_screen_size(&mut self, queue: &wgpu::Queue, width: f32, height: f32) {
+        // Skip if size hasn't changed
+        if self.cached_screen_size == (width, height) {
+            return;
+        }
+        self.cached_screen_size = (width, height);
+
         let globals = Globals {
             screen_size: [width, height],
             _pad: [0.0, 0.0],

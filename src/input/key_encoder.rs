@@ -165,4 +165,16 @@ mod tests {
         // Ctrl+C should produce ETX (0x03)
         assert_eq!(ctrl_c, Some(vec![0x03]));
     }
+
+    #[test]
+    fn test_encode_home_end() {
+        // Note: Home/End are now handled explicitly in handle_shell_input with PC-style
+        // sequences (\x1b[1~ and \x1b[4~) because they work more universally with shells.
+        // This test verifies termwiz behavior for reference.
+        let home = encode_key(&Key::Named(NamedKey::Home), false, false, false);
+        assert_eq!(home, Some(b"\x1b[H".to_vec()), "Home key encoding (termwiz)");
+
+        let end = encode_key(&Key::Named(NamedKey::End), false, false, false);
+        assert_eq!(end, Some(b"\x1b[F".to_vec()), "End key encoding (termwiz)");
+    }
 }

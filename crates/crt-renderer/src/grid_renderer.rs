@@ -56,6 +56,8 @@ pub struct GridRenderer {
     bind_group: Option<wgpu::BindGroup>,
     /// Pending instances to render
     instances: Vec<GlyphInstance>,
+    /// Cached screen size to avoid redundant uniform updates
+    cached_screen_size: (f32, f32),
 }
 
 impl GridRenderer {
@@ -207,6 +209,7 @@ impl GridRenderer {
             sampler,
             bind_group: None,
             instances: Vec::with_capacity(Self::MAX_INSTANCES),
+            cached_screen_size: (0.0, 0.0),
         }
     }
 
@@ -251,8 +254,14 @@ impl GridRenderer {
         }
     }
 
-    /// Update screen size uniform
-    pub fn update_screen_size(&self, queue: &wgpu::Queue, width: f32, height: f32) {
+    /// Update screen size uniform (only writes if size changed)
+    pub fn update_screen_size(&mut self, queue: &wgpu::Queue, width: f32, height: f32) {
+        // Skip if size hasn't changed
+        if self.cached_screen_size == (width, height) {
+            return;
+        }
+        self.cached_screen_size = (width, height);
+
         let globals = Globals {
             screen_size: [width, height],
             atlas_size: [1024.0, 1024.0],

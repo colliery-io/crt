@@ -251,10 +251,25 @@ pub fn handle_shell_input(
 
     let mut input_sent = false;
 
+    // Handle Home/End keys explicitly using readline's native bindings
+    // Ctrl-A (0x01) = beginning of line, Ctrl-E (0x05) = end of line
+    // These work universally in bash, zsh, and other readline-based shells
+    match key {
+        Key::Named(NamedKey::Home) if !shift_pressed => {
+            shell.send_input(b"\x01"); // Ctrl-A = beginning of line
+            input_sent = true;
+        }
+        Key::Named(NamedKey::End) if !shift_pressed => {
+            shell.send_input(b"\x05"); // Ctrl-E = end of line
+            input_sent = true;
+        }
+        _ => {}
+    }
+
     // macOS-specific word navigation shortcuts (Option+Arrow, Cmd+Arrow, Option+Backspace)
     // These override standard encoding because macOS users expect this behavior
     #[cfg(target_os = "macos")]
-    {
+    if !input_sent {
         match key {
             Key::Named(NamedKey::Backspace) if alt_pressed => {
                 shell.send_input(b"\x1b\x7f"); // ESC DEL = delete word backward

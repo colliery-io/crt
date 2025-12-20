@@ -391,6 +391,18 @@ pub struct TextBufferUpdateResult {
     pub decorations: Vec<TextDecoration>,
 }
 
+/// Collected cell data for single-pass processing
+/// Avoids multiple terminal.renderable_content() calls
+#[derive(Clone, Copy)]
+struct CollectedCell {
+    col: usize,
+    grid_line: i32,
+    c: char,
+    flags: CellFlags,
+    fg: AnsiColor,
+    bg: AnsiColor,
+}
+
 /// Cached rendering state that persists across frames
 #[derive(Default)]
 pub struct CachedRenderState {
@@ -398,6 +410,10 @@ pub struct CachedRenderState {
     pub decorations: Vec<TextDecoration>,
     /// Cached cursor info
     pub cursor: Option<CursorInfo>,
+    /// Reusable line text buffer for URL detection (cleared and reused each update)
+    line_texts: std::collections::BTreeMap<i32, String>,
+    /// Reusable cell collection buffer (cleared and reused each update)
+    collected_cells: Vec<CollectedCell>,
 }
 
 impl WindowState {
@@ -449,7 +465,7 @@ impl WindowState {
         // Get content offset (excluding tab bar)
         let (offset_x, offset_y) = self.gpu.tab_bar.content_offset();
 
-        // Re-read content since we consumed it above
+        // Re-read content since we consumed it above for hashing
         let content = terminal.renderable_content();
         self.gpu.grid_renderer.clear();
         self.gpu.output_grid_renderer.clear();
@@ -472,26 +488,43 @@ impl WindowState {
         let cursor_x = offset_x + padding + (cursor_point.column.0 as f32 * cell_width);
         let cursor_y = offset_y + padding + (cursor_viewport_line as f32 * line_height);
 
-        // First pass: collect line text for URL detection
-        let mut line_texts: std::collections::BTreeMap<i32, String> =
-            std::collections::BTreeMap::new();
+        // Single pass: collect cells AND build line text for URL detection
+        // This avoids a second terminal.renderable_content() call
+        // Reuse cached collections to avoid per-update allocations
+        // Clear line_texts values (keeping keys to reuse String allocations)
+        for s in self.cached_render.line_texts.values_mut() {
+            s.clear();
+        }
+        self.cached_render.collected_cells.clear();
+
         for cell in content.display_iter {
             let viewport_line = cell.point.line.0 + display_offset;
-            line_texts.entry(viewport_line).or_default().push(cell.c);
+            self.cached_render
+                .line_texts
+                .entry(viewport_line)
+                .or_default()
+                .push(cell.c);
+
+            // Collect cell data for rendering pass
+            self.cached_render.collected_cells.push(CollectedCell {
+                col: cell.point.column.0,
+                grid_line: cell.point.line.0,
+                c: cell.c,
+                flags: cell.flags,
+                fg: cell.fg,
+                bg: cell.bg,
+            });
         }
 
         // Detect URLs before rendering so we can underline them with text color
         self.detected_urls.clear();
-        for (viewport_line, line_text) in &line_texts {
+        for (viewport_line, line_text) in &self.cached_render.line_texts {
             let urls = detect_urls_in_line(line_text, *viewport_line as usize);
             self.detected_urls.extend(urls);
         }
 
         // Check if shell supports OSC 133 semantic zones
         let has_semantic_zones = terminal.has_semantic_zones();
-
-        // Re-read content for rendering pass
-        let content = terminal.renderable_content();
 
         // Collect decorations (backgrounds, underline, strikethrough)
         let mut decorations: Vec<TextDecoration> = Vec::new();
@@ -508,11 +541,11 @@ impl WindowState {
             .bottom
             .to_array();
 
-        // Render cells (text only, no cursor)
-        for cell in content.display_iter {
-            let col = cell.point.column.0;
+        // Render cells from collected data (avoids second terminal.renderable_content() call)
+        for cell in &self.cached_render.collected_cells {
+            let col = cell.col;
             // Convert grid line to viewport line (grid lines can be negative for history)
-            let grid_line = cell.point.line.0;
+            let grid_line = cell.grid_line;
             let viewport_line = grid_line + display_offset;
 
             let x = offset_x + padding + (col as f32 * cell_width);
