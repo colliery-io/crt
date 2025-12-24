@@ -229,7 +229,7 @@ impl TabBarState {
             self.edit_state = EditState {
                 tab_id: Some(id),
                 text: tab.title.clone(),
-                cursor: tab.title.len(),
+                cursor: tab.title.chars().count(), // Use character count, not byte length
             };
             return true;
         }
@@ -251,10 +251,24 @@ impl TabBarState {
         false
     }
 
+    /// Convert character index to byte index
+    fn char_to_byte_index(text: &str, char_idx: usize) -> usize {
+        text.char_indices()
+            .nth(char_idx)
+            .map(|(i, _)| i)
+            .unwrap_or(text.len())
+    }
+
+    /// Get the number of characters in the edit text
+    fn char_count(&self) -> usize {
+        self.edit_state.text.chars().count()
+    }
+
     /// Handle a character input during editing
     pub fn edit_insert_char(&mut self, c: char) {
-        if self.edit_state.tab_id.is_some() && self.edit_state.text.len() < 50 {
-            self.edit_state.text.insert(self.edit_state.cursor, c);
+        if self.edit_state.tab_id.is_some() && self.char_count() < 50 {
+            let byte_idx = Self::char_to_byte_index(&self.edit_state.text, self.edit_state.cursor);
+            self.edit_state.text.insert(byte_idx, c);
             self.edit_state.cursor += 1;
         }
     }
@@ -263,14 +277,16 @@ impl TabBarState {
     pub fn edit_backspace(&mut self) {
         if self.edit_state.tab_id.is_some() && self.edit_state.cursor > 0 {
             self.edit_state.cursor -= 1;
-            self.edit_state.text.remove(self.edit_state.cursor);
+            let byte_idx = Self::char_to_byte_index(&self.edit_state.text, self.edit_state.cursor);
+            self.edit_state.text.remove(byte_idx);
         }
     }
 
     /// Handle delete during editing
     pub fn edit_delete(&mut self) {
-        if self.edit_state.tab_id.is_some() && self.edit_state.cursor < self.edit_state.text.len() {
-            self.edit_state.text.remove(self.edit_state.cursor);
+        if self.edit_state.tab_id.is_some() && self.edit_state.cursor < self.char_count() {
+            let byte_idx = Self::char_to_byte_index(&self.edit_state.text, self.edit_state.cursor);
+            self.edit_state.text.remove(byte_idx);
         }
     }
 
@@ -283,7 +299,7 @@ impl TabBarState {
 
     /// Move cursor right during editing
     pub fn edit_cursor_right(&mut self) {
-        if self.edit_state.tab_id.is_some() && self.edit_state.cursor < self.edit_state.text.len() {
+        if self.edit_state.tab_id.is_some() && self.edit_state.cursor < self.char_count() {
             self.edit_state.cursor += 1;
         }
     }
@@ -298,7 +314,7 @@ impl TabBarState {
     /// Move cursor to end during editing
     pub fn edit_cursor_end(&mut self) {
         if self.edit_state.tab_id.is_some() {
-            self.edit_state.cursor = self.edit_state.text.len();
+            self.edit_state.cursor = self.char_count();
         }
     }
 

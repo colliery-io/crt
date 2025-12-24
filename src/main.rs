@@ -55,7 +55,7 @@ use winit::platform::macos::WindowAttributesExtMacOS;
 use muda::{Menu, MenuEvent};
 
 #[cfg(target_os = "macos")]
-use menu::{MenuIds, build_menu_bar, menu_id_to_action};
+use menu::{MenuIds, build_menu_bar, menu_id_to_action, set_windows_menu};
 
 // Font scale bounds
 const MIN_FONT_SCALE: f32 = 0.5;
@@ -1032,8 +1032,10 @@ impl ApplicationHandler for App {
 
             #[cfg(target_os = "macos")]
             if self.menu.is_none() {
-                let (menu, ids) = build_menu_bar();
+                let (menu, ids, window_submenu) = build_menu_bar();
                 menu.init_for_nsapp();
+                // Register the Window menu with macOS so it automatically lists windows
+                set_windows_menu(&window_submenu);
                 self.menu = Some(menu);
                 self.menu_ids = Some(ids);
             }
@@ -1086,12 +1088,18 @@ impl ApplicationHandler for App {
                 let shift_pressed = self.modifiers.state().shift_key();
 
                 // Handle scroll shortcuts (Shift+PageUp/PageDown/Home/End)
-                if shift_pressed && !mod_pressed {
+                // On macOS, Shift+Cmd+Left/Right are equivalent to Shift+Home/End
+                if shift_pressed {
                     let scroll_action = match &event.logical_key {
-                        Key::Named(NamedKey::PageUp) => Some(Scroll::PageUp),
-                        Key::Named(NamedKey::PageDown) => Some(Scroll::PageDown),
-                        Key::Named(NamedKey::Home) => Some(Scroll::Top),
-                        Key::Named(NamedKey::End) => Some(Scroll::Bottom),
+                        Key::Named(NamedKey::PageUp) if !mod_pressed => Some(Scroll::PageUp),
+                        Key::Named(NamedKey::PageDown) if !mod_pressed => Some(Scroll::PageDown),
+                        Key::Named(NamedKey::Home) if !mod_pressed => Some(Scroll::Top),
+                        Key::Named(NamedKey::End) if !mod_pressed => Some(Scroll::Bottom),
+                        // macOS: Shift+Cmd+Arrow = Shift+Home/End
+                        #[cfg(target_os = "macos")]
+                        Key::Named(NamedKey::ArrowLeft) if mod_pressed => Some(Scroll::Top),
+                        #[cfg(target_os = "macos")]
+                        Key::Named(NamedKey::ArrowRight) if mod_pressed => Some(Scroll::Bottom),
                         _ => None,
                     };
 

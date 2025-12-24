@@ -4,7 +4,7 @@
 
 #[cfg(target_os = "macos")]
 use muda::{
-    AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu,
+    AboutMetadata, ContextMenu, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu,
     accelerator::{Accelerator, Code, Modifiers as AccelMods},
 };
 
@@ -69,7 +69,7 @@ pub struct MenuIds {
 }
 
 #[cfg(target_os = "macos")]
-pub fn build_menu_bar() -> (Menu, MenuIds) {
+pub fn build_menu_bar() -> (Menu, MenuIds, Submenu) {
     let menu = Menu::new();
 
     // App menu (CRT)
@@ -330,6 +330,9 @@ pub fn build_menu_bar() -> (Menu, MenuIds) {
         true,
         &[
             &minimize,
+            &PredefinedMenuItem::fullscreen(None),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::bring_all_to_front(None),
             &PredefinedMenuItem::separator(),
             &next_tab,
             &prev_tab,
@@ -386,7 +389,33 @@ pub fn build_menu_bar() -> (Menu, MenuIds) {
         ],
     };
 
-    (menu, ids)
+    (menu, ids, window_menu)
+}
+
+/// Set the Window submenu as the macOS Windows menu
+/// This enables automatic window listing in the menu and dock
+#[cfg(target_os = "macos")]
+pub fn set_windows_menu(window_submenu: &Submenu) {
+    use objc2::rc::Retained;
+    use objc2::runtime::AnyObject;
+    use objc2::msg_send;
+    use objc2_app_kit::NSApplication;
+    use objc2_foundation::MainThreadMarker;
+
+    // Get NSApp and the NSMenu from the submenu
+    let ns_menu_ptr = window_submenu.ns_menu();
+
+    unsafe {
+        // Get NSApplication shared instance
+        let mtm = MainThreadMarker::new().expect("must be on main thread");
+        let app = NSApplication::sharedApplication(mtm);
+
+        // Cast the raw pointer to NSMenu
+        let ns_menu: Retained<AnyObject> = Retained::retain(ns_menu_ptr as *mut AnyObject).unwrap();
+
+        // Call setWindowsMenu: on NSApp
+        let _: () = msg_send![&app, setWindowsMenu: &*ns_menu];
+    }
 }
 
 #[cfg(target_os = "macos")]

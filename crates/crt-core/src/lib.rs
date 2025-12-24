@@ -150,12 +150,26 @@ impl Terminal {
     }
 
     /// Process input bytes through the terminal parser
+    ///
+    /// Selection is preserved across output processing to support copy/paste
+    /// during active shell output (e.g., during builds, long-running commands).
     pub fn process_input(&mut self, bytes: &[u8]) {
         // Scan for OSC 133 sequences before passing to parser
         self.scan_osc133(bytes);
 
+        // Preserve selection across output processing
+        // Alacritty_terminal clears selection when lines are cleared or screen is modified,
+        // but we want to keep it for copy/paste convenience
+        let saved_selection = self.term.selection.clone();
+
         // Pass through to terminal parser unchanged
         self.parser.advance(&mut self.term, bytes);
+
+        // Restore selection if it was cleared during processing
+        // Only restore if we had a selection and it was cleared
+        if saved_selection.is_some() && self.term.selection.is_none() {
+            self.term.selection = saved_selection;
+        }
     }
 
     /// Scan input bytes for OSC 133 semantic prompt sequences

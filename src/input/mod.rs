@@ -266,7 +266,7 @@ pub fn handle_shell_input(
         _ => {}
     }
 
-    // macOS-specific word navigation shortcuts (Option+Arrow, Cmd+Arrow, Option+Backspace)
+    // macOS-specific word/line navigation shortcuts (Option+Arrow, Cmd+Arrow, Option+Backspace)
     // These override standard encoding because macOS users expect this behavior
     #[cfg(target_os = "macos")]
     if !input_sent {
@@ -275,16 +275,19 @@ pub fn handle_shell_input(
                 shell.send_input(b"\x1b\x7f"); // ESC DEL = delete word backward
                 input_sent = true;
             }
-            Key::Named(NamedKey::ArrowRight) if mod_pressed => {
-                shell.send_input(b"\x1b[F"); // End of line
+            // Cmd+Arrow = Home/End (same as Home/End keys above)
+            // Use readline bindings for universal shell compatibility
+            Key::Named(NamedKey::ArrowRight) if mod_pressed && !shift_pressed => {
+                shell.send_input(b"\x05"); // Ctrl-E = end of line
                 input_sent = true;
             }
+            Key::Named(NamedKey::ArrowLeft) if mod_pressed && !shift_pressed => {
+                shell.send_input(b"\x01"); // Ctrl-A = beginning of line
+                input_sent = true;
+            }
+            // Option+Arrow = word navigation
             Key::Named(NamedKey::ArrowRight) if alt_pressed => {
                 shell.send_input(b"\x1bf"); // ESC f = forward word
-                input_sent = true;
-            }
-            Key::Named(NamedKey::ArrowLeft) if mod_pressed => {
-                shell.send_input(b"\x1b[H"); // Beginning of line
                 input_sent = true;
             }
             Key::Named(NamedKey::ArrowLeft) if alt_pressed => {

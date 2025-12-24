@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "0.0.4"
+version = "0.0.5"
 edition = "2024"
 
 [workspace.dependencies]
@@ -49,7 +49,7 @@ dirs = "5.0"
 # Main binary package
 [package]
 name = "crt"
-version = "0.0.4"
+version = "0.0.5"
 edition = "2024"
 description = "GPU-accelerated terminal emulator with synthwave aesthetics"
 license = "MIT"
@@ -85,6 +85,11 @@ regex = "1.12.2"
 open = "5.3.3"
 fontdb = { workspace = true }
 termwiz = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.5"
+objc2-foundation = "0.2"
+objc2-app-kit = "0.2"
 
 [dev-dependencies]
 criterion = { version = "0.7.0", features = ["html_reports"] }

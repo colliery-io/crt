@@ -298,7 +298,13 @@ impl TabBar {
 
                 let (display_text, is_editing) = if edit_state.tab_id == Some(tab.id) {
                     let mut text = edit_state.text.clone();
-                    text.insert(edit_state.cursor, '|');
+                    // Convert character index to byte index for insertion
+                    let byte_idx = text
+                        .char_indices()
+                        .nth(edit_state.cursor)
+                        .map(|(i, _)| i)
+                        .unwrap_or(text.len());
+                    text.insert(byte_idx, '|');
                     (text, true)
                 } else {
                     (tab.title.clone(), false)
