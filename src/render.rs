@@ -6,8 +6,19 @@ use std::time::Instant;
 
 use crate::gpu::SharedGpuState;
 use crate::profiling::{self, FrameTiming, GridSnapshot};
-use crate::window::{ContextMenuItem, DecorationKind, WindowState};
-use crt_core::SelectionRange;
+use crate::window::{ContextMenuItem, DecorationKind, OverrideEventType, WindowState};
+use crt_core::{SelectionRange, ShellEvent};
+use crt_renderer::EffectConfig;
+use crt_theme::ToEffectConfig;
+
+/// Convert a ToEffectConfig implementor to an EffectConfig
+fn to_effect_config<T: ToEffectConfig>(source: &T) -> EffectConfig {
+    let mut config = EffectConfig::new();
+    for (key, value) in source.to_config_pairs() {
+        config.insert(key, value);
+    }
+    config
+}
 
 /// How often to reset vello renderer to clean up atlas resources (in frames)
 /// At 60fps, 300 frames = every 5 seconds
@@ -16,20 +27,20 @@ const VELLO_RESET_INTERVAL: u32 = 300;
 /// Render a single frame for a window
 pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     // Skip rendering for fully occluded windows (covered by other windows)
-    if state.occluded {
+    if state.render.occluded {
         return;
     }
 
     let frame_start = Instant::now();
     let mut timing = FrameTiming::default();
-    state.frame_count = state.frame_count.saturating_add(1);
+    state.render.frame_count = state.render.frame_count.saturating_add(1);
 
     // Log every 300 frames (~5 seconds at 60fps) or on frame 1
-    if state.frame_count == 1 || state.frame_count % 300 == 0 {
+    if state.render.frame_count == 1 || state.render.frame_count.is_multiple_of(300) {
         log::debug!(
             "Frame {} starting (dirty={}, effects_enabled={})",
-            state.frame_count,
-            state.dirty,
+            state.render.frame_count,
+            state.render.dirty,
             state.gpu.effects_renderer.has_enabled_effects()
         );
     }
@@ -38,7 +49,10 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     // This prevents unbounded GPU memory growth from vello's internal caches
     // NOTE: The primary memory fix is frame throttling in main.rs (see about_to_wait).
     // This reset is a secondary defense against vello atlas accumulation.
-    if state.frame_count % VELLO_RESET_INTERVAL == 0
+    if state
+        .render
+        .frame_count
+        .is_multiple_of(VELLO_RESET_INTERVAL)
         && state.gpu.effects_renderer.has_enabled_effects()
     {
         shared.reset_vello_renderer();
@@ -52,44 +66,233 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
 
     // Keep redrawing if effects are animating
     if state.gpu.effects_renderer.has_enabled_effects() {
-        state.dirty = true;
+        state.render.dirty = true;
     }
 
     // Keep redrawing if sprite animation is active (uses raw wgpu, no memory growth)
     if state.gpu.sprite_state.is_some() {
-        state.dirty = true;
+        state.render.dirty = true;
     }
 
     // Process PTY output from active shell
     let active_tab_id = state.gpu.tab_bar.active_tab_id();
-    if let Some(tab_id) = active_tab_id {
-        if let Some(shell) = state.shells.get_mut(&tab_id) {
-            if shell.process_pty_output() {
-                state.dirty = true;
-                // Invalidate content hash to ensure re-render captures all changes
-                state.content_hashes.insert(tab_id, 0);
+    if let Some(tab_id) = active_tab_id
+        && let Some(shell) = state.shells.get_mut(&tab_id)
+    {
+        if shell.process_pty_output() {
+            state.render.dirty = true;
+            // Invalidate content hash to ensure re-render captures all changes
+            state.content_hashes.insert(tab_id, 0);
+        }
+
+        // Check for shell events (bell, command success/fail) and title changes
+        let (shell_events, title) = shell.take_shell_events();
+        if let Some(title) = title {
+            state.gpu.tab_bar.set_tab_title(tab_id, title);
+        }
+
+        // Process shell events for theme overrides
+        let theme = state.gpu.effect_pipeline.theme();
+        for event in shell_events {
+            // Trigger bell flash for bell events
+            if matches!(event, ShellEvent::Bell) {
+                state.ui.bell.trigger();
             }
 
-            // Check for terminal events (title changes and bell)
-            let (title, bell) = shell.check_events();
-            if let Some(title) = title {
-                state.gpu.tab_bar.set_tab_title(tab_id, title);
+            // Command success clears any active fail override (put out the fire!)
+            if matches!(event, ShellEvent::CommandSuccess) {
+                state
+                    .ui
+                    .overrides
+                    .clear_event(OverrideEventType::CommandFail);
             }
-            if bell {
-                state.bell.trigger();
-                log::debug!("Bell triggered");
+
+            // Get the corresponding theme override for this event
+            let override_opt = match &event {
+                ShellEvent::Bell => theme.on_bell.clone(),
+                ShellEvent::CommandSuccess => theme.on_command_success.clone(),
+                ShellEvent::CommandFail(_) => theme.on_command_fail.clone(),
+            };
+
+            // Add to active overrides if theme defines this event
+            if let Some(properties) = override_opt {
+                let event_type = OverrideEventType::from(event);
+                state.ui.overrides.add(event_type, properties);
             }
         }
     }
 
     // Keep redrawing while bell flash is active
-    if state.bell.is_active() {
-        state.dirty = true;
+    if state.ui.bell.is_active() {
+        state.render.dirty = true;
+    }
+
+    // Update overrides and keep redrawing while any are active
+    if state.ui.overrides.update() {
+        state.render.dirty = true;
+    }
+
+    // Apply starfield patch from active overrides (if any)
+    if let Some(patch) = state.ui.overrides.get_starfield_patch() {
+        if !state.ui.overrides.is_patched("starfield") {
+            let config = to_effect_config(patch);
+            state
+                .gpu
+                .effects_renderer
+                .apply_effect_patch("starfield", &config);
+            state.ui.overrides.set_patched("starfield");
+            state.render.dirty = true;
+        }
+    } else if state.ui.overrides.is_patched("starfield") {
+        // Restore starfield from base theme
+        let theme = state.gpu.effect_pipeline.theme();
+        if let Some(ref starfield) = theme.starfield {
+            let config = to_effect_config(starfield);
+            state
+                .gpu
+                .effects_renderer
+                .apply_effect_patch("starfield", &config);
+        }
+        state.ui.overrides.clear_patched("starfield");
+        log::debug!("Restored starfield to base theme");
+    }
+
+    // Apply particle patch from active overrides (if any)
+    if let Some(patch) = state.ui.overrides.get_particle_patch() {
+        if !state.ui.overrides.is_patched("particles") {
+            let config = to_effect_config(patch);
+            state
+                .gpu
+                .effects_renderer
+                .apply_effect_patch("particles", &config);
+            state.ui.overrides.set_patched("particles");
+            state.render.dirty = true;
+        }
+    } else if state.ui.overrides.is_patched("particles") {
+        // Restore particles from base theme
+        let theme = state.gpu.effect_pipeline.theme();
+        if let Some(ref particles) = theme.particles {
+            let config = to_effect_config(particles);
+            state
+                .gpu
+                .effects_renderer
+                .apply_effect_patch("particles", &config);
+        }
+        state.ui.overrides.clear_patched("particles");
+        log::debug!("Restored particles to base theme");
+    }
+
+    // Apply grid patch from active overrides (if any)
+    if let Some(patch) = state.ui.overrides.get_grid_patch() {
+        if !state.ui.overrides.is_patched("grid") {
+            let config = to_effect_config(patch);
+            state
+                .gpu
+                .effects_renderer
+                .apply_effect_patch("grid", &config);
+            state.ui.overrides.set_patched("grid");
+            state.render.dirty = true;
+        }
+    } else if state.ui.overrides.is_patched("grid") {
+        // Restore grid from base theme
+        let theme = state.gpu.effect_pipeline.theme();
+        if let Some(ref grid) = theme.grid {
+            let config = to_effect_config(grid);
+            state
+                .gpu
+                .effects_renderer
+                .apply_effect_patch("grid", &config);
+        }
+        state.ui.overrides.clear_patched("grid");
+        log::debug!("Restored grid to base theme");
+    }
+
+    // Apply rain patch from active overrides (if any)
+    if let Some(patch) = state.ui.overrides.get_rain_patch() {
+        if !state.ui.overrides.is_patched("rain") {
+            let config = to_effect_config(patch);
+            state
+                .gpu
+                .effects_renderer
+                .apply_effect_patch("rain", &config);
+            state.ui.overrides.set_patched("rain");
+            state.render.dirty = true;
+        }
+    } else if state.ui.overrides.is_patched("rain") {
+        // Restore rain from base theme
+        let theme = state.gpu.effect_pipeline.theme();
+        if let Some(ref rain) = theme.rain {
+            let config = to_effect_config(rain);
+            state
+                .gpu
+                .effects_renderer
+                .apply_effect_patch("rain", &config);
+        }
+        state.ui.overrides.clear_patched("rain");
+        log::debug!("Restored rain to base theme");
+    }
+
+    // Apply matrix patch from active overrides (if any)
+    if let Some(patch) = state.ui.overrides.get_matrix_patch() {
+        if !state.ui.overrides.is_patched("matrix") {
+            let config = to_effect_config(patch);
+            state
+                .gpu
+                .effects_renderer
+                .apply_effect_patch("matrix", &config);
+            state.ui.overrides.set_patched("matrix");
+            state.render.dirty = true;
+        }
+    } else if state.ui.overrides.is_patched("matrix") {
+        // Restore matrix from base theme
+        let theme = state.gpu.effect_pipeline.theme();
+        if let Some(ref matrix) = theme.matrix {
+            let config = to_effect_config(matrix);
+            state
+                .gpu
+                .effects_renderer
+                .apply_effect_patch("matrix", &config);
+        }
+        state.ui.overrides.clear_patched("matrix");
+        log::debug!("Restored matrix to base theme");
+    }
+
+    // Apply shape patch from active overrides (if any)
+    if let Some(patch) = state.ui.overrides.get_shape_patch() {
+        if !state.ui.overrides.is_patched("shape") {
+            let config = to_effect_config(patch);
+            state
+                .gpu
+                .effects_renderer
+                .apply_effect_patch("shape", &config);
+            state.ui.overrides.set_patched("shape");
+            state.render.dirty = true;
+        }
+    } else if state.ui.overrides.is_patched("shape") {
+        // Restore shape from base theme
+        let theme = state.gpu.effect_pipeline.theme();
+        if let Some(ref shape) = theme.shape {
+            let config = to_effect_config(shape);
+            state
+                .gpu
+                .effects_renderer
+                .apply_effect_patch("shape", &config);
+        }
+        state.ui.overrides.clear_patched("shape");
+        log::debug!("Restored shape to base theme");
+    }
+
+    // Keep redrawing while overlay indicators are visible (for fade animation)
+    if state.ui.zoom_indicator.is_visible()
+        || state.ui.copy_indicator.is_visible()
+        || state.ui.toast.is_visible()
+    {
+        state.render.dirty = true;
     }
 
     // Force re-renders during first 60 frames
-    if state.frame_count < 60 {
-        state.dirty = true;
+    if state.render.frame_count < 60 {
+        state.render.dirty = true;
         if let Some(tab_id) = active_tab_id {
             state.content_hashes.insert(tab_id, 0);
         }
@@ -97,14 +300,14 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
 
     // Skip GPU rendering when window is occluded (minimized, hidden, or fully covered)
     // PTY processing above still runs to keep shells responsive
-    if state.occluded {
+    if state.render.occluded {
         return;
     }
 
     // Update text buffer and get cursor/decoration info
     let text_update_start = Instant::now();
-    let update_result = if state.dirty {
-        state.dirty = false;
+    let update_result = if state.render.dirty {
+        state.render.dirty = false;
         state.update_text_buffer(shared)
     } else {
         None
@@ -221,6 +424,23 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
             log::info!("Rendering sprite: {}x{}", width, height);
         }
 
+        // Apply sprite patch from active overrides (if any)
+        if let Some(patch) = state.ui.overrides.get_sprite_patch() {
+            if !state.ui.overrides.is_patched("sprite") {
+                // Use apply_patch_with_device if path change is needed
+                if crt_renderer::SpriteAnimationState::needs_device_for_patch(patch) {
+                    sprite_state.apply_patch_with_device(patch, &shared.device, &shared.queue);
+                } else {
+                    sprite_state.apply_patch(patch);
+                }
+                state.ui.overrides.set_patched("sprite");
+            }
+        } else if state.ui.overrides.is_patched("sprite") {
+            // No active override, restore original values (with device for texture restore)
+            sprite_state.restore_with_device(&shared.device, &shared.queue);
+            state.ui.overrides.clear_patched("sprite");
+        }
+
         // Update animation state
         sprite_state.update(dt, width, height);
 
@@ -244,7 +464,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         sprite_state.render(&mut pass, &shared.queue, width, height);
 
         // Keep redrawing while sprite is animated
-        state.dirty = true;
+        state.render.dirty = true;
     }
 
     // Pass 1.5: Render background image (if configured)
@@ -255,12 +475,12 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         // Update animation if this is an animated GIF
         if bg_state.update(&shared.queue) {
             // Animation frame changed, need to redraw
-            state.dirty = true;
+            state.render.dirty = true;
         }
 
         // Keep redrawing for animations
         if bg_state.image.is_animated() {
-            state.dirty = true;
+            state.render.dirty = true;
         }
 
         // Update uniforms with UV transform and opacity
@@ -316,15 +536,16 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     // Update cached decorations when content changes
     if let Some(mut result) = update_result {
         // Use take() to avoid cloning the decorations vector
-        state.cached_render.decorations = std::mem::take(&mut result.decorations);
-        state.cached_render.cursor = Some(result.cursor);
+        state.render.cached.decorations = std::mem::take(&mut result.decorations);
+        state.render.cached.cursor = Some(result.cursor);
     }
 
     // Pass 3: Render cell backgrounds via RectRenderer (before text)
     // Always render from cached decorations so they persist across frames
     {
         let bg_count = state
-            .cached_render
+            .render
+            .cached
             .decorations
             .iter()
             .filter(|d| d.kind == DecorationKind::Background)
@@ -338,7 +559,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
             );
 
             // Add background rectangles from cached decorations
-            for decoration in &state.cached_render.decorations {
+            for decoration in &state.render.cached.decorations {
                 if decoration.kind == DecorationKind::Background {
                     state.gpu.rect_renderer.push_rect(
                         decoration.x,
@@ -367,7 +588,11 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
                 occlusion_query_set: None,
             });
 
-            state.gpu.rect_renderer.render(&shared.queue, &mut pass);
+            state.gpu.rect_renderer.render(
+                &shared.queue,
+                &mut pass,
+                &state.gpu.rect_instance_buffer,
+            );
         }
     }
 
@@ -390,10 +615,11 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
             occlusion_query_set: None,
         });
 
-        state
-            .gpu
-            .output_grid_renderer
-            .render(&shared.queue, &mut pass);
+        state.gpu.output_grid_renderer.render(
+            &shared.queue,
+            &mut pass,
+            &state.gpu.output_grid_instance_buffer,
+        );
     }
 
     // Pass 4: Render cursor line text to intermediate texture (for glow effect)
@@ -433,7 +659,10 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
             occlusion_query_set: None,
         });
 
-        state.gpu.grid_renderer.render(&shared.queue, &mut pass);
+        state
+            .gpu
+            .grid_renderer
+            .render(&shared.queue, &mut pass, &state.gpu.grid_instance_buffer);
     }
 
     // Pass 4.5: Composite text texture onto frame with Gaussian blur glow
@@ -493,7 +722,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         }
 
         // Add underlines and strikethroughs from cached decorations
-        for decoration in &state.cached_render.decorations {
+        for decoration in &state.render.cached.decorations {
             match decoration.kind {
                 DecorationKind::Background => {} // Already rendered in Pass 3
                 DecorationKind::Underline => {
@@ -522,84 +751,121 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         }
 
         // Add cursor (if visible after blink check AND terminal hasn't hidden it)
-        if state.gpu.terminal_vello.cursor_visible() {
-            if let Some(cursor) = &state.cached_render.cursor {
-                // Only render if terminal hasn't hidden the cursor (e.g., TUI apps hide it)
-                if cursor.visible {
-                    let cursor_color = state.gpu.terminal_vello.cursor_color();
+        if state.gpu.terminal_vello.cursor_visible()
+            && let Some(cursor) = &state.render.cached.cursor
+        {
+            // Only render if terminal hasn't hidden the cursor (e.g., TUI apps hide it)
+            if cursor.visible {
+                let cursor_color = state.gpu.terminal_vello.cursor_color();
 
-                    // Use configured cursor shape as default, but allow terminal/apps to override
-                    // via escape sequences (DECSCUSR). If the terminal explicitly requests a
-                    // non-Block shape, use that; otherwise use the user's configured preference.
-                    let configured_shape = state.gpu.terminal_vello.cursor_shape();
-                    let terminal_shape = cursor.shape;
+                // Use configured cursor shape as default, but allow terminal/apps to override
+                // via escape sequences (DECSCUSR). If the terminal explicitly requests a
+                // non-Block shape, use that; otherwise use the user's configured preference.
+                let configured_shape = state.gpu.terminal_vello.cursor_shape();
+                let terminal_shape = cursor.shape;
 
-                    // Determine effective cursor shape:
-                    // - If terminal explicitly set non-Block shape, use it
-                    // - If terminal shape is Hidden, honor that
-                    // - Otherwise use user's configured shape
-                    let cursor_rect = if terminal_shape == crt_core::CursorShape::Hidden {
-                        None
-                    } else if terminal_shape != crt_core::CursorShape::Block {
-                        // Terminal explicitly requested a non-default shape
-                        match terminal_shape {
-                            crt_core::CursorShape::Beam => {
-                                Some((cursor.x, cursor.y, 2.0, cursor.cell_height))
-                            }
-                            crt_core::CursorShape::Underline => {
-                                Some((
-                                    cursor.x,
-                                    cursor.y + cursor.cell_height - 2.0,
-                                    cursor.cell_width,
-                                    2.0,
-                                ))
-                            }
-                            crt_core::CursorShape::HollowBlock => {
-                                // For now, render as regular block - TODO: implement hollow
-                                Some((cursor.x, cursor.y, cursor.cell_width, cursor.cell_height))
-                            }
-                            _ => Some((cursor.x, cursor.y, cursor.cell_width, cursor.cell_height)),
+                // Determine effective cursor shape:
+                // - If terminal explicitly set non-Block shape, use it
+                // - If terminal shape is Hidden, honor that
+                // - Otherwise use user's configured shape
+                let cursor_rect = if terminal_shape == crt_core::CursorShape::Hidden {
+                    None
+                } else if terminal_shape != crt_core::CursorShape::Block {
+                    // Terminal explicitly requested a non-default shape
+                    match terminal_shape {
+                        crt_core::CursorShape::Beam => {
+                            Some((cursor.x, cursor.y, 2.0, cursor.cell_height))
                         }
+                        crt_core::CursorShape::Underline => Some((
+                            cursor.x,
+                            cursor.y + cursor.cell_height - 2.0,
+                            cursor.cell_width,
+                            2.0,
+                        )),
+                        crt_core::CursorShape::HollowBlock => {
+                            // Hollow block renders as outline only (handled specially below)
+                            Some((cursor.x, cursor.y, cursor.cell_width, cursor.cell_height))
+                        }
+                        _ => Some((cursor.x, cursor.y, cursor.cell_width, cursor.cell_height)),
+                    }
+                } else {
+                    // Use user's configured shape
+                    match configured_shape {
+                        crt_renderer::CursorShape::Block => {
+                            Some((cursor.x, cursor.y, cursor.cell_width, cursor.cell_height))
+                        }
+                        crt_renderer::CursorShape::Bar => {
+                            Some((cursor.x, cursor.y, 2.0, cursor.cell_height))
+                        }
+                        crt_renderer::CursorShape::Underline => Some((
+                            cursor.x,
+                            cursor.y + cursor.cell_height - 2.0,
+                            cursor.cell_width,
+                            2.0,
+                        )),
+                    }
+                };
+
+                if let Some((rect_x, rect_y, rect_w, rect_h)) = cursor_rect {
+                    // Render cursor glow effect (layered rectangles with decreasing opacity)
+                    if let Some((glow_color, radius, intensity)) =
+                        state.gpu.terminal_vello.cursor_glow()
+                    {
+                        let layers = 5;
+                        for i in (1..=layers).rev() {
+                            let layer_factor = i as f32 / layers as f32;
+                            let expand = radius * layer_factor;
+                            let alpha = glow_color[3] * intensity * (1.0 - layer_factor) * 0.3;
+
+                            state.gpu.overlay_rect_renderer.push_rect(
+                                rect_x - expand,
+                                rect_y - expand,
+                                rect_w + expand * 2.0,
+                                rect_h + expand * 2.0,
+                                [glow_color[0], glow_color[1], glow_color[2], alpha],
+                            );
+                        }
+                    }
+
+                    // Render cursor
+                    let is_hollow = terminal_shape == crt_core::CursorShape::HollowBlock;
+                    if is_hollow {
+                        // Hollow block: render as 4 edge rectangles (outline)
+                        let border = 2.0;
+                        // Top edge
+                        state.gpu.overlay_rect_renderer.push_rect(
+                            rect_x,
+                            rect_y,
+                            rect_w,
+                            border,
+                            cursor_color,
+                        );
+                        // Bottom edge
+                        state.gpu.overlay_rect_renderer.push_rect(
+                            rect_x,
+                            rect_y + rect_h - border,
+                            rect_w,
+                            border,
+                            cursor_color,
+                        );
+                        // Left edge (excluding corners already covered)
+                        state.gpu.overlay_rect_renderer.push_rect(
+                            rect_x,
+                            rect_y + border,
+                            border,
+                            rect_h - border * 2.0,
+                            cursor_color,
+                        );
+                        // Right edge (excluding corners already covered)
+                        state.gpu.overlay_rect_renderer.push_rect(
+                            rect_x + rect_w - border,
+                            rect_y + border,
+                            border,
+                            rect_h - border * 2.0,
+                            cursor_color,
+                        );
                     } else {
-                        // Use user's configured shape
-                        match configured_shape {
-                            crt_renderer::CursorShape::Block => {
-                                Some((cursor.x, cursor.y, cursor.cell_width, cursor.cell_height))
-                            }
-                            crt_renderer::CursorShape::Bar => {
-                                Some((cursor.x, cursor.y, 2.0, cursor.cell_height))
-                            }
-                            crt_renderer::CursorShape::Underline => {
-                                Some((
-                                    cursor.x,
-                                    cursor.y + cursor.cell_height - 2.0,
-                                    cursor.cell_width,
-                                    2.0,
-                                ))
-                            }
-                        }
-                    };
-
-                    if let Some((rect_x, rect_y, rect_w, rect_h)) = cursor_rect {
-                        // Render cursor glow effect (layered rectangles with decreasing opacity)
-                        if let Some((glow_color, radius, intensity)) = state.gpu.terminal_vello.cursor_glow() {
-                            let layers = 5;
-                            for i in (1..=layers).rev() {
-                                let layer_factor = i as f32 / layers as f32;
-                                let expand = radius * layer_factor;
-                                let alpha = glow_color[3] * intensity * (1.0 - layer_factor) * 0.3;
-
-                                state.gpu.overlay_rect_renderer.push_rect(
-                                    rect_x - expand,
-                                    rect_y - expand,
-                                    rect_w + expand * 2.0,
-                                    rect_h + expand * 2.0,
-                                    [glow_color[0], glow_color[1], glow_color[2], alpha],
-                                );
-                            }
-                        }
-
-                        // Render cursor
+                        // Solid cursor (block, bar, underline)
                         state.gpu.overlay_rect_renderer.push_rect(
                             rect_x,
                             rect_y,
@@ -630,10 +896,11 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
                 occlusion_query_set: None,
             });
 
-            state
-                .gpu
-                .overlay_rect_renderer
-                .render(&shared.queue, &mut pass);
+            state.gpu.overlay_rect_renderer.render(
+                &shared.queue,
+                &mut pass,
+                &state.gpu.overlay_rect_instance_buffer,
+            );
         }
     }
 
@@ -654,6 +921,42 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
             .tab_bar
             .render_shapes_to_rects(&mut state.gpu.rect_renderer);
 
+        // Add focus ring around active tab (accessibility indicator)
+        if let Some((tab_x, tab_y, tab_w, tab_h)) = state.gpu.tab_bar.active_tab_rect() {
+            let s = state.scale_factor;
+            let ui_style = &state.gpu.effect_pipeline.theme().ui;
+            let focus_thickness = ui_style.focus.ring_thickness * s;
+            let focus_color = ui_style.focus.ring_color.to_array();
+
+            // Draw focus ring as 4 rectangles (top, bottom, left, right)
+            // Top edge
+            state
+                .gpu
+                .rect_renderer
+                .push_rect(tab_x, tab_y, tab_w, focus_thickness, focus_color);
+            // Bottom edge
+            state.gpu.rect_renderer.push_rect(
+                tab_x,
+                tab_y + tab_h - focus_thickness,
+                tab_w,
+                focus_thickness,
+                focus_color,
+            );
+            // Left edge
+            state
+                .gpu
+                .rect_renderer
+                .push_rect(tab_x, tab_y, focus_thickness, tab_h, focus_color);
+            // Right edge
+            state.gpu.rect_renderer.push_rect(
+                tab_x + tab_w - focus_thickness,
+                tab_y,
+                focus_thickness,
+                tab_h,
+                focus_color,
+            );
+        }
+
         if state.gpu.rect_renderer.instance_count() > 0 {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Tab Bar Render Pass"),
@@ -671,7 +974,11 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
                 occlusion_query_set: None,
             });
 
-            state.gpu.rect_renderer.render(&shared.queue, &mut pass);
+            state.gpu.rect_renderer.render(
+                &shared.queue,
+                &mut pass,
+                &state.gpu.rect_instance_buffer,
+            );
         }
     }
 
@@ -679,19 +986,39 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     render_tab_titles(state, shared, &mut encoder, render_target);
 
     // Pass 8: Render search bar overlay (if search is active)
-    if state.search.active {
+    if state.ui.search.active {
         render_search_bar(state, shared, &mut encoder, render_target);
     }
 
+    // Pass 8.5: Render window rename bar overlay (if rename is active)
+    if state.ui.window_rename.active {
+        render_window_rename(state, shared, &mut encoder, render_target);
+    }
+
     // Pass 9: Render bell flash overlay (if bell was triggered)
-    let flash_intensity = state.bell.flash_intensity();
+    let flash_intensity = state.ui.bell.flash_intensity();
     if flash_intensity > 0.0 {
         render_bell_flash(state, shared, &mut encoder, render_target, flash_intensity);
     }
 
     // Pass 10: Render context menu (if visible)
-    if state.context_menu.visible {
+    if state.ui.context_menu.visible {
         render_context_menu(state, shared, &mut encoder, render_target);
+    }
+
+    // Pass 11: Render zoom indicator (if recently changed)
+    if state.ui.zoom_indicator.is_visible() {
+        render_zoom_indicator(state, shared, &mut encoder, render_target);
+    }
+
+    // Pass 12: Render copy indicator (brief "Copied!" feedback)
+    if state.ui.copy_indicator.is_visible() {
+        render_copy_indicator(state, shared, &mut encoder, render_target);
+    }
+
+    // Pass 13: Render toast notifications (errors, warnings)
+    if state.ui.toast.is_visible() {
+        render_toast(state, shared, &mut encoder, render_target);
     }
 
     // Final Pass: Apply CRT post-processing (if enabled)
@@ -726,7 +1053,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
 
         // Keep redrawing for CRT flicker effect
         if state.gpu.crt_pipeline.is_enabled() {
-            state.dirty = true;
+            state.render.dirty = true;
         }
     }
 
@@ -742,55 +1069,58 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     profiling::record_frame(timing);
 
     // Record grid snapshot for debugging (rate limited internally)
-    if profiling::is_enabled() {
-        if let Some(tab_id) = state.gpu.tab_bar.active_tab_id() {
-            if let Some(shell) = state.shells.get(&tab_id) {
-                let terminal = shell.terminal();
-                let cursor = terminal.cursor();
-                let size = terminal.size();
+    if profiling::is_enabled()
+        && let Some(tab_id) = state.gpu.tab_bar.active_tab_id()
+        && let Some(shell) = state.shells.get(&tab_id)
+    {
+        let terminal = shell.terminal();
+        let cursor = terminal.cursor();
+        let size = terminal.size();
 
-                // Get visible lines content (only lines with index >= 0, i.e. visible area)
-                let all_lines = terminal.all_lines_text();
-                let visible_content: Vec<String> = all_lines
-                    .into_iter()
-                    .filter(|(idx, _)| *idx >= 0)
-                    .map(|(_, text)| text)
-                    .collect();
+        // Get visible lines content (only lines with index >= 0, i.e. visible area)
+        let all_lines = terminal.all_lines_text();
+        let visible_content: Vec<String> = all_lines
+            .into_iter()
+            .filter(|(idx, _)| *idx >= 0)
+            .map(|(_, text)| text)
+            .collect();
 
-                let cursor_shape_str = match cursor.shape {
-                    crt_core::CursorShape::Block => "Block",
-                    crt_core::CursorShape::Beam => "Beam",
-                    crt_core::CursorShape::Underline => "Underline",
-                    crt_core::CursorShape::HollowBlock => "HollowBlock",
-                    crt_core::CursorShape::Hidden => "Hidden",
-                };
-                let mode_visible = terminal.cursor_mode_visible();
-                let shape_str = format!(
-                    "{} (mode:{})",
-                    cursor_shape_str,
-                    if mode_visible { "show" } else { "hide" }
-                );
-                let snapshot = GridSnapshot {
-                    columns: size.columns,
-                    lines: size.lines,
-                    cursor_col: cursor.point.column.0,
-                    cursor_line: cursor.point.line.0,
-                    cursor_visible: mode_visible,
-                    cursor_shape: shape_str,
-                    display_offset: terminal.display_offset(),
-                    history_size: terminal.history_size(),
-                    visible_content,
-                };
-                profiling::record_grid_snapshot(snapshot);
-            }
-        }
+        let cursor_shape_str = match cursor.shape {
+            crt_core::CursorShape::Block => "Block",
+            crt_core::CursorShape::Beam => "Beam",
+            crt_core::CursorShape::Underline => "Underline",
+            crt_core::CursorShape::HollowBlock => "HollowBlock",
+            crt_core::CursorShape::Hidden => "Hidden",
+        };
+        let mode_visible = terminal.cursor_mode_visible();
+        let shape_str = format!(
+            "{} (mode:{})",
+            cursor_shape_str,
+            if mode_visible { "show" } else { "hide" }
+        );
+        let snapshot = GridSnapshot {
+            columns: size.columns,
+            lines: size.lines,
+            cursor_col: cursor.point.column.0,
+            cursor_line: cursor.point.line.0,
+            cursor_visible: mode_visible,
+            cursor_shape: shape_str,
+            display_offset: terminal.display_offset(),
+            history_size: terminal.history_size(),
+            visible_content,
+        };
+        profiling::record_grid_snapshot(snapshot);
     }
 }
 
 /// Render selection rectangles via RectRenderer (direct, no intermediate texture)
 /// Selection coordinates are in grid space (negative = scrollback history, 0+ = visible screen)
 /// display_offset converts grid coordinates to viewport coordinates for rendering
-fn render_selection_rects(state: &mut WindowState, selection: &SelectionRange, display_offset: i32) {
+fn render_selection_rects(
+    state: &mut WindowState,
+    selection: &SelectionRange,
+    display_offset: i32,
+) {
     let cell_width = state.gpu.glyph_cache.cell_width();
     let line_height = state.gpu.glyph_cache.line_height();
     let (offset_x, offset_y) = state.gpu.tab_bar.content_offset();
@@ -991,10 +1321,11 @@ fn render_tab_titles(
         occlusion_query_set: None,
     });
 
-    state
-        .gpu
-        .tab_title_renderer
-        .render(&shared.queue, &mut pass);
+    state.gpu.tab_title_renderer.render(
+        &shared.queue,
+        &mut pass,
+        &state.gpu.tab_title_instance_buffer,
+    );
 }
 
 /// Render search bar overlay
@@ -1005,18 +1336,23 @@ fn render_search_bar(
     frame_view: &wgpu::TextureView,
 ) {
     let (_, content_offset_y) = state.gpu.tab_bar.content_offset();
+    let s = state.scale_factor;
+    // content_offset_y is in logical pixels, scale to physical
+    let content_offset_y = content_offset_y * s;
 
     // Theme colors for search bar
-    let bg_color = [0.15, 0.15, 0.2, 0.95]; // Dark semi-transparent background
-    let border_color = [0.3, 0.5, 0.7, 0.8]; // Accent border
+    let ui_style = &state.gpu.effect_pipeline.theme().ui;
+    let bg_color = ui_style.search_bar.background.to_array();
+    let focus_glow_color = ui_style.focus.glow_color.to_array();
+    let focus_border_color = ui_style.focus.ring_color.to_array();
 
     // Calculate search bar dimensions (same as vello version)
-    let s = state.scale_factor;
     let bar_width = 300.0 * s;
     let bar_height = 32.0 * s;
     let margin = 20.0 * s;
     let padding = 8.0 * s;
-    let border_width = 2.0 * s;
+    let border_width = ui_style.focus.ring_thickness * s;
+    let glow_size = ui_style.focus.glow_size * s;
 
     let bar_x = state.gpu.config.width as f32 - bar_width - margin;
     let bar_y = content_offset_y + margin;
@@ -1029,11 +1365,21 @@ fn render_search_bar(
         state.gpu.config.height as f32,
     );
 
-    // Outer border rect
+    // Outer glow (focus indicator) - slightly larger than the bar
+    state.gpu.rect_renderer.push_rect(
+        bar_x - glow_size,
+        bar_y - glow_size,
+        bar_width + glow_size * 2.0,
+        bar_height + glow_size * 2.0,
+        focus_glow_color,
+    );
+
+    // Focus border rect (bright blue)
     state
         .gpu
         .rect_renderer
-        .push_rect(bar_x, bar_y, bar_width, bar_height, border_color);
+        .push_rect(bar_x, bar_y, bar_width, bar_height, focus_border_color);
+
     // Inner background rect
     state.gpu.rect_renderer.push_rect(
         bar_x + border_width,
@@ -1061,7 +1407,10 @@ fn render_search_bar(
             occlusion_query_set: None,
         });
 
-        state.gpu.rect_renderer.render(&shared.queue, &mut pass);
+        state
+            .gpu
+            .rect_renderer
+            .render(&shared.queue, &mut pass, &state.gpu.rect_instance_buffer);
     }
 
     // Calculate text position
@@ -1073,9 +1422,9 @@ fn render_search_bar(
     state.gpu.tab_title_renderer.clear();
 
     // Build display text: query with cursor + match count
-    let query = &state.search.query;
-    let match_count = state.search.matches.len();
-    let current_match = state.search.current_match + 1; // 1-indexed for display
+    let query = &state.ui.search.query;
+    let match_count = state.ui.search.matches.len();
+    let current_match = state.ui.search.current_match + 1; // 1-indexed for display
 
     let display_text = if query.is_empty() {
         "Find...".to_string()
@@ -1085,13 +1434,14 @@ fn render_search_bar(
         format!("{}| (no matches)", query)
     };
 
-    // Render text
+    // Render text - get fresh reference to ui_style for text colors
+    let ui_style = &state.gpu.effect_pipeline.theme().ui;
     let text_color = if query.is_empty() {
-        [0.5, 0.5, 0.5, 0.8] // Placeholder color
+        ui_style.search_bar.placeholder_color.to_array()
     } else if match_count > 0 {
-        [0.9, 0.9, 0.9, 1.0] // Normal text
+        ui_style.search_bar.text_color.to_array()
     } else {
-        [0.9, 0.5, 0.5, 1.0] // Red for no matches
+        ui_style.search_bar.no_match_color.to_array()
     };
 
     let mut glyphs = Vec::new();
@@ -1133,10 +1483,11 @@ fn render_search_bar(
         occlusion_query_set: None,
     });
 
-    state
-        .gpu
-        .tab_title_renderer
-        .render(&shared.queue, &mut pass);
+    state.gpu.tab_title_renderer.render(
+        &shared.queue,
+        &mut pass,
+        &state.gpu.overlay_text_instance_buffer,
+    );
 }
 
 /// Render bell flash overlay (semi-transparent white flash)
@@ -1185,7 +1536,10 @@ fn render_bell_flash(
         occlusion_query_set: None,
     });
 
-    state.gpu.rect_renderer.render(&shared.queue, &mut pass);
+    state
+        .gpu
+        .rect_renderer
+        .render(&shared.queue, &mut pass, &state.gpu.rect_instance_buffer);
 }
 
 /// Render context menu overlay
@@ -1210,8 +1564,8 @@ fn render_context_menu(
     let screen_width = state.gpu.config.width as f32;
     let screen_height = state.gpu.config.height as f32;
 
-    let mut menu_x = state.context_menu.x;
-    let mut menu_y = state.context_menu.y;
+    let mut menu_x = state.ui.context_menu.x;
+    let mut menu_y = state.ui.context_menu.y;
 
     // Keep menu within screen bounds
     if menu_x + menu_width > screen_width {
@@ -1228,18 +1582,20 @@ fn render_context_menu(
     }
 
     // Update context menu dimensions for hit testing
-    state.context_menu.x = menu_x;
-    state.context_menu.y = menu_y;
-    state.context_menu.width = menu_width;
-    state.context_menu.height = menu_height;
-    state.context_menu.item_height = item_height;
+    state.ui.context_menu.x = menu_x;
+    state.ui.context_menu.y = menu_y;
+    state.ui.context_menu.width = menu_width;
+    state.ui.context_menu.height = menu_height;
+    state.ui.context_menu.item_height = item_height;
 
-    // Colors
-    let bg_color = [0.12, 0.12, 0.15, 0.98];
-    let border_color = [0.3, 0.3, 0.35, 0.8];
-    let hover_color = [0.25, 0.35, 0.5, 0.8];
-    let text_color = [0.9, 0.9, 0.9, 1.0];
-    let shortcut_color = [0.5, 0.5, 0.55, 1.0];
+    // Colors from theme
+    let ui_style = &state.gpu.effect_pipeline.theme().ui;
+    let bg_color = ui_style.context_menu.background.to_array();
+    let border_color = ui_style.context_menu.border_color.to_array();
+    let hover_color = ui_style.hover.background.to_array();
+    let focus_color = ui_style.focus.ring_color.to_array();
+    let text_color = ui_style.context_menu.text_color.to_array();
+    let shortcut_color = ui_style.context_menu.shortcut_color.to_array();
 
     // Render background using rect_renderer
     state.gpu.rect_renderer.clear();
@@ -1283,18 +1639,61 @@ fn render_context_menu(
         border_color,
     );
 
-    // Hover highlight
-    if let Some(hover_idx) = state.context_menu.hovered_item {
-        if hover_idx < item_count {
-            let hover_y = menu_y + padding_y + (hover_idx as f32 * item_height);
-            state.gpu.rect_renderer.push_rect(
-                menu_x + border_thickness,
-                hover_y,
-                menu_width - (border_thickness * 2.0),
-                item_height,
-                hover_color,
-            );
-        }
+    // Hover highlight (mouse hover)
+    if let Some(hover_idx) = state.ui.context_menu.hovered_item
+        && hover_idx < item_count
+    {
+        let hover_y = menu_y + padding_y + (hover_idx as f32 * item_height);
+        state.gpu.rect_renderer.push_rect(
+            menu_x + border_thickness,
+            hover_y,
+            menu_width - (border_thickness * 2.0),
+            item_height,
+            hover_color,
+        );
+    }
+
+    // Focus indicator (keyboard focus) - rendered as a border/ring
+    if let Some(focus_idx) = state.ui.context_menu.focused_item
+        && focus_idx < item_count
+    {
+        let focus_y = menu_y + padding_y + (focus_idx as f32 * item_height);
+        let focus_border = 2.0 * scale;
+        let inset = border_thickness + 2.0 * scale;
+
+        // Draw focus ring as 4 rectangles (top, bottom, left, right)
+        // Top edge
+        state.gpu.rect_renderer.push_rect(
+            menu_x + inset,
+            focus_y,
+            menu_width - (inset * 2.0),
+            focus_border,
+            focus_color,
+        );
+        // Bottom edge
+        state.gpu.rect_renderer.push_rect(
+            menu_x + inset,
+            focus_y + item_height - focus_border,
+            menu_width - (inset * 2.0),
+            focus_border,
+            focus_color,
+        );
+        // Left edge
+        state.gpu.rect_renderer.push_rect(
+            menu_x + inset,
+            focus_y,
+            focus_border,
+            item_height,
+            focus_color,
+        );
+        // Right edge
+        state.gpu.rect_renderer.push_rect(
+            menu_x + menu_width - inset - focus_border,
+            focus_y,
+            focus_border,
+            item_height,
+            focus_color,
+        );
     }
 
     // Render background pass
@@ -1315,7 +1714,10 @@ fn render_context_menu(
             occlusion_query_set: None,
         });
 
-        state.gpu.rect_renderer.render(&shared.queue, &mut pass);
+        state
+            .gpu
+            .rect_renderer
+            .render(&shared.queue, &mut pass, &state.gpu.rect_instance_buffer);
     }
 
     // Render menu text
@@ -1380,9 +1782,550 @@ fn render_context_menu(
             occlusion_query_set: None,
         });
 
+        state.gpu.tab_title_renderer.render(
+            &shared.queue,
+            &mut pass,
+            &state.gpu.overlay_text_instance_buffer,
+        );
+    }
+}
+
+/// Render zoom indicator overlay (centered pill showing zoom percentage)
+fn render_zoom_indicator(
+    state: &mut WindowState,
+    shared: &SharedGpuState,
+    encoder: &mut wgpu::CommandEncoder,
+    frame_view: &wgpu::TextureView,
+) {
+    let opacity = state.ui.zoom_indicator.opacity();
+    if opacity <= 0.0 {
+        return;
+    }
+
+    let scale = state.ui.zoom_indicator.scale;
+    let percentage = (scale * 100.0).round() as i32;
+    let text = format!("{}%", percentage);
+
+    // Calculate dimensions
+    let screen_width = state.gpu.config.width as f32;
+    let screen_height = state.gpu.config.height as f32;
+
+    // Use tab glyph cache metrics for consistent sizing
+    let char_width = state.gpu.tab_glyph_cache.cell_width();
+    let line_height = state.gpu.tab_glyph_cache.line_height();
+
+    let padding_x = char_width * 1.5;
+    let padding_y = line_height * 0.4;
+    let text_width = char_width * text.len() as f32;
+    let pill_width = text_width + padding_x * 2.0;
+    let pill_height = line_height + padding_y * 2.0;
+
+    // Center the pill on screen
+    let pill_x = (screen_width - pill_width) / 2.0;
+    let pill_y = (screen_height - pill_height) / 2.0;
+
+    // Background color: dark semi-transparent
+    let bg_color = [0.1, 0.1, 0.1, 0.85 * opacity];
+    // Text color: white
+    let text_color = [1.0, 1.0, 1.0, opacity];
+
+    // Render background pill
+    state.gpu.rect_renderer.clear();
+    state
+        .gpu
+        .rect_renderer
+        .update_screen_size(&shared.queue, screen_width, screen_height);
+    state
+        .gpu
+        .rect_renderer
+        .push_rect(pill_x, pill_y, pill_width, pill_height, bg_color);
+
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Zoom Indicator Background Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: frame_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        state
+            .gpu
+            .rect_renderer
+            .render(&shared.queue, &mut pass, &state.gpu.rect_instance_buffer);
+    }
+
+    // Render text using tab title renderer
+    state.gpu.tab_title_renderer.clear();
+    state
+        .gpu
+        .tab_title_renderer
+        .update_screen_size(&shared.queue, screen_width, screen_height);
+
+    let text_x = pill_x + padding_x;
+    let text_y = pill_y + padding_y;
+
+    let mut glyphs = Vec::new();
+    let mut char_x = text_x;
+    for ch in text.chars() {
+        if let Some(glyph) = state.gpu.tab_glyph_cache.position_char(ch, char_x, text_y) {
+            glyphs.push(glyph);
+        }
+        char_x += char_width;
+    }
+    state
+        .gpu
+        .tab_title_renderer
+        .push_glyphs(&glyphs, text_color);
+    state.gpu.tab_glyph_cache.flush(&shared.queue);
+
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Zoom Indicator Text Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: frame_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        state.gpu.tab_title_renderer.render(
+            &shared.queue,
+            &mut pass,
+            &state.gpu.overlay_text_instance_buffer,
+        );
+    }
+}
+
+fn render_copy_indicator(
+    state: &mut WindowState,
+    shared: &SharedGpuState,
+    encoder: &mut wgpu::CommandEncoder,
+    frame_view: &wgpu::TextureView,
+) {
+    let opacity = state.ui.copy_indicator.opacity();
+    if opacity <= 0.0 {
+        return;
+    }
+
+    let text = "Copied!";
+
+    // Calculate dimensions
+    let screen_width = state.gpu.config.width as f32;
+    let screen_height = state.gpu.config.height as f32;
+
+    // Use tab glyph cache metrics for consistent sizing
+    let char_width = state.gpu.tab_glyph_cache.cell_width();
+    let line_height = state.gpu.tab_glyph_cache.line_height();
+
+    let padding_x = char_width * 1.5;
+    let padding_y = line_height * 0.4;
+    let text_width = char_width * text.len() as f32;
+    let pill_width = text_width + padding_x * 2.0;
+    let pill_height = line_height + padding_y * 2.0;
+
+    // Center the pill on screen
+    let pill_x = (screen_width - pill_width) / 2.0;
+    let pill_y = (screen_height - pill_height) / 2.0;
+
+    // Background color: green-tinted semi-transparent (success feedback)
+    let bg_color = [0.1, 0.3, 0.1, 0.85 * opacity];
+    // Text color: white
+    let text_color = [1.0, 1.0, 1.0, opacity];
+
+    // Render background pill
+    state.gpu.rect_renderer.clear();
+    state
+        .gpu
+        .rect_renderer
+        .update_screen_size(&shared.queue, screen_width, screen_height);
+    state
+        .gpu
+        .rect_renderer
+        .push_rect(pill_x, pill_y, pill_width, pill_height, bg_color);
+
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Copy Indicator Background Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: frame_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        state
+            .gpu
+            .rect_renderer
+            .render(&shared.queue, &mut pass, &state.gpu.rect_instance_buffer);
+    }
+
+    // Render text using tab title renderer
+    state.gpu.tab_title_renderer.clear();
+    state
+        .gpu
+        .tab_title_renderer
+        .update_screen_size(&shared.queue, screen_width, screen_height);
+
+    let text_x = pill_x + padding_x;
+    let text_y = pill_y + padding_y;
+
+    let mut glyphs = Vec::new();
+    let mut char_x = text_x;
+    for ch in text.chars() {
+        if let Some(glyph) = state.gpu.tab_glyph_cache.position_char(ch, char_x, text_y) {
+            glyphs.push(glyph);
+        }
+        char_x += char_width;
+    }
+    state
+        .gpu
+        .tab_title_renderer
+        .push_glyphs(&glyphs, text_color);
+    state.gpu.tab_glyph_cache.flush(&shared.queue);
+
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Copy Indicator Text Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: frame_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        state.gpu.tab_title_renderer.render(
+            &shared.queue,
+            &mut pass,
+            &state.gpu.overlay_text_instance_buffer,
+        );
+    }
+}
+
+/// Render window rename input bar overlay
+fn render_window_rename(
+    state: &mut WindowState,
+    shared: &mut SharedGpuState,
+    encoder: &mut wgpu::CommandEncoder,
+    frame_view: &wgpu::TextureView,
+) {
+    let (_, content_offset_y) = state.gpu.tab_bar.content_offset();
+    let s = state.scale_factor;
+    // content_offset_y is in logical pixels, scale to physical
+    let content_offset_y = content_offset_y * s;
+
+    // Theme colors for rename bar
+    let ui_style = &state.gpu.effect_pipeline.theme().ui;
+    let bg_color = ui_style.rename_bar.background.to_array();
+    let focus_glow_color = ui_style.focus.glow_color.to_array();
+    let focus_border_color = ui_style.focus.ring_color.to_array();
+
+    // Calculate rename bar dimensions (wider than search bar, centered)
+    let bar_width = 400.0 * s;
+    let bar_height = 36.0 * s;
+    let margin = 40.0 * s;
+    let padding = 10.0 * s;
+    let border_width = ui_style.focus.ring_thickness * s;
+    let glow_size = ui_style.focus.glow_size * s;
+
+    // Center horizontally
+    let bar_x = (state.gpu.config.width as f32 - bar_width) / 2.0;
+    let bar_y = content_offset_y + margin;
+
+    // Render rename bar using RectRenderer
+    state.gpu.rect_renderer.clear();
+    state.gpu.rect_renderer.update_screen_size(
+        &shared.queue,
+        state.gpu.config.width as f32,
+        state.gpu.config.height as f32,
+    );
+
+    // Outer glow (focus indicator)
+    state.gpu.rect_renderer.push_rect(
+        bar_x - glow_size,
+        bar_y - glow_size,
+        bar_width + glow_size * 2.0,
+        bar_height + glow_size * 2.0,
+        focus_glow_color,
+    );
+
+    // Focus border rect (bright blue)
+    state
+        .gpu
+        .rect_renderer
+        .push_rect(bar_x, bar_y, bar_width, bar_height, focus_border_color);
+
+    // Inner background rect
+    state.gpu.rect_renderer.push_rect(
+        bar_x + border_width,
+        bar_y + border_width,
+        bar_width - border_width * 2.0,
+        bar_height - border_width * 2.0,
+        bg_color,
+    );
+
+    // Render rename bar background directly to frame
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Window Rename Bar Background Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: frame_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        state
+            .gpu
+            .rect_renderer
+            .render(&shared.queue, &mut pass, &state.gpu.rect_instance_buffer);
+    }
+
+    // Calculate text position
+    let text_x = bar_x + border_width + padding;
+    let text_y = bar_y + border_width + padding;
+    let text_height = bar_height - border_width * 2.0 - padding * 2.0;
+
+    // Render rename text using tab glyph cache
+    state.gpu.tab_title_renderer.clear();
+
+    // Build display text: "Rename: " + input + cursor
+    let input = &state.ui.window_rename.input;
+    let display_text = format!("Rename: {}|", input);
+
+    // Render text - get fresh reference to ui_style for text colors
+    let ui_style = &state.gpu.effect_pipeline.theme().ui;
+    let label_color = ui_style.rename_bar.label_color.to_array();
+    let input_color = ui_style.rename_bar.text_color.to_array();
+
+    let mut glyphs = Vec::new();
+    let mut char_x = text_x;
+    let font_height = 14.0 * state.scale_factor;
+    let text_baseline_y = text_y + (text_height - font_height) / 2.0;
+    let label_len = "Rename: ".len();
+
+    for (idx, c) in display_text.chars().enumerate() {
+        if let Some(glyph) = state
+            .gpu
+            .tab_glyph_cache
+            .position_char(c, char_x, text_baseline_y)
+        {
+            glyphs.push(glyph);
+        }
+
+        // Render label part first, then input part
+        if idx == label_len - 1 {
+            // Push label glyphs
+            state
+                .gpu
+                .tab_title_renderer
+                .push_glyphs(&glyphs, label_color);
+            glyphs.clear();
+        }
+
+        char_x += state.gpu.tab_glyph_cache.cell_width();
+    }
+
+    // Push remaining input glyphs
+    if !glyphs.is_empty() {
         state
             .gpu
             .tab_title_renderer
-            .render(&shared.queue, &mut pass);
+            .push_glyphs(&glyphs, input_color);
+    }
+
+    state.gpu.tab_glyph_cache.flush(&shared.queue);
+
+    // Render text pass
+    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("Window Rename Bar Text Render Pass"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: frame_view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+            depth_slice: None,
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    });
+
+    state.gpu.tab_title_renderer.render(
+        &shared.queue,
+        &mut pass,
+        &state.gpu.overlay_text_instance_buffer,
+    );
+}
+
+fn render_toast(
+    state: &mut WindowState,
+    shared: &SharedGpuState,
+    encoder: &mut wgpu::CommandEncoder,
+    frame_view: &wgpu::TextureView,
+) {
+    let opacity = state.ui.toast.opacity();
+    if opacity <= 0.0 {
+        return;
+    }
+
+    let message = &state.ui.toast.message;
+    if message.is_empty() {
+        return;
+    }
+
+    // Calculate dimensions
+    let screen_width = state.gpu.config.width as f32;
+    let screen_height = state.gpu.config.height as f32;
+
+    // Use tab glyph cache metrics for consistent sizing
+    let char_width = state.gpu.tab_glyph_cache.cell_width();
+    let line_height = state.gpu.tab_glyph_cache.line_height();
+
+    let padding_x = char_width * 1.5;
+    let padding_y = line_height * 0.5;
+    let text_width = char_width * message.len() as f32;
+    let pill_width = text_width + padding_x * 2.0;
+    let pill_height = line_height + padding_y * 2.0;
+
+    // Position at bottom center with some margin
+    let margin_bottom = line_height * 2.0;
+    let pill_x = (screen_width - pill_width) / 2.0;
+    let pill_y = screen_height - pill_height - margin_bottom;
+
+    // Background and text colors based on toast type
+    let (bg_color, text_color) = match state.ui.toast.toast_type {
+        crate::window::ToastType::Error => (
+            [0.6, 0.1, 0.1, 0.95 * opacity], // Dark red background
+            [1.0, 1.0, 1.0, opacity],        // White text
+        ),
+        crate::window::ToastType::Warning => (
+            [0.6, 0.4, 0.1, 0.95 * opacity], // Dark orange background
+            [1.0, 1.0, 1.0, opacity],        // White text
+        ),
+        crate::window::ToastType::Info => (
+            [0.1, 0.2, 0.5, 0.95 * opacity], // Dark blue background
+            [1.0, 1.0, 1.0, opacity],        // White text
+        ),
+    };
+
+    // Render background pill
+    state.gpu.rect_renderer.clear();
+    state
+        .gpu
+        .rect_renderer
+        .update_screen_size(&shared.queue, screen_width, screen_height);
+    state
+        .gpu
+        .rect_renderer
+        .push_rect(pill_x, pill_y, pill_width, pill_height, bg_color);
+
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Toast Background Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: frame_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        state
+            .gpu
+            .rect_renderer
+            .render(&shared.queue, &mut pass, &state.gpu.rect_instance_buffer);
+    }
+
+    // Render text using tab title renderer
+    state.gpu.tab_title_renderer.clear();
+    state
+        .gpu
+        .tab_title_renderer
+        .update_screen_size(&shared.queue, screen_width, screen_height);
+
+    let text_x = pill_x + padding_x;
+    let text_y = pill_y + padding_y;
+
+    let mut glyphs = Vec::new();
+    let mut char_x = text_x;
+    for ch in message.chars() {
+        if let Some(glyph) = state.gpu.tab_glyph_cache.position_char(ch, char_x, text_y) {
+            glyphs.push(glyph);
+        }
+        char_x += char_width;
+    }
+    state
+        .gpu
+        .tab_title_renderer
+        .push_glyphs(&glyphs, text_color);
+    state.gpu.tab_glyph_cache.flush(&shared.queue);
+
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Toast Text Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: frame_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        state.gpu.tab_title_renderer.render(
+            &shared.queue,
+            &mut pass,
+            &state.gpu.overlay_text_instance_buffer,
+        );
     }
 }

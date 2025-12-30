@@ -53,11 +53,17 @@ impl ConfigPaths {
     pub fn theme_path(&self, theme_name: &str) -> PathBuf {
         self.themes_dir().join(format!("{}.css", theme_name))
     }
+
+    /// Get the shell integration assets directory path
+    pub fn shell_assets_dir(&self) -> PathBuf {
+        self.config_dir.join("shell")
+    }
 }
 
 /// Shell configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct ShellConfig {
     /// Shell program to run (default: user's login shell or /bin/zsh)
     pub program: Option<String>,
@@ -65,16 +71,10 @@ pub struct ShellConfig {
     pub args: Vec<String>,
     /// Working directory (default: user's home)
     pub working_directory: Option<PathBuf>,
-}
-
-impl Default for ShellConfig {
-    fn default() -> Self {
-        Self {
-            program: None, // Will use login shell
-            args: vec![],
-            working_directory: None,
-        }
-    }
+    /// Enable semantic prompt markers (OSC 133) for command success/fail detection
+    /// When enabled, CRT injects shell hooks for bash/zsh to emit OSC 133 sequences.
+    /// Not needed if using starship, oh-my-zsh, or other tools with OSC 133 support.
+    pub semantic_prompts: bool,
 }
 
 /// Font configuration
@@ -142,6 +142,10 @@ pub struct ThemeConfig {
 impl Default for ThemeConfig {
     fn default() -> Self {
         Self {
+            // Use nyancat in dev builds to test event-driven theming
+            #[cfg(debug_assertions)]
+            name: "nyancat".to_string(),
+            #[cfg(not(debug_assertions))]
             name: "synthwave".to_string(),
         }
     }
@@ -376,41 +380,58 @@ impl Config {
 
     /// Load config from default path (respects CRT_CONFIG_DIR env var)
     pub fn load() -> Self {
+        Self::load_with_error().0
+    }
+
+    /// Load config from default path, returning any error message
+    pub fn load_with_error() -> (Self, Option<String>) {
         match ConfigPaths::from_env_or_default() {
-            Some(paths) => Self::load_with_paths(&paths),
+            Some(paths) => {
+                let config_path = paths.config_path();
+                Self::load_from_with_error(&config_path)
+            }
             None => {
                 log::info!("Could not determine config path, using defaults");
-                Self::default()
+                (Self::default(), None)
             }
         }
     }
 
     /// Load config from a specific file path
+    #[allow(dead_code)]
     pub fn load_from(path: &Path) -> Self {
+        Self::load_from_with_error(path).0
+    }
+
+    /// Load config from a specific file path, returning any error message
+    pub fn load_from_with_error(path: &Path) -> (Self, Option<String>) {
         if !path.exists() {
             log::info!("Config file not found at {:?}, using defaults", path);
-            return Self::default();
+            return (Self::default(), None);
         }
 
         match std::fs::read_to_string(path) {
             Ok(contents) => match toml::from_str(&contents) {
                 Ok(config) => {
                     log::info!("Loaded config from {:?}", path);
-                    config
+                    (config, None)
                 }
                 Err(e) => {
+                    let error_msg = format!("Config error: {}", e);
                     log::warn!("Failed to parse config {:?}: {}, using defaults", path, e);
-                    Self::default()
+                    (Self::default(), Some(error_msg))
                 }
             },
             Err(e) => {
+                let error_msg = format!("Config read error: {}", e);
                 log::warn!("Failed to read config {:?}: {}, using defaults", path, e);
-                Self::default()
+                (Self::default(), Some(error_msg))
             }
         }
     }
 
     /// Load config using specified paths
+    #[allow(dead_code)]
     pub fn load_with_paths(paths: &ConfigPaths) -> Self {
         let config_path = paths.config_path();
         Self::load_from(&config_path)
@@ -419,6 +440,11 @@ impl Config {
     /// Get theme CSS with paths from environment or default
     pub fn theme_css_with_path(&self) -> Option<(String, PathBuf)> {
         ConfigPaths::from_env_or_default().and_then(|paths| self.theme_css_with_paths(&paths))
+    }
+
+    /// Get the shell integration assets directory
+    pub fn shell_assets_dir() -> Option<PathBuf> {
+        ConfigPaths::from_env_or_default().map(|paths| paths.shell_assets_dir())
     }
 
     /// Get theme CSS content and the theme file's directory using specified paths
@@ -472,6 +498,10 @@ mod tests {
         assert_eq!(config.window.columns, 80);
         assert_eq!(config.window.rows, 24);
         assert_eq!(config.font.size, 14.0);
+        // Default theme differs between debug (nyancat) and release (synthwave)
+        #[cfg(debug_assertions)]
+        assert_eq!(config.theme.name, "nyancat");
+        #[cfg(not(debug_assertions))]
         assert_eq!(config.theme.name, "synthwave");
     }
 
@@ -587,6 +617,415 @@ columns = 100
         assert_eq!(config.window.columns, 200);
         assert_eq!(config.window.rows, 24); // default
         assert_eq!(config.font.size, 14.0); // default
-        assert_eq!(config.theme.name, "synthwave"); // default
+        // Default theme differs between debug (nyancat) and release (synthwave)
+        #[cfg(debug_assertions)]
+        assert_eq!(config.theme.name, "nyancat");
+        #[cfg(not(debug_assertions))]
+        assert_eq!(config.theme.name, "synthwave");
+    }
+
+    // ========== Cursor Style Tests ==========
+
+    #[test]
+    fn test_cursor_style_default() {
+        let cursor = CursorConfig::default();
+        assert_eq!(cursor.style, CursorStyle::Block);
+        assert!(cursor.blink);
+        assert_eq!(cursor.blink_interval_ms, 530);
+    }
+
+    #[test]
+    fn test_cursor_style_serde() {
+        // Block
+        let config: CursorConfig = toml::from_str(r#"style = "block""#).unwrap();
+        assert_eq!(config.style, CursorStyle::Block);
+
+        // Bar
+        let config: CursorConfig = toml::from_str(r#"style = "bar""#).unwrap();
+        assert_eq!(config.style, CursorStyle::Bar);
+
+        // Underline
+        let config: CursorConfig = toml::from_str(r#"style = "underline""#).unwrap();
+        assert_eq!(config.style, CursorStyle::Underline);
+    }
+
+    #[test]
+    fn test_cursor_blink_config() {
+        let config: CursorConfig = toml::from_str(
+            r#"
+            blink = false
+            blink_interval_ms = 1000
+            "#,
+        )
+        .unwrap();
+        assert!(!config.blink);
+        assert_eq!(config.blink_interval_ms, 1000);
+    }
+
+    // ========== Bell Config Tests ==========
+
+    #[test]
+    fn test_bell_config_default() {
+        let bell = BellConfig::default();
+        assert!(bell.visual);
+        assert_eq!(bell.flash_duration_ms, 100);
+        assert!((bell.flash_intensity - 0.3).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_bell_config_serde() {
+        let config: BellConfig = toml::from_str(
+            r#"
+            visual = false
+            flash_duration_ms = 200
+            flash_intensity = 0.5
+            "#,
+        )
+        .unwrap();
+        assert!(!config.visual);
+        assert_eq!(config.flash_duration_ms, 200);
+        assert!((config.flash_intensity - 0.5).abs() < 0.001);
+    }
+
+    // ========== Font Config Tests ==========
+
+    #[test]
+    fn test_font_config_default() {
+        let font = FontConfig::default();
+        assert!(!font.family.is_empty());
+        assert!(font.family.contains(&"JetBrains Mono".to_string()));
+        assert_eq!(font.size, 14.0);
+        assert!((font.line_height - 1.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_font_config_serde() {
+        let config: FontConfig = toml::from_str(
+            r#"
+            family = ["Monaco", "Courier New"]
+            size = 18.0
+            line_height = 1.8
+            "#,
+        )
+        .unwrap();
+        assert_eq!(config.family, vec!["Monaco", "Courier New"]);
+        assert_eq!(config.size, 18.0);
+        assert!((config.line_height - 1.8).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_font_config_empty_family() {
+        let config: FontConfig = toml::from_str(r#"family = []"#).unwrap();
+        assert!(config.family.is_empty());
+    }
+
+    // ========== Shell Config Tests ==========
+
+    #[test]
+    fn test_shell_config_default() {
+        let shell = ShellConfig::default();
+        assert!(shell.program.is_none());
+        assert!(shell.args.is_empty());
+        assert!(shell.working_directory.is_none());
+    }
+
+    #[test]
+    fn test_shell_config_serde() {
+        let config: ShellConfig = toml::from_str(
+            r#"
+            program = "/bin/bash"
+            args = ["-l", "-i"]
+            working_directory = "/home/user"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(config.program, Some("/bin/bash".to_string()));
+        assert_eq!(config.args, vec!["-l", "-i"]);
+        assert_eq!(config.working_directory, Some(PathBuf::from("/home/user")));
+    }
+
+    // ========== Window Config Tests ==========
+
+    #[test]
+    fn test_window_config_default() {
+        let window = WindowConfig::default();
+        assert_eq!(window.columns, 80);
+        assert_eq!(window.rows, 24);
+        assert_eq!(window.title, "CRT Terminal");
+        assert!(!window.fullscreen);
+    }
+
+    #[test]
+    fn test_window_config_serde() {
+        let config: WindowConfig = toml::from_str(
+            r#"
+            columns = 160
+            rows = 48
+            title = "My Terminal"
+            fullscreen = true
+            "#,
+        )
+        .unwrap();
+        assert_eq!(config.columns, 160);
+        assert_eq!(config.rows, 48);
+        assert_eq!(config.title, "My Terminal");
+        assert!(config.fullscreen);
+    }
+
+    // ========== Theme Config Tests ==========
+
+    #[test]
+    fn test_theme_config_default() {
+        let theme = ThemeConfig::default();
+        #[cfg(debug_assertions)]
+        assert_eq!(theme.name, "nyancat");
+        #[cfg(not(debug_assertions))]
+        assert_eq!(theme.name, "synthwave");
+    }
+
+    #[test]
+    fn test_theme_config_serde() {
+        let config: ThemeConfig = toml::from_str(r#"name = "dracula""#).unwrap();
+        assert_eq!(config.name, "dracula");
+    }
+
+    // ========== KeyAction Tests ==========
+
+    #[test]
+    fn test_key_action_serde() {
+        // Test snake_case serialization
+        let binding: Keybinding = toml::from_str(
+            r#"
+            key = "t"
+            mods = ["super"]
+            action = "new_tab"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(binding.action, KeyAction::NewTab);
+
+        let binding: Keybinding = toml::from_str(
+            r#"
+            key = "w"
+            mods = ["super"]
+            action = "close_tab"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(binding.action, KeyAction::CloseTab);
+
+        let binding: Keybinding = toml::from_str(
+            r#"
+            key = "equal"
+            mods = ["super"]
+            action = "increase_font_size"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(binding.action, KeyAction::IncreaseFontSize);
+    }
+
+    #[test]
+    fn test_keybinding_with_multiple_mods() {
+        let binding: Keybinding = toml::from_str(
+            r#"
+            key = "["
+            mods = ["super", "shift"]
+            action = "prev_tab"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(binding.key, "[");
+        assert_eq!(binding.mods, vec!["super", "shift"]);
+        assert_eq!(binding.action, KeyAction::PrevTab);
+    }
+
+    #[test]
+    fn test_keybinding_no_mods() {
+        let binding: Keybinding = toml::from_str(
+            r#"
+            key = "F1"
+            action = "toggle_fullscreen"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(binding.key, "F1");
+        assert!(binding.mods.is_empty());
+        assert_eq!(binding.action, KeyAction::ToggleFullscreen);
+    }
+
+    #[test]
+    fn test_keybindings_config_default() {
+        let keybindings = KeybindingsConfig::default();
+        assert!(!keybindings.bindings.is_empty());
+
+        // Check for expected default bindings
+        let has_new_tab = keybindings
+            .bindings
+            .iter()
+            .any(|b| b.action == KeyAction::NewTab);
+        assert!(has_new_tab);
+
+        let has_copy = keybindings
+            .bindings
+            .iter()
+            .any(|b| b.action == KeyAction::Copy);
+        assert!(has_copy);
+    }
+
+    // ========== Error Handling Tests ==========
+
+    #[test]
+    fn test_load_with_error_returns_error_message() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        fs::write(&config_path, "invalid { toml content").unwrap();
+
+        let (config, error) = Config::load_from_with_error(&config_path);
+
+        // Should return defaults
+        assert_eq!(config.window.columns, 80);
+
+        // Should have error message
+        assert!(error.is_some());
+        let error_msg = error.unwrap();
+        assert!(error_msg.contains("Config error"));
+    }
+
+    #[test]
+    fn test_load_with_error_no_error_on_valid() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        fs::write(&config_path, "[window]\ncolumns = 100\n").unwrap();
+
+        let (config, error) = Config::load_from_with_error(&config_path);
+
+        assert_eq!(config.window.columns, 100);
+        assert!(error.is_none());
+    }
+
+    #[test]
+    fn test_load_with_error_missing_file() {
+        let (config, error) = Config::load_from_with_error(Path::new("/nonexistent/config.toml"));
+
+        // Should return defaults
+        assert_eq!(config.window.columns, 80);
+        // No error for missing file (intentional)
+        assert!(error.is_none());
+    }
+
+    // ========== ConfigPaths Tests ==========
+
+    #[test]
+    fn test_config_paths_theme_path() {
+        let paths = ConfigPaths::new(PathBuf::from("/config"));
+
+        assert_eq!(
+            paths.theme_path("dracula"),
+            PathBuf::from("/config/themes/dracula.css")
+        );
+        assert_eq!(
+            paths.theme_path("my-custom-theme"),
+            PathBuf::from("/config/themes/my-custom-theme.css")
+        );
+    }
+
+    // ========== Full Config Integration Tests ==========
+
+    #[test]
+    fn test_full_config_serde() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        fs::write(
+            &config_path,
+            r#"
+[shell]
+program = "/bin/zsh"
+args = ["-l"]
+
+[font]
+family = ["Fira Code"]
+size = 16.0
+line_height = 1.4
+
+[window]
+columns = 100
+rows = 30
+title = "Test"
+fullscreen = false
+
+[theme]
+name = "dracula"
+
+[cursor]
+style = "bar"
+blink = false
+blink_interval_ms = 600
+
+[bell]
+visual = true
+flash_duration_ms = 150
+flash_intensity = 0.4
+
+[[keybindings.bindings]]
+key = "n"
+mods = ["super"]
+action = "new_tab"
+"#,
+        )
+        .unwrap();
+
+        let config = Config::load_from(&config_path);
+
+        assert_eq!(config.shell.program, Some("/bin/zsh".to_string()));
+        assert_eq!(config.shell.args, vec!["-l"]);
+        assert_eq!(config.font.family, vec!["Fira Code"]);
+        assert_eq!(config.font.size, 16.0);
+        assert_eq!(config.window.columns, 100);
+        assert_eq!(config.window.rows, 30);
+        assert_eq!(config.theme.name, "dracula");
+        assert_eq!(config.cursor.style, CursorStyle::Bar);
+        assert!(!config.cursor.blink);
+        assert!(config.bell.visual);
+        assert_eq!(config.keybindings.bindings.len(), 1);
+        assert_eq!(config.keybindings.bindings[0].action, KeyAction::NewTab);
+    }
+
+    #[test]
+    fn test_config_unknown_fields_ignored() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        // Include an unknown field
+        fs::write(
+            &config_path,
+            r#"
+[window]
+columns = 90
+unknown_field = "should be ignored"
+"#,
+        )
+        .unwrap();
+
+        let config = Config::load_from(&config_path);
+        assert_eq!(config.window.columns, 90);
+    }
+
+    #[test]
+    fn test_config_type_mismatch_uses_default() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        // columns should be a number, not a string
+        fs::write(&config_path, r#"[window]\ncolumns = "not a number"\n"#).unwrap();
+
+        let (config, error) = Config::load_from_with_error(&config_path);
+
+        // Should fall back to defaults due to parse error
+        assert_eq!(config.window.columns, 80);
+        assert!(error.is_some());
     }
 }

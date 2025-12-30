@@ -119,6 +119,8 @@ See the [Theming Guide](docs/theming.md) for details, or jump to:
 | Cmd+N | New window |
 | Cmd+T | New tab |
 | Cmd+W | Close tab |
+| Cmd+Shift+W | Close window |
+| Cmd+Shift+R | Rename window |
 | Cmd+1-9 | Switch to tab 1-9 |
 | Cmd+Shift+[ | Previous tab |
 | Cmd+Shift+] | Next tab |
@@ -127,10 +129,10 @@ See the [Theming Guide](docs/theming.md) for details, or jump to:
 ### Navigation
 | Shortcut | Action |
 |----------|--------|
-| Page Up | Scroll up through history |
-| Page Down | Scroll down through history |
-| Home | Jump to top of scrollback |
-| End | Jump to bottom |
+| Shift+Page Up | Scroll up through history |
+| Shift+Page Down | Scroll down through history |
+| Shift+Home | Jump to top of scrollback |
+| Shift+End | Jump to bottom |
 | Cmd+Click | Open URL under cursor |
 
 ### Search
@@ -147,13 +149,37 @@ See the [Theming Guide](docs/theming.md) for details, or jump to:
 | Cmd+- | Decrease font size |
 | Cmd+0 | Reset font size |
 
+### Context Menu
+| Shortcut | Action |
+|----------|--------|
+| Right-click | Open context menu |
+| Arrow Up/Down | Navigate menu items |
+| Enter | Activate focused item |
+| Escape | Close menu |
+
 ### Other
 | Shortcut | Action |
 |----------|--------|
 | Cmd+C | Copy selection |
 | Cmd+V | Paste |
-| Right-click | Context menu |
+| Cmd+A | Select all |
+| Cmd+K | Clear scrollback |
 | Cmd+Option+P | Toggle profiling |
+| Ctrl+Cmd+F | Toggle fullscreen |
+
+## Accessibility
+
+CRT includes keyboard accessibility features for users who prefer or require keyboard navigation:
+
+- **Focus indicators**: Visual focus rings highlight the active element (tabs, context menu items, search bar)
+- **Context menu navigation**: Full keyboard control with arrow keys and Enter
+- **Tab navigation**: Switch tabs with Cmd+1-9 or Cmd+Shift+[/]
+- **Search**: Find text in terminal history with Cmd+F
+
+### Known Limitations
+
+- No screen reader support (planned for future release)
+- Some visual effects may be distracting; use `minimal` or `dracula` themes for a calmer experience
 
 ## Troubleshooting
 
@@ -169,6 +195,11 @@ See the [Theming Guide](docs/theming.md) for details, or jump to:
 **Performance issues**
 - Themes with multiple backdrop effects (particles + matrix + sprites) use more resources than simpler themes
 - Try `minimal` or `dracula` if you want a lightweight option
+
+**Reactive themes not working (Powerlevel10k / Oh-My-Zsh users)**
+- See the [Troubleshooting Guide](docs/troubleshooting.md) for shell integration setup
+
+For more issues and solutions, see the full [Troubleshooting Guide](docs/troubleshooting.md).
 
 ## Reporting Issues
 

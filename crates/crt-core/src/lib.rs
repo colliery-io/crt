@@ -7,7 +7,7 @@
 
 pub mod pty;
 
-pub use pty::Pty;
+pub use pty::{Pty, ShellType, SpawnOptions};
 
 // Re-export alacritty_terminal types needed for rendering
 pub use alacritty_terminal::event::Event as TerminalEvent;
@@ -47,6 +47,20 @@ pub enum SemanticZone {
     /// Command output region (between OSC 133;C and next OSC 133;A)
     Output,
 }
+
+/// Shell events that can trigger theme effects
+///
+/// These events are detected from terminal output and can be used
+/// to trigger visual effects defined in theme CSS (::on-bell, etc.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShellEvent {
+    /// Bell character received (BEL, 0x07)
+    Bell,
+    /// Command completed successfully (OSC 133;D with exit code 0)
+    CommandSuccess,
+    /// Command failed (OSC 133;D with non-zero exit code)
+    CommandFail(i32),
+}
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::term::test::TermSize;
 use alacritty_terminal::term::{self, Config as TermConfig, Term};
@@ -73,7 +87,13 @@ impl TerminalEventProxy {
 
     /// Take all pending events
     pub fn take_events(&self) -> Vec<Event> {
-        self.storage.lock().unwrap().events.drain(..).collect()
+        match self.storage.lock() {
+            Ok(mut storage) => storage.events.drain(..).collect(),
+            Err(e) => {
+                log::warn!("Event storage lock poisoned, returning empty events: {}", e);
+                Vec::new()
+            }
+        }
     }
 }
 
@@ -85,7 +105,12 @@ impl Default for TerminalEventProxy {
 
 impl EventListener for TerminalEventProxy {
     fn send_event(&self, event: Event) {
-        self.storage.lock().unwrap().events.push(event);
+        match self.storage.lock() {
+            Ok(mut storage) => storage.events.push(event),
+            Err(e) => {
+                log::warn!("Event storage lock poisoned, dropping event: {}", e);
+            }
+        }
     }
 }
 
@@ -113,6 +138,8 @@ pub struct Terminal {
     line_zones: BTreeMap<i32, SemanticZone>,
     /// Current semantic zone state (for marking new content)
     current_zone: SemanticZone,
+    /// Pending shell events for theme triggers (bell, command success/fail)
+    pending_shell_events: Vec<ShellEvent>,
 }
 
 impl Terminal {
@@ -131,6 +158,7 @@ impl Terminal {
             size,
             line_zones: BTreeMap::new(),
             current_zone: SemanticZone::Unknown,
+            pending_shell_events: Vec::new(),
         }
     }
 
@@ -176,6 +204,7 @@ impl Terminal {
     ///
     /// OSC 133 format: `\x1b]133;X\x07` or `\x1b]133;X\x1b\\`
     /// Where X is: A (prompt start), B (command start), C (output start), D (output end)
+    /// For D, may include exit code: `\x1b]133;D;exitcode\x07`
     fn scan_osc133(&mut self, bytes: &[u8]) {
         // OSC starts with \x1b] (ESC ])
         let mut i = 0;
@@ -190,13 +219,51 @@ impl Terminal {
                     && bytes[i + 5] == b';'
                 {
                     let cmd = bytes[i + 6];
-                    // Check for valid terminator (BEL \x07 or ST \x1b\\)
-                    let has_bel = i + 7 < bytes.len() && bytes[i + 7] == 0x07;
-                    let has_st =
-                        i + 8 < bytes.len() && bytes[i + 7] == 0x1b && bytes[i + 8] == b'\\';
 
-                    if has_bel || has_st {
-                        self.handle_osc133(cmd);
+                    // For D command, try to parse exit code (format: D;exitcode)
+                    let exit_code = if cmd == b'D' && i + 8 < bytes.len() && bytes[i + 7] == b';' {
+                        // Find terminator and parse exit code
+                        let mut end = i + 8;
+                        while end < bytes.len()
+                            && bytes[end] != 0x07
+                            && bytes[end] != 0x1b
+                            && bytes[end].is_ascii_digit()
+                        {
+                            end += 1;
+                        }
+                        if end > i + 8 {
+                            std::str::from_utf8(&bytes[i + 8..end])
+                                .ok()
+                                .and_then(|s| s.parse::<i32>().ok())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    // Check for valid terminator anywhere after command
+                    // Scan forward to find BEL or ST
+                    let mut term_pos = i + 7;
+                    let mut has_terminator = false;
+                    while term_pos < bytes.len() && term_pos < i + 20 {
+                        // limit search
+                        if bytes[term_pos] == 0x07 {
+                            has_terminator = true;
+                            break;
+                        }
+                        if bytes[term_pos] == 0x1b
+                            && term_pos + 1 < bytes.len()
+                            && bytes[term_pos + 1] == b'\\'
+                        {
+                            has_terminator = true;
+                            break;
+                        }
+                        term_pos += 1;
+                    }
+
+                    if has_terminator {
+                        self.handle_osc133(cmd, exit_code);
                     }
                 }
             }
@@ -205,7 +272,7 @@ impl Terminal {
     }
 
     /// Handle an OSC 133 command
-    fn handle_osc133(&mut self, cmd: u8) {
+    fn handle_osc133(&mut self, cmd: u8, exit_code: Option<i32>) {
         // Get current cursor line from terminal
         let cursor = self.term.renderable_content().cursor;
         let line = cursor.point.line.0;
@@ -230,8 +297,19 @@ impl Terminal {
                 log::debug!("OSC 133;C: Output start at line {}", line);
             }
             b'D' => {
-                // Output end (could parse exit code from params)
-                log::debug!("OSC 133;D: Output end at line {}", line);
+                // Output end with exit code - emit command success/fail event
+                let code = exit_code.unwrap_or(0);
+                log::debug!(
+                    "OSC 133;D: Output end at line {}, exit code: {}",
+                    line,
+                    code
+                );
+                if code == 0 {
+                    self.pending_shell_events.push(ShellEvent::CommandSuccess);
+                } else {
+                    self.pending_shell_events
+                        .push(ShellEvent::CommandFail(code));
+                }
             }
             _ => {}
         }
@@ -283,6 +361,13 @@ impl Terminal {
     /// Take pending terminal events
     pub fn take_events(&self) -> Vec<Event> {
         self.event_proxy.take_events()
+    }
+
+    /// Take pending shell events (bell, command success/fail)
+    ///
+    /// These events can trigger theme visual effects.
+    pub fn take_shell_events(&mut self) -> Vec<ShellEvent> {
+        std::mem::take(&mut self.pending_shell_events)
     }
 
     /// Resize the terminal
@@ -401,7 +486,7 @@ impl Terminal {
 
         // History lines (negative indices, from oldest to newest)
         for i in (0..history_size).rev() {
-            let line_idx = -(i as i32 + 1);
+            let line_idx = -(i + 1);
             let row = &grid[alacritty_terminal::index::Line(line_idx)];
             let text: String = row.into_iter().map(|cell| cell.c).collect();
             lines.push((line_idx, text.trim_end().to_string()));
@@ -450,6 +535,16 @@ impl ShellTerminal {
     pub fn with_shell(size: Size, shell: &str) -> anyhow::Result<Self> {
         let terminal = Terminal::new(size);
         let pty = Pty::spawn(Some(shell), size.columns as u16, size.lines as u16)?;
+
+        Ok(Self { terminal, pty })
+    }
+
+    /// Create a new shell terminal with full spawn options
+    ///
+    /// This enables semantic prompt support (OSC 133) for command success/fail detection.
+    pub fn with_options(size: Size, options: SpawnOptions) -> anyhow::Result<Self> {
+        let terminal = Terminal::new(size);
+        let pty = Pty::spawn_with_options(size.columns as u16, size.lines as u16, options)?;
 
         Ok(Self { terminal, pty })
     }
@@ -511,6 +606,9 @@ impl ShellTerminal {
 
     /// Check for terminal events and return title changes and bell triggers
     /// Returns (Option<title>, bell_triggered)
+    ///
+    /// Note: For theme-triggerable events, prefer `take_shell_events()` which
+    /// provides a unified `ShellEvent` enum including bell, command success/fail.
     pub fn check_events(&self) -> (Option<String>, bool) {
         let events = self.terminal.take_events();
         let mut title = None;
@@ -532,6 +630,34 @@ impl ShellTerminal {
         }
 
         (title, bell)
+    }
+
+    /// Take shell events for theme triggers (bell, command success/fail)
+    ///
+    /// This returns events that can trigger visual effects defined in theme CSS
+    /// (::on-bell, ::on-command-success, ::on-command-fail).
+    ///
+    /// Also checks for Bell from alacritty_terminal and includes it as ShellEvent::Bell.
+    /// Returns (shell_events, Option<title>) to combine with title checking.
+    pub fn take_shell_events(&mut self) -> (Vec<ShellEvent>, Option<String>) {
+        let mut shell_events = self.terminal.take_shell_events();
+
+        // Also check terminal events for Bell and title
+        let events = self.terminal.take_events();
+        let mut title = None;
+
+        for event in events {
+            match event {
+                Event::Title(t) => title = Some(t),
+                Event::Bell => {
+                    log::debug!("Bell event converted to ShellEvent");
+                    shell_events.push(ShellEvent::Bell);
+                }
+                _ => {}
+            }
+        }
+
+        (shell_events, title)
     }
 
     /// Start a new selection at the given point
@@ -729,5 +855,80 @@ mod tests {
         // No zones should be set
         assert!(!term.has_semantic_zones());
         assert_eq!(term.current_zone(), SemanticZone::Unknown);
+    }
+
+    #[test]
+    fn osc133_d_command_success() {
+        let mut term = Terminal::new(Size::new(80, 24));
+
+        // OSC 133;D;0 = command completed successfully
+        term.process_input(b"\x1b]133;D;0\x07");
+
+        let events = term.take_shell_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0], ShellEvent::CommandSuccess);
+    }
+
+    #[test]
+    fn osc133_d_command_fail() {
+        let mut term = Terminal::new(Size::new(80, 24));
+
+        // OSC 133;D;1 = command failed with exit code 1
+        term.process_input(b"\x1b]133;D;1\x07");
+
+        let events = term.take_shell_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0], ShellEvent::CommandFail(1));
+    }
+
+    #[test]
+    fn osc133_d_command_fail_with_larger_code() {
+        let mut term = Terminal::new(Size::new(80, 24));
+
+        // OSC 133;D;127 = command failed with exit code 127 (command not found)
+        term.process_input(b"\x1b]133;D;127\x07");
+
+        let events = term.take_shell_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0], ShellEvent::CommandFail(127));
+    }
+
+    #[test]
+    fn osc133_d_no_exit_code_defaults_success() {
+        let mut term = Terminal::new(Size::new(80, 24));
+
+        // OSC 133;D without exit code should default to success (0)
+        term.process_input(b"\x1b]133;D\x07");
+
+        let events = term.take_shell_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0], ShellEvent::CommandSuccess);
+    }
+
+    #[test]
+    fn shell_events_clear_after_take() {
+        let mut term = Terminal::new(Size::new(80, 24));
+
+        term.process_input(b"\x1b]133;D;0\x07");
+        let events = term.take_shell_events();
+        assert_eq!(events.len(), 1);
+
+        // Second take should be empty
+        let events = term.take_shell_events();
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn multiple_shell_events_accumulated() {
+        let mut term = Terminal::new(Size::new(80, 24));
+
+        // Multiple commands
+        term.process_input(b"\x1b]133;D;0\x07");
+        term.process_input(b"\x1b]133;D;1\x07");
+
+        let events = term.take_shell_events();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0], ShellEvent::CommandSuccess);
+        assert_eq!(events[1], ShellEvent::CommandFail(1));
     }
 }

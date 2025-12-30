@@ -71,21 +71,32 @@ impl TexturePoolInner {
         }
     }
 
-    fn checkout(&mut self, width: u32, height: u32, format: wgpu::TextureFormat) -> (wgpu::Texture, wgpu::TextureView, TextureBucket) {
+    fn checkout(
+        &mut self,
+        width: u32,
+        height: u32,
+        format: wgpu::TextureFormat,
+    ) -> (wgpu::Texture, wgpu::TextureView, TextureBucket) {
         let bucket = TextureBucket::from_size(width, height, format);
 
         if let Some(entry) = self.pools.get_mut(&bucket).and_then(|v| v.pop()) {
             self.stats.reuses += 1;
             log::debug!(
                 "Reusing pooled texture {}x{} {:?} (reuses: {})",
-                bucket.width, bucket.height, bucket.format, self.stats.reuses
+                bucket.width,
+                bucket.height,
+                bucket.format,
+                self.stats.reuses
             );
             (entry.texture, entry.view, bucket)
         } else {
             self.stats.allocations += 1;
             log::debug!(
                 "Allocating new texture {}x{} {:?} (allocations: {})",
-                bucket.width, bucket.height, bucket.format, self.stats.allocations
+                bucket.width,
+                bucket.height,
+                bucket.format,
+                self.stats.allocations
             );
 
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
@@ -110,19 +121,29 @@ impl TexturePoolInner {
         }
     }
 
-    fn return_texture(&mut self, bucket: TextureBucket, texture: wgpu::Texture, view: wgpu::TextureView) {
-        let pool = self.pools.entry(bucket).or_insert_with(Vec::new);
+    fn return_texture(
+        &mut self,
+        bucket: TextureBucket,
+        texture: wgpu::Texture,
+        view: wgpu::TextureView,
+    ) {
+        let pool = self.pools.entry(bucket).or_default();
         if pool.len() < self.max_per_bucket {
             self.stats.returns += 1;
             log::debug!(
                 "Returning texture {}x{} {:?} to pool (size: {})",
-                bucket.width, bucket.height, bucket.format, pool.len() + 1
+                bucket.width,
+                bucket.height,
+                bucket.format,
+                pool.len() + 1
             );
             pool.push(TextureEntry { texture, view });
         } else {
             log::debug!(
                 "Pool full for {}x{} {:?}, destroying texture",
-                bucket.width, bucket.height, bucket.format
+                bucket.width,
+                bucket.height,
+                bucket.format
             );
             texture.destroy();
         }
@@ -135,7 +156,9 @@ impl TexturePoolInner {
                 if let Some(entry) = pool.pop() {
                     log::debug!(
                         "Shrinking pool: destroying texture {}x{} {:?}",
-                        bucket.width, bucket.height, bucket.format
+                        bucket.width,
+                        bucket.height,
+                        bucket.format
                     );
                     entry.texture.destroy();
                 }
@@ -176,29 +199,52 @@ impl TexturePool {
     /// requested due to power-of-two bucketing.
     ///
     /// The texture is automatically returned to the pool when dropped.
-    pub fn checkout(&self, width: u32, height: u32, format: wgpu::TextureFormat) -> PooledTexture {
-        let (texture, view, bucket) = self.inner.lock().unwrap().checkout(width, height, format);
-        PooledTexture {
+    /// Returns None if the pool lock is poisoned.
+    pub fn checkout(
+        &self,
+        width: u32,
+        height: u32,
+        format: wgpu::TextureFormat,
+    ) -> Option<PooledTexture> {
+        let (texture, view, bucket) = match self.inner.lock() {
+            Ok(mut inner) => inner.checkout(width, height, format),
+            Err(e) => {
+                log::error!("Texture pool lock poisoned: {}", e);
+                return None;
+            }
+        };
+        Some(PooledTexture {
             texture: Some(texture),
             view: Some(view),
             bucket,
             actual_width: width,
             actual_height: height,
             pool: Arc::downgrade(&self.inner),
-        }
+        })
     }
 
     /// Get current pool statistics
     #[allow(dead_code)]
     pub fn stats(&self) -> TexturePoolStats {
-        self.inner.lock().unwrap().stats.clone()
+        match self.inner.lock() {
+            Ok(inner) => inner.stats.clone(),
+            Err(e) => {
+                log::warn!("Texture pool lock poisoned, returning default stats: {}", e);
+                TexturePoolStats::default()
+            }
+        }
     }
 
     /// Shrink the pool by releasing excess textures
     ///
     /// Call this after closing windows to free up GPU memory.
     pub fn shrink(&self) {
-        self.inner.lock().unwrap().shrink();
+        match self.inner.lock() {
+            Ok(mut inner) => inner.shrink(),
+            Err(e) => {
+                log::warn!("Texture pool lock poisoned, skipping shrink: {}", e);
+            }
+        }
     }
 }
 
@@ -222,7 +268,9 @@ pub struct PooledTexture {
 impl PooledTexture {
     /// Get a reference to the underlying texture
     pub fn texture(&self) -> &wgpu::Texture {
-        self.texture.as_ref().expect("PooledTexture already returned")
+        self.texture
+            .as_ref()
+            .expect("PooledTexture already returned")
     }
 
     /// Get a reference to the texture view
@@ -252,11 +300,11 @@ impl PooledTexture {
 impl Drop for PooledTexture {
     fn drop(&mut self) {
         if let (Some(texture), Some(view)) = (self.texture.take(), self.view.take()) {
-            if let Some(pool) = self.pool.upgrade() {
-                if let Ok(mut inner) = pool.lock() {
-                    inner.return_texture(self.bucket, texture, view);
-                    return;
-                }
+            if let Some(pool) = self.pool.upgrade()
+                && let Ok(mut inner) = pool.lock()
+            {
+                inner.return_texture(self.bucket, texture, view);
+                return;
             }
             // Pool is gone, destroy the texture
             texture.destroy();

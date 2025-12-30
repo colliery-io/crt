@@ -3,8 +3,12 @@
 //! Keyboard and mouse input processing for terminal and tab bar.
 
 mod key_encoder;
+mod keyboard;
+mod mouse;
 
 pub use key_encoder::encode_key;
+pub use keyboard::{KeyboardAction, handle_keyboard_input};
+pub use mouse::{handle_cursor_moved, handle_mouse_input, handle_mouse_wheel};
 
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -213,7 +217,7 @@ pub fn handle_tab_editing(state: &mut WindowState, key: &Key, mod_pressed: bool)
     }
 
     if need_redraw {
-        state.dirty = true;
+        state.render.dirty = true;
         state.window.request_redraw();
     }
 
@@ -246,7 +250,12 @@ pub fn handle_shell_input(
 
     log::debug!(
         "Shell input: key={:?} text={:?} mod={} ctrl={} shift={} alt={}",
-        key, text, mod_pressed, ctrl_pressed, shift_pressed, alt_pressed
+        key,
+        text,
+        mod_pressed,
+        ctrl_pressed,
+        shift_pressed,
+        alt_pressed
     );
 
     let mut input_sent = false;
@@ -301,25 +310,25 @@ pub fn handle_shell_input(
     // If not handled by platform-specific code, use termwiz encoding
     if !input_sent {
         // Don't send Cmd+key combinations to terminal (they're app shortcuts)
-        if !mod_pressed {
-            if let Some(bytes) = encode_key(key, ctrl_pressed, shift_pressed, alt_pressed) {
-                shell.send_input(&bytes);
-                input_sent = true;
-                log::debug!("Sent via termwiz: {:?}", bytes);
-            }
+        if !mod_pressed
+            && let Some(bytes) = encode_key(key, ctrl_pressed, shift_pressed, alt_pressed)
+        {
+            shell.send_input(&bytes);
+            input_sent = true;
+            log::debug!("Sent via termwiz: {:?}", bytes);
         }
     }
 
     // Final fallback: use the text field from the key event
     // This catches any keys termwiz doesn't handle
-    if !input_sent {
-        if let Some(t) = text {
-            if !t.is_empty() && !mod_pressed {
-                shell.send_input(t.as_bytes());
-                input_sent = true;
-                log::debug!("Forwarded via text field: {:?}", t);
-            }
-        }
+    if !input_sent
+        && let Some(t) = text
+        && !t.is_empty()
+        && !mod_pressed
+    {
+        shell.send_input(t.as_bytes());
+        input_sent = true;
+        log::debug!("Forwarded via text field: {:?}", t);
     }
 
     if input_sent {
@@ -330,7 +339,7 @@ pub fn handle_shell_input(
         // Always invalidate content hash when input is sent to ensure re-render
         // even if PTY output hasn't arrived yet (handles TUI apps like Claude Code)
         state.content_hashes.insert(tab_id, 0);
-        state.dirty = true;
+        state.render.dirty = true;
         state.window.request_redraw();
     }
 
@@ -357,37 +366,40 @@ pub fn handle_tab_click(state: &mut WindowState, x: f32, y: f32, now: std::time:
                 state.gpu.tab_bar.confirm_editing();
             }
         }
-    } else {
-        if let Some((tab_id, is_close)) = state.gpu.tab_bar.hit_test(x, y) {
-            if is_close {
-                if state.gpu.tab_bar.tab_count() > 1 {
-                    state.gpu.tab_bar.close_tab(tab_id);
-                    tab_closed = Some(tab_id);
-                    tab_switched = true;
-                }
-            } else {
-                let is_double_click = state
-                    .last_click_time
-                    .map(|t| now.duration_since(t) < double_click_threshold)
-                    .unwrap_or(false)
-                    && state.last_click_tab == Some(tab_id);
-
-                if is_double_click {
-                    state.gpu.tab_bar.start_editing(tab_id);
-                    started_editing = true;
-                    state.last_click_time = None;
-                    state.last_click_tab = None;
-                } else {
-                    state.gpu.tab_bar.select_tab(tab_id);
-                    tab_switched = true;
-                    state.last_click_time = Some(now);
-                    state.last_click_tab = Some(tab_id);
-                }
+    } else if let Some((tab_id, is_close)) = state.gpu.tab_bar.hit_test(x, y) {
+        if is_close {
+            if state.gpu.tab_bar.tab_count() > 1 {
+                state.gpu.tab_bar.close_tab(tab_id);
+                tab_closed = Some(tab_id);
+                tab_switched = true;
             }
         } else {
-            state.last_click_time = None;
-            state.last_click_tab = None;
+            let is_double_click = state
+                .interaction
+                .last_click_time
+                .map(|t| now.duration_since(t) < double_click_threshold)
+                .unwrap_or(false)
+                && state.interaction.last_click_tab == Some(tab_id);
+
+            if is_double_click {
+                // Cancel window rename if active
+                if state.ui.window_rename.active {
+                    state.ui.window_rename.cancel();
+                }
+                state.gpu.tab_bar.start_editing(tab_id);
+                started_editing = true;
+                state.interaction.last_click_time = None;
+                state.interaction.last_click_tab = None;
+            } else {
+                state.gpu.tab_bar.select_tab(tab_id);
+                tab_switched = true;
+                state.interaction.last_click_time = Some(now);
+                state.interaction.last_click_tab = Some(tab_id);
+            }
         }
+    } else {
+        state.interaction.last_click_time = None;
+        state.interaction.last_click_tab = None;
     }
 
     if let Some(tab_id) = tab_closed {
@@ -448,7 +460,19 @@ pub fn handle_resize(
         .configure(&shared.device, &state.gpu.config);
 
     // Recreate text texture for glow effect from pool (old texture returns to pool)
-    let text_texture = shared.texture_pool.checkout(new_width, new_height, state.gpu.config.format);
+    let text_texture =
+        match shared
+            .texture_pool
+            .checkout(new_width, new_height, state.gpu.config.format)
+        {
+            Some(t) => t,
+            None => {
+                log::error!(
+                    "Failed to checkout texture from pool during resize - skipping texture update"
+                );
+                return;
+            }
+        };
     let composite_bind_group = state
         .gpu
         .effect_pipeline
@@ -477,7 +501,7 @@ pub fn handle_resize(
         .tab_bar
         .resize(new_width as f32, new_height as f32);
 
-    state.dirty = true;
+    state.render.dirty = true;
     for hash in state.content_hashes.values_mut() {
         *hash = 0;
     }
@@ -558,10 +582,10 @@ pub fn handle_terminal_mouse_button(
 
         // Track button state for drag reporting
         if button == MOUSE_BUTTON_LEFT {
-            state.mouse_pressed = pressed;
+            state.interaction.mouse_pressed = pressed;
         }
 
-        state.dirty = true;
+        state.render.dirty = true;
         state.window.request_redraw();
         return true;
     }
@@ -574,15 +598,15 @@ pub fn handle_terminal_mouse_button(
     if pressed {
         // Determine click count for multi-click selection
         let click_count = if let (Some(last_time), Some((last_col, last_line))) = (
-            state.last_selection_click_time,
-            state.last_selection_click_pos,
+            state.interaction.last_selection_click_time,
+            state.interaction.last_selection_click_pos,
         ) {
             let time_ok = now.duration_since(last_time) < MULTI_CLICK_THRESHOLD;
             let pos_ok = col.abs_diff(last_col) <= MULTI_CLICK_DISTANCE
                 && line.abs_diff(last_line) <= MULTI_CLICK_DISTANCE;
 
             if time_ok && pos_ok {
-                (state.selection_click_count % 3) + 1
+                (state.interaction.selection_click_count % 3) + 1
             } else {
                 1
             }
@@ -590,10 +614,10 @@ pub fn handle_terminal_mouse_button(
             1
         };
 
-        state.selection_click_count = click_count;
-        state.last_selection_click_time = Some(now);
-        state.last_selection_click_pos = Some((col, line));
-        state.mouse_pressed = true;
+        state.interaction.selection_click_count = click_count;
+        state.interaction.last_selection_click_time = Some(now);
+        state.interaction.last_selection_click_pos = Some((col, line));
+        state.interaction.mouse_pressed = true;
 
         // Convert viewport coordinates to grid coordinates
         // Grid coordinates: negative = scrollback history, 0+ = visible screen
@@ -619,10 +643,10 @@ pub fn handle_terminal_mouse_button(
             shell.update_selection(point);
         }
     } else {
-        state.mouse_pressed = false;
+        state.interaction.mouse_pressed = false;
     }
 
-    state.dirty = true;
+    state.render.dirty = true;
     state.window.request_redraw();
     true
 }
@@ -640,10 +664,10 @@ pub fn handle_terminal_mouse_move(state: &mut WindowState, x: f32, y: f32) {
     };
 
     // Check if we should report motion to terminal
-    if should_report_motion(shell, state.mouse_pressed) {
+    if should_report_motion(shell, state.interaction.mouse_pressed) {
         let sgr = is_sgr_mouse_mode(shell);
         // Button code: 32 + button for motion with button, or just 35 for motion without
-        let button = if state.mouse_pressed {
+        let button = if state.interaction.mouse_pressed {
             MOUSE_BUTTON_MOTION + MOUSE_BUTTON_LEFT // 32 = motion with left button
         } else {
             MOUSE_BUTTON_MOTION + MOUSE_BUTTON_RELEASE // 35 = motion without button
@@ -651,13 +675,13 @@ pub fn handle_terminal_mouse_move(state: &mut WindowState, x: f32, y: f32) {
         let seq = mouse_report(button, col, line, true, sgr);
         shell.send_input(&seq);
 
-        state.dirty = true;
+        state.render.dirty = true;
         state.window.request_redraw();
         return;
     }
 
     // Local selection handling
-    if !state.mouse_pressed {
+    if !state.interaction.mouse_pressed {
         return;
     }
 
@@ -667,24 +691,24 @@ pub fn handle_terminal_mouse_move(state: &mut WindowState, x: f32, y: f32) {
     let point = Point::new(Line(grid_line), Column(col));
     shell.update_selection(point);
 
-    state.dirty = true;
+    state.render.dirty = true;
     state.window.request_redraw();
 }
 
 /// Handle mouse release for terminal selection or mouse reporting
 pub fn handle_terminal_mouse_release(state: &mut WindowState, x: f32, y: f32) {
     let Some((col, line)) = screen_to_cell(state, x, y) else {
-        state.mouse_pressed = false;
+        state.interaction.mouse_pressed = false;
         return;
     };
 
     let tab_id = state.gpu.tab_bar.active_tab_id();
     let Some(tab_id) = tab_id else {
-        state.mouse_pressed = false;
+        state.interaction.mouse_pressed = false;
         return;
     };
     let Some(shell) = state.shells.get_mut(&tab_id) else {
-        state.mouse_pressed = false;
+        state.interaction.mouse_pressed = false;
         return;
     };
 
@@ -700,7 +724,7 @@ pub fn handle_terminal_mouse_release(state: &mut WindowState, x: f32, y: f32) {
         shell.send_input(&seq);
     }
 
-    state.mouse_pressed = false;
+    state.interaction.mouse_pressed = false;
     // Selection remains if we were doing local selection - user can copy with Cmd+C
 }
 
@@ -729,7 +753,7 @@ pub fn handle_terminal_scroll(state: &mut WindowState, x: f32, y: f32, delta_y: 
         let seq = mouse_report(button, col, line, true, sgr);
         shell.send_input(&seq);
 
-        state.dirty = true;
+        state.render.dirty = true;
         state.window.request_redraw();
         return true;
     }
@@ -747,7 +771,7 @@ pub fn clear_terminal_selection(state: &mut WindowState) {
 
     if shell.has_selection() {
         shell.clear_selection();
-        state.dirty = true;
+        state.render.dirty = true;
         state.window.request_redraw();
     }
 }
@@ -771,36 +795,36 @@ pub fn get_clipboard_content() -> Option<String> {
     let mut clipboard = arboard::Clipboard::new().ok()?;
 
     // First try to get text (most common case)
-    if let Ok(text) = clipboard.get_text() {
-        if !text.is_empty() {
-            return Some(text);
-        }
+    if let Ok(text) = clipboard.get_text()
+        && !text.is_empty()
+    {
+        return Some(text);
     }
 
     // Try to get file paths (files copied from Finder/Explorer)
-    if let Ok(files) = clipboard_files::read() {
-        if !files.is_empty() {
-            // Join multiple paths with spaces, quoting paths that contain spaces
-            let paths: Vec<String> = files
-                .into_iter()
-                .map(|p| {
-                    let path_str = p.to_string_lossy().to_string();
-                    if path_str.contains(' ') {
-                        format!("'{}'", path_str)
-                    } else {
-                        path_str
-                    }
-                })
-                .collect();
-            return Some(paths.join(" "));
-        }
+    if let Ok(files) = clipboard_files::read()
+        && !files.is_empty()
+    {
+        // Join multiple paths with spaces, quoting paths that contain spaces
+        let paths: Vec<String> = files
+            .into_iter()
+            .map(|p| {
+                let path_str = p.to_string_lossy().to_string();
+                if path_str.contains(' ') {
+                    format!("'{}'", path_str)
+                } else {
+                    path_str
+                }
+            })
+            .collect();
+        return Some(paths.join(" "));
     }
 
     // Try to get image data (screenshots, copied images)
-    if let Ok(image_data) = clipboard.get_image() {
-        if let Some(path) = save_clipboard_image_to_temp(&image_data) {
-            return Some(path);
-        }
+    if let Ok(image_data) = clipboard.get_image()
+        && let Some(path) = save_clipboard_image_to_temp(&image_data)
+    {
+        return Some(path);
     }
 
     None
@@ -883,6 +907,95 @@ pub fn paste_to_terminal(state: &mut WindowState, content: &str) {
     }
     clear_terminal_selection(state);
 
-    state.dirty = true;
+    state.render.dirty = true;
     state.window.request_redraw();
+}
+
+/// Scroll terminal to make current search match visible
+pub fn scroll_to_current_match(state: &mut WindowState) {
+    use crt_core::Scroll;
+
+    if state.ui.search.matches.is_empty() {
+        return;
+    }
+
+    let current_match = &state.ui.search.matches[state.ui.search.current_match];
+    let match_line = current_match.line;
+
+    // Get active shell
+    let active_tab_id = state.gpu.tab_bar.active_tab_id();
+    let shell = active_tab_id.and_then(|id| state.shells.get_mut(&id));
+    let Some(shell) = shell else { return };
+
+    let terminal = shell.terminal();
+    let screen_lines = terminal.screen_lines() as i32;
+    let display_offset = terminal.display_offset() as i32;
+
+    // Calculate viewport line (what line would the match be at in current viewport)
+    // viewport_line = grid_line + display_offset
+    let viewport_line = match_line + display_offset;
+
+    // If match is outside visible range (0 to screen_lines-1), scroll to center it
+    if viewport_line < 0 || viewport_line >= screen_lines {
+        // Target: put match roughly in the middle of the screen
+        let target_viewport_line = screen_lines / 2;
+        // New display_offset needed: match_line + new_offset = target_viewport_line
+        // new_offset = target_viewport_line - match_line
+        let new_offset = target_viewport_line - match_line;
+
+        // The scroll delta is the change in display_offset
+        // Positive delta scrolls up (increases display_offset)
+        let scroll_delta = new_offset - display_offset;
+
+        if scroll_delta != 0 {
+            shell.scroll(Scroll::Delta(scroll_delta));
+            if let Some(tab_id) = active_tab_id {
+                state.content_hashes.insert(tab_id, 0);
+            }
+        }
+    }
+}
+
+/// Update search matches based on current query
+pub fn update_search_matches(state: &mut WindowState) {
+    use crate::window::SearchMatch;
+
+    state.ui.search.matches.clear();
+    state.ui.search.current_match = 0;
+
+    let query = &state.ui.search.query;
+    if query.is_empty() {
+        return;
+    }
+
+    // Get active shell's terminal content
+    let active_tab_id = state.gpu.tab_bar.active_tab_id();
+    let shell = active_tab_id.and_then(|id| state.shells.get(&id));
+    let Some(shell) = shell else { return };
+
+    let terminal = shell.terminal();
+
+    // Get all lines including history
+    let all_lines = terminal.all_lines_text();
+
+    // Search each line for the query (case-insensitive)
+    let query_lower = query.to_lowercase();
+    for (line_idx, line_text) in &all_lines {
+        let line_lower = line_text.to_lowercase();
+        let mut start = 0;
+        while let Some(pos) = line_lower[start..].find(&query_lower) {
+            let match_start = start + pos;
+            state.ui.search.matches.push(SearchMatch {
+                line: *line_idx,
+                start_col: match_start,
+                end_col: match_start + query.len(),
+            });
+            start = match_start + 1;
+        }
+    }
+
+    // Scroll to first match if any found
+    if !state.ui.search.matches.is_empty() {
+        scroll_to_current_match(state);
+    }
 }

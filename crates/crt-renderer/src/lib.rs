@@ -7,6 +7,12 @@
 //! This separation allows smooth 60fps animation while only re-rendering
 //! text when it actually changes.
 
+#![allow(clippy::collapsible_if)]
+#![allow(clippy::manual_strip)]
+#![allow(clippy::derivable_impls)]
+#![allow(clippy::should_implement_trait)]
+#![allow(clippy::wrong_self_convention)]
+
 pub mod background_image;
 pub mod effects;
 pub mod glyph_cache;
@@ -31,8 +37,8 @@ pub use grid_renderer::GridRenderer;
 pub use mock::{MockRenderer, RenderCall};
 pub use rect_renderer::RectRenderer;
 pub use sprite_renderer::{
-    SpriteAnimationState, SpriteConfig, SpriteMotion, SpritePosition, SpriteRenderer, SpriteSheet,
-    SpriteTexture,
+    OriginalSpriteValues, SpriteAnimationState, SpriteConfig, SpriteMotion, SpriteOverlayState,
+    SpritePosition, SpriteRenderer, SpriteSheet, SpriteTexture,
 };
 pub use tab_bar::{EditState, Tab, TabBar, TabBarState, TabLayout, TabRect, VelloTabBarRenderer};
 pub use terminal_vello::{CursorShape, CursorState, TerminalVelloRenderer};

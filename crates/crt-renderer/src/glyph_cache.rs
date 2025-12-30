@@ -258,8 +258,8 @@ impl GlyphCache {
         let units_per_em = metrics.units_per_em as f32;
         let scale = font_size / units_per_em;
 
-        let ascent = metrics.ascent as f32 * scale;
-        let descent = metrics.descent as f32 * scale;
+        let ascent = metrics.ascent * scale;
+        let descent = metrics.descent * scale;
 
         // Line height is font_size * line_height_multiplier (from theme)
         // This gives consistent spacing regardless of font metrics
@@ -553,8 +553,8 @@ impl GlyphCache {
             let units_per_em = metrics.units_per_em as f32;
             let scale = new_font_size / units_per_em;
 
-            let ascent = metrics.ascent as f32 * scale;
-            let descent = metrics.descent as f32 * scale;
+            let ascent = metrics.ascent * scale;
+            let descent = metrics.descent * scale;
 
             // Line height uses the stored multiplier (preserves theme setting during zoom)
             self.cached_line_height = new_font_size * self.line_height_multiplier;

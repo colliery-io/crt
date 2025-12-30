@@ -1,0 +1,24 @@
+# CRT Terminal rustfmt configuration
+# Stable options only (compatible with stable Rust toolchain)
+
+# Rust edition
+edition = "2024"
+
+# Line width
+max_width = 100
+
+# Use default heuristics for formatting decisions
+use_small_heuristics = "Default"
+
+# Use Unix-style line endings
+newline_style = "Unix"
+
+# Reorder imports and modules alphabetically
+reorder_imports = true
+reorder_modules = true
+
+# Use shorthand field initialization: Point { x: x } -> Point { x }
+use_field_init_shorthand = true
+
+# Use try shorthand: try!(expr) -> expr?
+use_try_shorthand = true

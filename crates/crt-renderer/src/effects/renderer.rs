@@ -217,6 +217,24 @@ impl EffectsRenderer {
         self.effects.iter().any(|e| e.is_enabled())
     }
 
+    /// Apply a temporary patch configuration to a specific effect type
+    ///
+    /// This allows overriding specific effect properties without reconfiguring
+    /// the entire effects system.
+    pub fn apply_effect_patch(&mut self, effect_type: &str, config: &EffectConfig) {
+        for effect in &mut self.effects {
+            if effect.effect_type() == effect_type {
+                effect.configure(config);
+                log::debug!(
+                    "Applied patch to effect '{}' with {} properties",
+                    effect_type,
+                    config.properties.len()
+                );
+                break;
+            }
+        }
+    }
+
     /// Ensure render target is sized correctly
     fn ensure_target(&mut self, device: &wgpu::Device, width: u32, height: u32) {
         if self.target_size != (width, height) || self.target_texture.is_none() {

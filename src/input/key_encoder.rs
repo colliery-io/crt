@@ -4,7 +4,9 @@
 //! KeyCode::encode() method. This provides comprehensive key handling without
 //! maintaining manual escape sequence mappings.
 
-use termwiz::input::{KeyCode, KeyCodeEncodeModes, KeyboardEncoding, Modifiers as TermwizModifiers};
+use termwiz::input::{
+    KeyCode, KeyCodeEncodeModes, KeyboardEncoding, Modifiers as TermwizModifiers,
+};
 use winit::keyboard::{Key, NamedKey};
 
 /// Convert a winit Key to a termwiz KeyCode
@@ -172,7 +174,11 @@ mod tests {
         // sequences (\x1b[1~ and \x1b[4~) because they work more universally with shells.
         // This test verifies termwiz behavior for reference.
         let home = encode_key(&Key::Named(NamedKey::Home), false, false, false);
-        assert_eq!(home, Some(b"\x1b[H".to_vec()), "Home key encoding (termwiz)");
+        assert_eq!(
+            home,
+            Some(b"\x1b[H".to_vec()),
+            "Home key encoding (termwiz)"
+        );
 
         let end = encode_key(&Key::Named(NamedKey::End), false, false, false);
         assert_eq!(end, Some(b"\x1b[F".to_vec()), "End key encoding (termwiz)");

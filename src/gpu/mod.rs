@@ -3,21 +3,15 @@
 //! Shared and per-window GPU resources for wgpu rendering.
 //!
 //! ## Module Structure
-//! - `shared_pipelines` - Stateless render pipelines shared across all windows
 //! - `buffer_pool` - Instance/uniform buffer pooling with RAII semantics
 //! - `texture_pool` - Render target texture pooling by size bucket
 
 mod buffer_pool;
-mod shared_pipelines;
 mod texture_pool;
 
-// Buffer pool exports - not yet integrated, see buffer_pool.rs for integration steps
+// Buffer pool exports - API ready, see buffer_pool.rs for full pool integration
 #[allow(unused_imports)]
-pub use buffer_pool::{BufferClass, BufferPool, PooledBuffer, PoolStats};
-
-// Shared pipelines - partially integrated, see shared_pipelines.rs for full integration
-#[allow(unused_imports)]
-pub use shared_pipelines::SharedPipelines;
+pub use buffer_pool::{BufferClass, BufferPool, PoolStats, PooledBuffer};
 
 // Texture pool - fully integrated
 pub use texture_pool::{PooledTexture, TexturePool};
@@ -41,12 +35,8 @@ pub struct SharedGpuState {
     /// (rounded corners, gradients, shadows, backdrop effects, etc.)
     /// Wrapped in Arc<Mutex> for sharing with EffectsRenderer
     pub vello_renderer: Arc<Mutex<Option<vello::Renderer>>>,
-    /// Shared render pipelines and samplers (lazy-loaded on first window)
-    /// Not yet integrated - see shared_pipelines.rs for integration steps
-    #[allow(dead_code)]
-    pub pipelines: Option<SharedPipelines>,
     /// Buffer pool for reusing instance/uniform buffers
-    /// Not yet integrated - see buffer_pool.rs for integration steps
+    /// API ready - see buffer_pool.rs for full pool integration
     #[allow(dead_code)]
     pub buffer_pool: BufferPool,
     /// Texture pool for reusing render target textures (fully integrated)
@@ -107,27 +97,9 @@ impl SharedGpuState {
             device,
             queue,
             vello_renderer,
-            pipelines: None,
             buffer_pool,
             texture_pool,
         }
-    }
-
-    /// Ensure shared pipelines are initialized (lazy initialization on first window)
-    /// Not yet integrated - see shared_pipelines.rs for integration steps
-    #[allow(dead_code)]
-    pub fn ensure_pipelines(&mut self, format: wgpu::TextureFormat) {
-        if self.pipelines.is_none() {
-            log::info!("Creating shared GPU pipelines");
-            self.pipelines = Some(SharedPipelines::new(&self.device, format));
-        }
-    }
-
-    /// Get shared pipelines (panics if not initialized)
-    /// Not yet integrated - see shared_pipelines.rs for integration steps
-    #[allow(dead_code)]
-    pub fn pipelines(&self) -> &SharedPipelines {
-        self.pipelines.as_ref().expect("SharedPipelines not initialized - call ensure_pipelines first")
     }
 
     /// Ensure the Vello renderer is initialized (lazy initialization)
@@ -136,7 +108,16 @@ impl SharedGpuState {
     /// gradients, backdrop effects, or complex paths. The renderer is
     /// cached after first creation.
     pub fn ensure_vello_renderer(&self) {
-        let mut guard = self.vello_renderer.lock().unwrap();
+        let mut guard = match self.vello_renderer.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                log::error!(
+                    "Vello renderer lock poisoned, skipping initialization: {}",
+                    e
+                );
+                return;
+            }
+        };
         if guard.is_none() {
             log::info!("Lazy-loading Vello renderer for advanced CSS/backdrop effects");
             *guard = Some(
@@ -163,7 +144,13 @@ impl SharedGpuState {
     /// built-in cleanup mechanism. Recreating the renderer periodically prevents
     /// unbounded GPU memory growth.
     pub fn reset_vello_renderer(&self) {
-        let mut guard = self.vello_renderer.lock().unwrap();
+        let mut guard = match self.vello_renderer.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                log::warn!("Vello renderer lock poisoned, skipping reset: {}", e);
+                return;
+            }
+        };
         if guard.is_some() {
             log::info!("Resetting Vello renderer to free accumulated GPU resources");
             // Drop the old renderer
@@ -202,6 +189,12 @@ pub struct WindowGpuState {
     // commands are batched, so they need separate instance buffers)
     pub tab_title_renderer: GridRenderer,
 
+    // Instance buffers for grid renderers (external for pooling)
+    pub grid_instance_buffer: wgpu::Buffer,
+    pub output_grid_instance_buffer: wgpu::Buffer,
+    pub tab_title_instance_buffer: wgpu::Buffer,
+    pub overlay_text_instance_buffer: wgpu::Buffer,
+
     // Effect pipeline
     pub effect_pipeline: EffectPipeline,
 
@@ -220,6 +213,10 @@ pub struct WindowGpuState {
     // Separate rect renderer for overlays (cursor, selection, underlines)
     // to avoid buffer conflicts with tab bar rendering
     pub overlay_rect_renderer: RectRenderer,
+
+    // Instance buffers for rect renderers (external for pooling)
+    pub rect_instance_buffer: wgpu::Buffer,
+    pub overlay_rect_instance_buffer: wgpu::Buffer,
 
     // Background image rendering (optional)
     pub background_image_pipeline: BackgroundImagePipeline,

@@ -22,11 +22,11 @@ fn font_db() -> &'static Database {
         let mut db = Database::new();
 
         // Load fonts from config directory first
-        if let Some(fonts_path) = fonts_dir() {
-            if fonts_path.exists() {
-                db.load_fonts_dir(&fonts_path);
-                log::info!("Loaded fonts from {:?}", fonts_path);
-            }
+        if let Some(fonts_path) = fonts_dir()
+            && fonts_path.exists()
+        {
+            db.load_fonts_dir(&fonts_path);
+            log::info!("Loaded fonts from {:?}", fonts_path);
         }
 
         // Then load system fonts as fallback
@@ -129,10 +129,10 @@ pub fn list_monospace_fonts() -> Vec<String> {
     for face in db.faces() {
         if face.monospaced {
             let family = face.families.first().map(|(name, _)| name.clone());
-            if let Some(name) = family {
-                if !fonts.contains(&name) {
-                    fonts.push(name);
-                }
+            if let Some(name) = family
+                && !fonts.contains(&name)
+            {
+                fonts.push(name);
             }
         }
     }

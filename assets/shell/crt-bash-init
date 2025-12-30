@@ -1,0 +1,38 @@
+#!/bin/bash
+# CRT Terminal - Bash semantic prompt integration
+# This script adds OSC 133 markers for command success/fail detection.
+# Source user's bashrc first, then add our hooks.
+
+# Source user's existing bashrc if it exists
+[ -f ~/.bashrc ] && source ~/.bashrc
+
+# Track whether a command has been executed (don't report exit code on startup)
+__crt_cmd_executed=0
+
+# OSC 133 hook: emit command exit status before each prompt
+__crt_precmd() {
+    local exit_code=$?
+    # Only send exit code if a command was actually executed
+    if [[ $__crt_cmd_executed -eq 1 ]]; then
+        printf '\e]133;D;%d\a' "$exit_code"
+        __crt_cmd_executed=0
+    fi
+    # A = prompt start
+    printf '\e]133;A\a'
+}
+
+# Track command execution via DEBUG trap
+__crt_preexec() {
+    __crt_cmd_executed=1
+}
+trap '__crt_preexec' DEBUG
+
+# Add our precmd to PROMPT_COMMAND (preserving existing commands)
+if [[ -z "$PROMPT_COMMAND" ]]; then
+    PROMPT_COMMAND="__crt_precmd"
+else
+    PROMPT_COMMAND="__crt_precmd;$PROMPT_COMMAND"
+fi
+
+# Wrap PS1 with OSC 133 B marker (command input start, after prompt)
+PS1="${PS1}"'\[\e]133;B\a\]'

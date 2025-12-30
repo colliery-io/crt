@@ -11,6 +11,7 @@ echo "Installing crt configuration..."
 # Create config directory structure
 mkdir -p "$CONFIG_DIR/themes"
 mkdir -p "$CONFIG_DIR/fonts"
+mkdir -p "$CONFIG_DIR/shell"
 
 # Always update default_config.toml (reference for upgrades)
 echo "Installing default_config.toml (reference config)..."
@@ -27,10 +28,27 @@ fi
 # Always overwrite default themes (users should copy + customize, not modify defaults)
 echo "Installing default themes..."
 if [ -d "$PROJECT_ROOT/assets/themes" ]; then
+    # Copy CSS files
     for theme in "$PROJECT_ROOT/assets/themes/"*.css; do
         if [ -f "$theme" ]; then
             basename=$(basename "$theme")
             cp "$theme" "$CONFIG_DIR/themes/$basename"
+            echo "  - $basename"
+        fi
+    done
+    # Copy theme asset directories (sprites, images)
+    for dir in "$PROJECT_ROOT/assets/themes/"*/; do
+        if [ -d "$dir" ]; then
+            dirname=$(basename "$dir")
+            cp -r "$dir" "$CONFIG_DIR/themes/"
+            echo "  - $dirname/ (assets)"
+        fi
+    done
+    # Copy standalone image files (scanlines, etc.)
+    for img in "$PROJECT_ROOT/assets/themes/"*.png; do
+        if [ -f "$img" ]; then
+            basename=$(basename "$img")
+            cp "$img" "$CONFIG_DIR/themes/$basename"
             echo "  - $basename"
         fi
     done
@@ -41,6 +59,14 @@ echo "Installing fonts..."
 if [ -d "$PROJECT_ROOT/assets/fonts" ]; then
     cp "$PROJECT_ROOT/assets/fonts/"*.ttf "$CONFIG_DIR/fonts/" 2>/dev/null || true
     cp "$PROJECT_ROOT/assets/fonts/"*.otf "$CONFIG_DIR/fonts/" 2>/dev/null || true
+fi
+
+# Copy shell integration scripts (for semantic prompts / OSC 133)
+echo "Copying shell integration..."
+if [ -d "$PROJECT_ROOT/assets/shell" ]; then
+    cp -r "$PROJECT_ROOT/assets/shell/"* "$CONFIG_DIR/shell/"
+    echo "  - crt-zsh-init/"
+    echo "  - crt-bash-init"
 fi
 
 echo ""

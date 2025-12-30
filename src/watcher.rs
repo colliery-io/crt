@@ -32,6 +32,9 @@ impl ConfigWatcher {
     /// Create a new config watcher
     pub fn new() -> Option<Self> {
         let config_dir = Config::config_dir()?;
+
+        // Canonicalize paths to handle symlinks (e.g., /tmp -> /private/tmp on macOS)
+        let config_dir = config_dir.canonicalize().unwrap_or(config_dir);
         let config_path = config_dir.join("config.toml");
 
         let (tx, rx) = channel();
@@ -41,17 +44,35 @@ impl ConfigWatcher {
         let themes_dir = config_dir.join("themes");
 
         let mut watcher = notify::recommended_watcher(move |res: Result<Event, _>| {
-            if let Ok(event) = res {
-                if event.kind.is_modify() || event.kind.is_create() {
-                    for path in &event.paths {
-                        if path == &config_path_clone {
-                            let _ = tx.send(ConfigEvent::ConfigChanged);
-                        } else if path.starts_with(&themes_dir)
-                            && path.extension().map(|e| e == "css").unwrap_or(false)
-                        {
-                            let _ = tx.send(ConfigEvent::ThemeChanged);
+            match res {
+                Ok(event) => {
+                    // Log ALL events for debugging
+                    log::info!("FS event: {:?} paths: {:?}", event.kind, event.paths);
+
+                    // Check if this is a relevant event type (not just access/metadata)
+                    let dominated_by_path = !event.kind.is_access() && !event.kind.is_other();
+
+                    if dominated_by_path {
+                        for path in &event.paths {
+                            log::debug!(
+                                "Checking path {:?} against config {:?}",
+                                path,
+                                config_path_clone
+                            );
+                            if path == &config_path_clone {
+                                log::info!("Config file changed!");
+                                let _ = tx.send(ConfigEvent::ConfigChanged);
+                            } else if path.starts_with(&themes_dir)
+                                && path.extension().map(|e| e == "css").unwrap_or(false)
+                            {
+                                log::info!("Theme file changed: {:?}", path);
+                                let _ = tx.send(ConfigEvent::ThemeChanged);
+                            }
                         }
                     }
+                }
+                Err(e) => {
+                    log::error!("Watcher error: {:?}", e);
                 }
             }
         })
@@ -77,20 +98,20 @@ impl ConfigWatcher {
             match event {
                 ConfigEvent::ConfigChanged => {
                     // Check if we should debounce this event
-                    if let Some(last) = self.last_config_event {
-                        if now.duration_since(last).as_millis() < DEBOUNCE_MS {
-                            continue; // Skip this event, too soon after last one
-                        }
+                    if let Some(last) = self.last_config_event
+                        && now.duration_since(last).as_millis() < DEBOUNCE_MS
+                    {
+                        continue; // Skip this event, too soon after last one
                     }
                     self.last_config_event = Some(now);
                     return Some(ConfigEvent::ConfigChanged);
                 }
                 ConfigEvent::ThemeChanged => {
                     // Check if we should debounce this event
-                    if let Some(last) = self.last_theme_event {
-                        if now.duration_since(last).as_millis() < DEBOUNCE_MS {
-                            continue; // Skip this event, too soon after last one
-                        }
+                    if let Some(last) = self.last_theme_event
+                        && now.duration_since(last).as_millis() < DEBOUNCE_MS
+                    {
+                        continue; // Skip this event, too soon after last one
                     }
                     self.last_theme_event = Some(now);
                     return Some(ConfigEvent::ThemeChanged);

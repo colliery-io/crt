@@ -377,7 +377,7 @@ impl Profiler {
             let _ = fs::create_dir_all(parent);
         }
 
-        let writer = File::create(&output_path).ok().map(|f| BufWriter::new(f));
+        let writer = File::create(&output_path).ok().map(BufWriter::new);
 
         if writer.is_some() {
             eprintln!("[PROFILE] Writing to: {}", output_path.display());
@@ -406,9 +406,7 @@ impl Profiler {
         if let Some(parent) = self.output_path.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        self.writer = File::create(&self.output_path)
-            .ok()
-            .map(|f| BufWriter::new(f));
+        self.writer = File::create(&self.output_path).ok().map(BufWriter::new);
     }
 
     fn write(&mut self, line: &str) {
@@ -487,7 +485,7 @@ impl Profiler {
         }
 
         // Periodic stats summary (every 300 frames ~ 5 seconds at 60fps)
-        if self.frame_stats.count % 300 == 0 {
+        if self.frame_stats.count.is_multiple_of(300) {
             self.write_periodic_summary();
         }
     }
@@ -496,7 +494,7 @@ impl Profiler {
         let duration_us = duration.as_micros() as u64;
         self.subsystem_stats
             .entry(name)
-            .or_insert_with(TimingStats::new)
+            .or_default()
             .record(duration_us);
     }
 

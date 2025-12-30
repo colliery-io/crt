@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use config::Config;
-use crt_core::{Scroll, ShellTerminal, Size};
+use crt_core::{ShellTerminal, Size, SpawnOptions};
 use crt_renderer::{
     BackgroundImagePipeline, BackgroundImageState, CrtPipeline, EffectConfig, EffectPipeline,
     EffectsRenderer, GlyphCache, GridEffect, GridRenderer, MatrixEffect, ParticleEffect,
@@ -29,22 +29,18 @@ use crt_renderer::{
 use crt_theme::Theme;
 use gpu::{SharedGpuState, WindowGpuState};
 use input::{
-    MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT, TabEditResult,
-    clear_terminal_selection, find_url_at_position, find_url_index_at_position,
-    get_clipboard_content, get_terminal_selection_text, handle_resize, handle_shell_input,
-    handle_tab_click, handle_tab_editing, handle_terminal_mouse_button, handle_terminal_mouse_move,
-    handle_terminal_mouse_release, handle_terminal_scroll, open_url, paste_to_terminal,
-    set_clipboard_content,
+    KeyboardAction, get_clipboard_content, get_terminal_selection_text, handle_cursor_moved,
+    handle_keyboard_input, handle_mouse_input, handle_mouse_wheel, handle_resize,
+    paste_to_terminal, set_clipboard_content,
 };
 use menu::MenuAction;
 use render::render_frame;
-use window::{ContextMenuItem, SearchMatch, WindowState};
+use window::WindowState;
 
 use winit::{
     application::ApplicationHandler,
-    event::{ElementState, Modifiers, MouseScrollDelta, WindowEvent},
+    event::{ElementState, Modifiers, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    keyboard::{Key, NamedKey},
     window::{Window, WindowId},
 };
 
@@ -67,6 +63,8 @@ struct App {
     shared_gpu: Option<SharedGpuState>,
     focused_window: Option<WindowId>,
     config: Config,
+    /// Current theme (stored for event override access)
+    theme: Theme,
     modifiers: Modifiers,
     pending_new_window: bool,
     config_watcher: Option<watcher::ConfigWatcher>,
@@ -90,6 +88,7 @@ impl App {
             shared_gpu: None,
             focused_window: None,
             config,
+            theme: Theme::default(), // Will be loaded properly in resumed()
             modifiers: Modifiers::default(),
             pending_new_window: false,
             config_watcher,
@@ -124,7 +123,11 @@ impl App {
         let height = (rows as f32 * line_height) as u32 + 20 + tab_bar_height;
         log::debug!(
             "Window dimensions: {}x{} ({}cols x {}rows, font_size={})",
-            width, height, cols, rows, font_size
+            width,
+            height,
+            cols,
+            rows,
+            font_size
         );
 
         // Build window
@@ -246,7 +249,11 @@ impl App {
             theme.cursor_color.a,
         ]);
         terminal_vello.set_cursor_glow(theme.cursor_glow.map(|g| {
-            ([g.color.r, g.color.g, g.color.b, g.color.a], g.radius, g.intensity)
+            (
+                [g.color.r, g.color.g, g.color.b, g.color.a],
+                g.radius,
+                g.intensity,
+            )
         }));
 
         // Rect renderer for cell backgrounds and tab bar
@@ -255,6 +262,14 @@ impl App {
         // Separate rect renderer for overlays (cursor, selection, underlines)
         // to avoid buffer conflicts with tab bar rendering
         let overlay_rect_renderer = RectRenderer::new(&shared.device, format);
+
+        // Create instance buffers for renderers (external for future pooling)
+        let grid_instance_buffer = GridRenderer::create_instance_buffer(&shared.device);
+        let output_grid_instance_buffer = GridRenderer::create_instance_buffer(&shared.device);
+        let tab_title_instance_buffer = GridRenderer::create_instance_buffer(&shared.device);
+        let overlay_text_instance_buffer = GridRenderer::create_instance_buffer(&shared.device);
+        let rect_instance_buffer = RectRenderer::create_instance_buffer(&shared.device);
+        let overlay_rect_instance_buffer = RectRenderer::create_instance_buffer(&shared.device);
 
         // Background image pipeline (always created, state only if theme has background image)
         let background_image_pipeline = BackgroundImagePipeline::new(&shared.device, format);
@@ -297,6 +312,9 @@ impl App {
                     };
 
                     log::info!("Resolved sprite path: {:?}", resolved_path);
+                    let base_dir = sprite.base_dir.clone().unwrap_or_else(|| {
+                        resolved_path.parent().map(|p| p.to_path_buf()).unwrap_or_default()
+                    });
                     let config = SpriteConfig {
                         path: resolved_path.clone(),
                         frame_width: sprite.frame_width,
@@ -310,6 +328,7 @@ impl App {
                         position: SpritePosition::from_str(sprite.position.as_str()),
                         motion: SpriteMotion::from_str(sprite.motion.as_str()),
                         motion_speed: sprite.motion_speed,
+                        base_dir,
                     };
 
                     match SpriteAnimationState::new(&shared.device, &shared.queue, config, format) {
@@ -333,7 +352,10 @@ impl App {
         };
 
         // Create intermediate text texture for glow effect (from pool for memory reuse)
-        let text_texture = shared.texture_pool.checkout(size.width, size.height, format);
+        let text_texture = shared
+            .texture_pool
+            .checkout(size.width, size.height, format)
+            .expect("Texture pool checkout failed - pool lock poisoned");
         let composite_bind_group = effect_pipeline
             .composite
             .create_bind_group(&shared.device, text_texture.view());
@@ -343,7 +365,10 @@ impl App {
         crt_pipeline.set_effect(theme.crt);
         let (crt_texture, crt_bind_group) = if crt_pipeline.is_enabled() {
             log::info!("CRT effect enabled - creating intermediate texture from pool");
-            let texture = shared.texture_pool.checkout(size.width, size.height, format);
+            let texture = shared
+                .texture_pool
+                .checkout(size.width, size.height, format)
+                .expect("Texture pool checkout failed - pool lock poisoned");
             let bind_group = crt_pipeline.create_bind_group(&shared.device, texture.view());
             (Some(texture), Some(bind_group))
         } else {
@@ -358,12 +383,18 @@ impl App {
             output_grid_renderer,
             tab_glyph_cache,
             tab_title_renderer,
+            grid_instance_buffer,
+            output_grid_instance_buffer,
+            tab_title_instance_buffer,
+            overlay_text_instance_buffer,
             effect_pipeline,
             effects_renderer,
             tab_bar,
             terminal_vello,
             rect_renderer,
             overlay_rect_renderer,
+            rect_instance_buffer,
+            overlay_rect_instance_buffer,
             background_image_pipeline,
             background_image_state,
             background_image_bind_group,
@@ -375,11 +406,20 @@ impl App {
             crt_bind_group,
         };
 
-        // Create initial shell
+        // Create initial shell with semantic prompts if enabled
         let mut shells = HashMap::new();
         let mut content_hashes = HashMap::new();
-        if let Ok(shell) = ShellTerminal::new(Size::new(cols, rows)) {
-            log::info!("Shell spawned for initial tab");
+        let spawn_options = SpawnOptions {
+            shell: self.config.shell.program.clone(),
+            cwd: self.config.shell.working_directory.clone(),
+            semantic_prompts: self.config.shell.semantic_prompts,
+            shell_assets_dir: Config::shell_assets_dir(),
+        };
+        if let Ok(shell) = ShellTerminal::with_options(Size::new(cols, rows), spawn_options) {
+            log::info!(
+                "Shell spawned for initial tab (semantic_prompts={})",
+                self.config.shell.semantic_prompts
+            );
             shells.insert(0, shell);
             content_hashes.insert(0, 0);
         }
@@ -393,23 +433,25 @@ impl App {
             rows,
             scale_factor,
             font_scale: 1.0,
-            dirty: true,
-            frame_count: 0,
-            occluded: false,
-            focused: true,
-            cursor_position: (0.0, 0.0),
-            last_click_time: None,
-            last_click_tab: None,
-            mouse_pressed: false,
-            selection_click_count: 0,
-            last_selection_click_time: None,
-            last_selection_click_pos: None,
-            cached_render: Default::default(),
-            detected_urls: Vec::new(),
-            hovered_url_index: None,
-            search: Default::default(),
-            bell: window::BellState::from_config(&self.config.bell),
-            context_menu: window::ContextMenu::default(),
+            render: window::RenderState {
+                dirty: true,
+                frame_count: 0,
+                occluded: false,
+                focused: true,
+                cached: Default::default(),
+            },
+            interaction: Default::default(),
+            ui: window::UiState {
+                search: Default::default(),
+                bell: window::BellState::from_config(&self.config.bell),
+                context_menu: window::ContextMenu::default(),
+                zoom_indicator: Default::default(),
+                copy_indicator: Default::default(),
+                toast: Default::default(),
+                window_rename: Default::default(),
+                overrides: Default::default(),
+            },
+            custom_title: None,
         };
 
         self.windows.insert(window_id, window_state);
@@ -423,18 +465,30 @@ impl App {
     }
 
     fn load_theme(&self) -> Theme {
+        self.load_theme_with_error().0
+    }
+
+    fn load_theme_with_error(&self) -> (Theme, Option<String>) {
         log::debug!("Loading theme: {}", self.config.theme.name);
         match self.config.theme_css_with_path() {
             Some((css, base_dir)) => {
                 log::debug!("Theme CSS loaded from {:?} ({} bytes)", base_dir, css.len());
-                Theme::from_css_with_base(&css, &base_dir).unwrap_or_else(|e| {
-                    log::warn!("Failed to parse theme: {:?}", e);
-                    Theme::default()
-                })
+                match Theme::from_css_with_base(&css, &base_dir) {
+                    Ok(theme) => (theme, None),
+                    Err(e) => {
+                        let error_msg = format!("Theme parse error: {}", e);
+                        log::warn!("{}", error_msg);
+                        (Theme::default(), Some(error_msg))
+                    }
+                }
             }
             None => {
-                log::warn!("Theme not found, using default");
-                Theme::default()
+                let error_msg = format!(
+                    "Theme '{}' not found, using default",
+                    self.config.theme.name
+                );
+                log::warn!("{}", error_msg);
+                (Theme::default(), Some(error_msg))
             }
         }
     }
@@ -487,6 +541,11 @@ impl App {
     fn handle_menu_action(&mut self, action: MenuAction, event_loop: &ActiveEventLoop) {
         match action {
             MenuAction::NewTab => {
+                // Extract config values before borrowing state mutably
+                let shell_program = self.config.shell.program.clone();
+                let semantic_prompts = self.config.shell.semantic_prompts;
+                let shell_assets_dir = Config::shell_assets_dir();
+
                 if let Some(state) = self.focused_window_mut() {
                     // Get current shell's working directory for the new tab
                     let cwd = state.active_shell_cwd();
@@ -496,13 +555,34 @@ impl App {
                         .gpu
                         .tab_bar
                         .select_tab_index(state.gpu.tab_bar.tab_count() - 1);
-                    state.create_shell_for_tab_with_cwd(tab_id, cwd);
-                    state.dirty = true;
+                    let spawn_options = SpawnOptions {
+                        shell: shell_program,
+                        cwd,
+                        semantic_prompts,
+                        shell_assets_dir,
+                    };
+                    state.create_shell_for_tab(tab_id, spawn_options);
+                    state.render.dirty = true;
                     state.window.request_redraw();
                 }
             }
             MenuAction::NewWindow => {
                 self.pending_new_window = true;
+            }
+            MenuAction::RenameWindow => {
+                if let Some(state) = self.focused_window_mut() {
+                    let current_title = state
+                        .custom_title
+                        .clone()
+                        .unwrap_or_else(|| "CRT Terminal".to_string());
+                    // Cancel tab editing if active
+                    if state.gpu.tab_bar.is_editing() {
+                        state.gpu.tab_bar.cancel_editing();
+                    }
+                    state.ui.window_rename.start(&current_title);
+                    state.render.dirty = true;
+                    state.window.request_redraw();
+                }
             }
             MenuAction::CloseTab => {
                 let should_close = if let Some(state) = self.focused_window_mut() {
@@ -521,10 +601,8 @@ impl App {
                 } else {
                     false
                 };
-                if should_close {
-                    if let Some(id) = self.focused_window {
-                        self.close_window(id);
-                    }
+                if should_close && let Some(id) = self.focused_window {
+                    self.close_window(id);
                 }
             }
             MenuAction::CloseWindow => {
@@ -574,28 +652,29 @@ impl App {
             MenuAction::SelectTab8 => self.select_tab_index(7),
             MenuAction::SelectTab9 => self.select_tab_index(8),
             MenuAction::Paste => {
-                if let Some(state) = self.focused_window_mut() {
-                    if let Some(content) = get_clipboard_content() {
-                        paste_to_terminal(state, &content);
-                    }
+                if let Some(state) = self.focused_window_mut()
+                    && let Some(content) = get_clipboard_content()
+                {
+                    paste_to_terminal(state, &content);
                 }
             }
             MenuAction::Copy => {
-                if let Some(state) = self.focused_window_mut() {
-                    if let Some(text) = get_terminal_selection_text(state) {
-                        set_clipboard_content(&text);
-                    }
+                if let Some(state) = self.focused_window_mut()
+                    && let Some(text) = get_terminal_selection_text(state)
+                {
+                    set_clipboard_content(&text);
+                    state.ui.copy_indicator.trigger();
                 }
             }
             MenuAction::Find => {
                 if let Some(state) = self.focused_window_mut() {
                     // Toggle search mode
-                    state.search.active = !state.search.active;
-                    if !state.search.active {
+                    state.ui.search.active = !state.ui.search.active;
+                    if !state.ui.search.active {
                         // Clear search when closing
-                        state.search.query.clear();
-                        state.search.matches.clear();
-                        state.search.current_match = 0;
+                        state.ui.search.query.clear();
+                        state.ui.search.matches.clear();
+                        state.ui.search.current_match = 0;
                     }
                     state.force_active_tab_redraw();
                     state.window.request_redraw();
@@ -681,8 +760,11 @@ impl App {
                 shell.resize(Size::new(new_cols, new_rows));
             }
 
+            // Trigger zoom indicator
+            state.ui.zoom_indicator.trigger(new_scale);
+
             // Force full redraw
-            state.dirty = true;
+            state.render.dirty = true;
             for hash in state.content_hashes.values_mut() {
                 *hash = 0;
             }
@@ -721,7 +803,14 @@ impl App {
             self.config.font.family,
             self.config.font.size
         );
-        let new_config = Config::load();
+        let (new_config, config_error) = Config::load_with_error();
+
+        // Show toast if there was a config error
+        if let Some(error) = config_error
+            && let Some(state) = self.focused_window_mut()
+        {
+            state.ui.toast.show(error, window::ToastType::Error);
+        }
 
         // Check if theme changed
         let theme_changed = new_config.theme.name != self.config.theme.name;
@@ -742,7 +831,7 @@ impl App {
         log::debug!("Applying config to {} windows", self.windows.len());
         for state in self.windows.values_mut() {
             // Force redraw
-            state.dirty = true;
+            state.render.dirty = true;
             for hash in state.content_hashes.values_mut() {
                 *hash = 0;
             }
@@ -752,7 +841,14 @@ impl App {
     /// Reload theme CSS and apply to all windows
     fn reload_theme(&mut self) {
         log::info!("Reloading theme...");
-        let theme = self.load_theme();
+        let (theme, theme_error) = self.load_theme_with_error();
+
+        // Show toast if there was a theme error
+        if let Some(error) = theme_error
+            && let Some(state) = self.focused_window_mut()
+        {
+            state.ui.toast.show(error, window::ToastType::Error);
+        }
 
         log::debug!(
             "Theme loaded: fg=#{:02x}{:02x}{:02x}, cursor=#{:02x}{:02x}{:02x}, cursor_glow={}",
@@ -766,11 +862,22 @@ impl App {
         );
         log::debug!(
             "Theme effects: grid={}, starfield={}, particles={}, matrix={}",
-            theme.grid.as_ref().map_or(false, |g| g.enabled),
-            theme.starfield.as_ref().map_or(false, |s| s.enabled),
-            theme.particles.as_ref().map_or(false, |p| p.enabled),
-            theme.matrix.as_ref().map_or(false, |m| m.enabled)
+            theme.grid.as_ref().is_some_and(|g| g.enabled),
+            theme.starfield.as_ref().is_some_and(|s| s.enabled),
+            theme.particles.as_ref().is_some_and(|p| p.enabled),
+            theme.matrix.as_ref().is_some_and(|m| m.enabled)
         );
+        log::debug!(
+            "Theme events: on_bell={}, on_focus={}, on_blur={}, on_cmd_success={}, on_cmd_fail={}",
+            theme.on_bell.is_some(),
+            theme.on_focus.is_some(),
+            theme.on_blur.is_some(),
+            theme.on_command_success.is_some(),
+            theme.on_command_fail.is_some()
+        );
+
+        // Store theme for event override access
+        self.theme = theme.clone();
 
         for state in self.windows.values_mut() {
             // Update effect pipeline with new theme
@@ -780,7 +887,7 @@ impl App {
             configure_effects_from_theme(&mut state.gpu.effects_renderer, &theme);
 
             // Update tab bar theme
-            state.gpu.tab_bar.set_theme(theme.tabs.clone());
+            state.gpu.tab_bar.set_theme(theme.tabs);
 
             // Update cursor color and glow
             state.gpu.terminal_vello.set_cursor_color([
@@ -801,7 +908,7 @@ impl App {
                 }));
 
             // Force full redraw
-            state.dirty = true;
+            state.render.dirty = true;
             for hash in state.content_hashes.values_mut() {
                 *hash = 0;
             }
@@ -813,6 +920,19 @@ impl App {
 /// Configure backdrop effects from theme settings
 fn configure_effects_from_theme(effects_renderer: &mut EffectsRenderer, theme: &Theme) {
     let mut config = EffectConfig::new();
+
+    // First, explicitly disable ALL effects to ensure clean state when switching themes.
+    // This prevents effects from the previous theme persisting when the new theme
+    // doesn't define them.
+    config.insert("grid-enabled", "false");
+    config.insert("starfield-enabled", "false");
+    config.insert("rain-enabled", "false");
+    config.insert("particles-enabled", "false");
+    config.insert("matrix-enabled", "false");
+    config.insert("shape-enabled", "false");
+    config.insert("sprite-enabled", "false");
+
+    // Now configure effects that are defined in the new theme (will override the disables above)
 
     // Grid effect configuration from theme
     if let Some(ref grid) = theme.grid {
@@ -1017,10 +1137,8 @@ fn configure_effects_from_theme(effects_renderer: &mut EffectsRenderer, theme: &
         config.insert("shape-polygon-sides", shape.polygon_sides.to_string());
     }
 
-    // Sprite effect: DISABLED - now using raw wgpu SpriteRenderer to avoid vello memory issues
-    // The vello-based SpriteEffect causes unbounded memory growth due to atlas texture system.
-    // Sprite rendering is handled by SpriteAnimationState in render.rs instead.
-    config.insert("sprite-enabled", "false");
+    // Note: Sprite effect is disabled at the top of this function.
+    // Sprite rendering uses raw wgpu SpriteRenderer (in render.rs) to avoid vello memory issues.
 
     effects_renderer.configure(&config);
 }
@@ -1056,17 +1174,36 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::Focused(focused) => {
-                state.focused = focused;
+                state.render.focused = focused;
+
+                // Trigger theme override for focus events
                 if focused {
                     self.focused_window = Some(id);
+                    // Apply on_focus override if theme defines it
+                    if let Some(ref override_props) = self.theme.on_focus {
+                        state.ui.overrides.add(
+                            window::OverrideEventType::FocusGained,
+                            override_props.clone(),
+                        );
+                        log::debug!("Focus gained - applied theme override");
+                    }
                     // Redraw immediately when gaining focus to resume effects
                     state.window.request_redraw();
+                } else {
+                    // Apply on_blur override if theme defines it
+                    if let Some(ref override_props) = self.theme.on_blur {
+                        state
+                            .ui
+                            .overrides
+                            .add(window::OverrideEventType::FocusLost, override_props.clone());
+                        log::debug!("Focus lost - applied theme override");
+                    }
                 }
             }
 
             WindowEvent::Occluded(occluded) => {
                 if let Some(state) = self.windows.get_mut(&id) {
-                    state.occluded = occluded;
+                    state.render.occluded = occluded;
                     log::debug!("Window {:?} occluded: {}", id, occluded);
                 }
             }
@@ -1080,153 +1217,35 @@ impl ApplicationHandler for App {
                     return;
                 };
 
-                #[cfg(target_os = "macos")]
-                let mod_pressed = self.modifiers.state().super_key();
-                #[cfg(not(target_os = "macos"))]
-                let mod_pressed = self.modifiers.state().control_key();
+                // Delegate to keyboard handler
+                let action = handle_keyboard_input(
+                    state,
+                    &event.logical_key,
+                    event.text.as_ref().map(|s| s.as_str()),
+                    &self.modifiers,
+                );
 
-                let shift_pressed = self.modifiers.state().shift_key();
-
-                // Handle scroll shortcuts (Shift+PageUp/PageDown/Home/End)
-                // On macOS, Shift+Cmd+Left/Right are equivalent to Shift+Home/End
-                if shift_pressed {
-                    let scroll_action = match &event.logical_key {
-                        Key::Named(NamedKey::PageUp) if !mod_pressed => Some(Scroll::PageUp),
-                        Key::Named(NamedKey::PageDown) if !mod_pressed => Some(Scroll::PageDown),
-                        Key::Named(NamedKey::Home) if !mod_pressed => Some(Scroll::Top),
-                        Key::Named(NamedKey::End) if !mod_pressed => Some(Scroll::Bottom),
-                        // macOS: Shift+Cmd+Arrow = Shift+Home/End
-                        #[cfg(target_os = "macos")]
-                        Key::Named(NamedKey::ArrowLeft) if mod_pressed => Some(Scroll::Top),
-                        #[cfg(target_os = "macos")]
-                        Key::Named(NamedKey::ArrowRight) if mod_pressed => Some(Scroll::Bottom),
-                        _ => None,
-                    };
-
-                    if let Some(scroll) = scroll_action {
-                        let tab_id = state.gpu.tab_bar.active_tab_id();
-                        if let Some(tab_id) = tab_id {
-                            if let Some(shell) = state.shells.get_mut(&tab_id) {
-                                shell.scroll(scroll);
-                                state.dirty = true;
-                                state.content_hashes.insert(tab_id, 0);
-                                state.window.request_redraw();
-                            }
-                        }
-                        return;
+                // Handle actions that require App-level access
+                match action {
+                    KeyboardAction::Quit => {
+                        event_loop.exit();
                     }
-                }
-
-                // Handle context menu dismissal with Escape
-                if state.context_menu.visible {
-                    if let Key::Named(NamedKey::Escape) = &event.logical_key {
-                        state.context_menu.hide();
-                        state.dirty = true;
-                        state.window.request_redraw();
-                        return;
+                    KeyboardAction::CloseWindow => {
+                        self.windows.remove(&id);
+                        if self.focused_window == Some(id) {
+                            self.focused_window = self.windows.keys().next().copied();
+                        }
                     }
-                }
-
-                // Handle tab editing first
-                if let TabEditResult::Handled =
-                    handle_tab_editing(state, &event.logical_key, mod_pressed)
-                {
-                    return;
-                }
-
-                // Handle search input when search is active
-                if state.search.active {
-                    match &event.logical_key {
-                        Key::Named(NamedKey::Escape) => {
-                            // Close search
-                            state.search.active = false;
-                            state.search.query.clear();
-                            state.search.matches.clear();
-                            state.search.current_match = 0;
-                            state.force_active_tab_redraw();
-                            state.window.request_redraw();
-                            return;
-                        }
-                        Key::Named(NamedKey::Enter) => {
-                            // Next match on Enter
-                            if !state.search.matches.is_empty() {
-                                state.search.current_match =
-                                    (state.search.current_match + 1) % state.search.matches.len();
-                                scroll_to_current_match(state);
-                                state.force_active_tab_redraw();
-                                state.window.request_redraw();
-                            }
-                            return;
-                        }
-                        Key::Named(NamedKey::Backspace) => {
-                            // Delete last char from query
-                            state.search.query.pop();
-                            update_search_matches(state);
-                            state.force_active_tab_redraw();
-                            state.window.request_redraw();
-                            return;
-                        }
-                        Key::Character(c) if !mod_pressed => {
-                            // Add character to query
-                            state.search.query.push_str(c.as_str());
-                            update_search_matches(state);
-                            state.force_active_tab_redraw();
-                            state.window.request_redraw();
-                            return;
-                        }
-                        _ => {}
+                    KeyboardAction::NewWindow => {
+                        self.pending_new_window = true;
                     }
-                }
+                    KeyboardAction::NewTab => {
+                        // Extract config values before borrowing state mutably
+                        let shell_program = self.config.shell.program.clone();
+                        let semantic_prompts = self.config.shell.semantic_prompts;
+                        let shell_assets_dir = Config::shell_assets_dir();
 
-                // Handle keyboard shortcuts
-                if mod_pressed {
-                    if state.gpu.tab_bar.is_editing() {
-                        state.gpu.tab_bar.confirm_editing();
-                        state.dirty = true;
-                    }
-
-                    match &event.logical_key {
-                        Key::Character(c) if c.as_str() == "c" => {
-                            // Copy selection to clipboard
-                            if let Some(text) = get_terminal_selection_text(state) {
-                                set_clipboard_content(&text);
-                                return;
-                            }
-                        }
-                        Key::Character(c) if c.as_str() == "v" => {
-                            // Paste from clipboard
-                            if let Some(content) = get_clipboard_content() {
-                                paste_to_terminal(state, &content);
-                            }
-                            return;
-                        }
-                        Key::Character(c) if c.as_str() == "q" => {
-                            event_loop.exit();
-                            return;
-                        }
-                        Key::Character(c) if c.as_str() == "w" => {
-                            if state.gpu.tab_bar.tab_count() > 1 {
-                                if let Some(tab_id) = state.gpu.tab_bar.active_tab_id() {
-                                    state.gpu.tab_bar.close_tab(tab_id);
-                                    state.remove_shell_for_tab(tab_id);
-                                    // Force redraw of new active tab to clear stale cached render state
-                                    state.force_active_tab_redraw();
-                                    state.window.request_redraw();
-                                    return;
-                                }
-                            }
-                            self.windows.remove(&id);
-                            if self.focused_window == Some(id) {
-                                self.focused_window = self.windows.keys().next().copied();
-                            }
-                            return;
-                        }
-                        Key::Character(c) if c.as_str() == "n" => {
-                            self.pending_new_window = true;
-                            return;
-                        }
-                        Key::Character(c) if c.as_str() == "t" => {
-                            // Get current shell's working directory for the new tab
+                        if let Some(state) = self.windows.get_mut(&id) {
                             let cwd = state.active_shell_cwd();
                             let tab_num = state.gpu.tab_bar.tab_count() + 1;
                             let tab_id = state.gpu.tab_bar.add_tab(format!("Terminal {}", tab_num));
@@ -1234,90 +1253,23 @@ impl ApplicationHandler for App {
                                 .gpu
                                 .tab_bar
                                 .select_tab_index(state.gpu.tab_bar.tab_count() - 1);
-                            state.create_shell_for_tab_with_cwd(tab_id, cwd);
-                            state.dirty = true;
+                            let spawn_options = SpawnOptions {
+                                shell: shell_program,
+                                cwd,
+                                semantic_prompts,
+                                shell_assets_dir,
+                            };
+                            state.create_shell_for_tab(tab_id, spawn_options);
+                            state.render.dirty = true;
                             state.window.request_redraw();
-                            return;
                         }
-                        Key::Character(c) if c.as_str() == "f" => {
-                            // Toggle search mode
-                            log::info!("Cmd+F pressed, toggling search mode");
-                            state.search.active = !state.search.active;
-                            log::info!("Search active: {}", state.search.active);
-                            if !state.search.active {
-                                // Clear search when closing
-                                state.search.query.clear();
-                                state.search.matches.clear();
-                                state.search.current_match = 0;
-                            }
-                            state.force_active_tab_redraw();
-                            state.window.request_redraw();
-                            return;
-                        }
-                        Key::Character(c) if c.as_str() == "g" => {
-                            // Next/prev match
-                            if state.search.active && !state.search.matches.is_empty() {
-                                if shift_pressed {
-                                    // Previous match
-                                    if state.search.current_match == 0 {
-                                        state.search.current_match = state.search.matches.len() - 1;
-                                    } else {
-                                        state.search.current_match -= 1;
-                                    }
-                                } else {
-                                    // Next match
-                                    state.search.current_match = (state.search.current_match + 1)
-                                        % state.search.matches.len();
-                                }
-                                scroll_to_current_match(state);
-                                state.force_active_tab_redraw();
-                                state.window.request_redraw();
-                            }
-                            return;
-                        }
-                        Key::Character(c)
-                            if c.as_str() == "[" && self.modifiers.state().shift_key() =>
-                        {
-                            state.gpu.tab_bar.prev_tab();
-                            state.force_active_tab_redraw();
-                            state.window.request_redraw();
-                            return;
-                        }
-                        Key::Character(c)
-                            if c.as_str() == "]" && self.modifiers.state().shift_key() =>
-                        {
-                            state.gpu.tab_bar.next_tab();
-                            state.force_active_tab_redraw();
-                            state.window.request_redraw();
-                            return;
-                        }
-                        Key::Character(c) if c.len() == 1 => {
-                            if let Some(digit) = c.chars().next().and_then(|ch| ch.to_digit(10)) {
-                                if digit >= 1 && digit <= 9 {
-                                    state.gpu.tab_bar.select_tab_index((digit - 1) as usize);
-                                    state.force_active_tab_redraw();
-                                    state.window.request_redraw();
-                                    return;
-                                }
-                            }
-                        }
-                        _ => {}
                     }
-                }
-
-                // Send to shell (clears selection on input)
-                let ctrl_pressed = self.modifiers.state().control_key();
-                let alt_pressed = self.modifiers.state().alt_key();
-                if handle_shell_input(
-                    state,
-                    &event.logical_key,
-                    event.text.as_ref().map(|s| s.as_str()),
-                    mod_pressed,
-                    ctrl_pressed,
-                    shift_pressed,
-                    alt_pressed,
-                ) {
-                    clear_terminal_selection(state);
+                    KeyboardAction::Handled
+                    | KeyboardAction::NotHandled
+                    | KeyboardAction::Scroll(_)
+                    | KeyboardAction::CloseTab(_) => {
+                        // Already handled by keyboard module or no action needed
+                    }
                 }
             }
 
@@ -1347,180 +1299,17 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::CursorMoved { position, .. } => {
-                let x = position.x as f32;
-                let y = position.y as f32;
-                state.cursor_position = (x, y);
-
-                // Update context menu hover state
-                if state.context_menu.visible {
-                    let old_hover = state.context_menu.hovered_item;
-                    state.context_menu.update_hover(x, y);
-                    if old_hover != state.context_menu.hovered_item {
-                        state.dirty = true;
-                        state.window.request_redraw();
-                    }
-                }
-
-                // Update selection if dragging
-                handle_terminal_mouse_move(state, x, y);
-
-                // Check for URL hover and update underline state
-                let (offset_x, offset_y) = state.gpu.tab_bar.content_offset();
-                let padding = 10.0 * state.scale_factor;
-                let cell_width = state.gpu.glyph_cache.cell_width();
-                let line_height = state.gpu.glyph_cache.line_height();
-
-                let rel_x = x - offset_x - padding;
-                let rel_y = y - offset_y - padding;
-
-                let new_hovered = if rel_x >= 0.0 && rel_y >= 0.0 {
-                    let col = (rel_x / cell_width) as usize;
-                    let line = (rel_y / line_height) as usize;
-                    find_url_index_at_position(&state.detected_urls, col, line)
-                } else {
-                    None
-                };
-
-                // Redraw if hover state changed
-                if new_hovered != state.hovered_url_index {
-                    state.hovered_url_index = new_hovered;
-                    // Force content re-render to update decorations
-                    state.force_active_tab_redraw();
-                }
+                handle_cursor_moved(state, position.x as f32, position.y as f32);
             }
 
             WindowEvent::MouseInput {
                 state: button_state,
                 button,
                 ..
-            } => {
-                let (x, y) = state.cursor_position;
-
-                // Check for Cmd+click (Super on macOS, Ctrl on Linux) to open URLs
-                #[cfg(target_os = "macos")]
-                let cmd_pressed = self.modifiers.state().super_key();
-                #[cfg(not(target_os = "macos"))]
-                let cmd_pressed = self.modifiers.state().control_key();
-
-                if cmd_pressed
-                    && button == winit::event::MouseButton::Left
-                    && button_state == ElementState::Pressed
-                {
-                    // Calculate cell position from pixel coordinates
-                    let (offset_x, offset_y) = state.gpu.tab_bar.content_offset();
-                    let padding = 10.0 * state.scale_factor;
-                    let cell_width = state.gpu.glyph_cache.cell_width();
-                    let line_height = state.gpu.glyph_cache.line_height();
-
-                    let rel_x = x - offset_x - padding;
-                    let rel_y = y - offset_y - padding;
-
-                    if rel_x >= 0.0 && rel_y >= 0.0 {
-                        let col = (rel_x / cell_width) as usize;
-                        let line = (rel_y / line_height) as usize;
-
-                        // Check if there's a URL at this position
-                        if let Some(url) = find_url_at_position(&state.detected_urls, col, line) {
-                            log::info!("Opening URL: {}", url.url);
-                            open_url(&url.url);
-                            return;
-                        }
-                    }
-                }
-
-                // Handle context menu interactions first
-                if state.context_menu.visible {
-                    match (button, button_state) {
-                        (winit::event::MouseButton::Left, ElementState::Pressed) => {
-                            // Check if clicking on a menu item
-                            if let Some(item) = state.context_menu.item_at(x, y) {
-                                handle_context_menu_action(state, item);
-                                state.context_menu.hide();
-                                state.dirty = true;
-                                state.window.request_redraw();
-                                return;
-                            }
-                            // Clicking outside the menu dismisses it
-                            state.context_menu.hide();
-                            state.dirty = true;
-                            state.window.request_redraw();
-                            // Fall through to normal click handling
-                        }
-                        (winit::event::MouseButton::Right, ElementState::Pressed) => {
-                            // Right-click while menu is open moves the menu
-                            state.context_menu.show(x, y);
-                            state.dirty = true;
-                            state.window.request_redraw();
-                            return;
-                        }
-                        _ => {}
-                    }
-                }
-
-                // Right-click shows context menu
-                if button == winit::event::MouseButton::Right
-                    && button_state == ElementState::Pressed
-                {
-                    state.context_menu.show(x, y);
-                    state.dirty = true;
-                    state.window.request_redraw();
-                    return;
-                }
-
-                let mouse_button = match button {
-                    winit::event::MouseButton::Left => Some(MOUSE_BUTTON_LEFT),
-                    winit::event::MouseButton::Middle => Some(MOUSE_BUTTON_MIDDLE),
-                    winit::event::MouseButton::Right => Some(MOUSE_BUTTON_RIGHT),
-                    _ => None,
-                };
-
-                if let Some(btn) = mouse_button {
-                    match button_state {
-                        ElementState::Pressed => {
-                            // Try terminal (mouse reporting or selection) first, then tab bar
-                            if !handle_terminal_mouse_button(state, x, y, Instant::now(), btn, true)
-                            {
-                                if btn == MOUSE_BUTTON_LEFT {
-                                    handle_tab_click(state, x, y, Instant::now());
-                                }
-                            }
-                        }
-                        ElementState::Released => {
-                            handle_terminal_mouse_release(state, x, y);
-                        }
-                    }
-                }
-            }
+            } => if handle_mouse_input(state, button, button_state, &self.modifiers) {},
 
             WindowEvent::MouseWheel { delta, .. } => {
-                let (x, y) = state.cursor_position;
-                let delta_y = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => y,
-                    MouseScrollDelta::PixelDelta(pos) => {
-                        let line_height = state.gpu.glyph_cache.line_height();
-                        (pos.y / line_height as f64) as f32
-                    }
-                };
-
-                // Check if mouse reporting should handle this
-                if handle_terminal_scroll(state, x, y, delta_y) {
-                    // Mouse reporting handled the scroll
-                    return;
-                }
-
-                // Fall back to local scrollback
-                let tab_id = state.gpu.tab_bar.active_tab_id();
-                if let Some(tab_id) = tab_id {
-                    if let Some(shell) = state.shells.get_mut(&tab_id) {
-                        let lines = delta_y as i32;
-                        if lines != 0 {
-                            shell.scroll(Scroll::Delta(lines));
-                            state.dirty = true;
-                            state.content_hashes.insert(tab_id, 0);
-                            state.window.request_redraw();
-                        }
-                    }
-                }
+                handle_mouse_wheel(state, delta);
             }
 
             WindowEvent::RedrawRequested => {
@@ -1534,12 +1323,11 @@ impl ApplicationHandler for App {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         #[cfg(target_os = "macos")]
-        if let Some(ids) = &self.menu_ids {
-            if let Ok(event) = MenuEvent::receiver().try_recv() {
-                if let Some(action) = menu_id_to_action(event.id(), ids) {
-                    self.handle_menu_action(action, event_loop);
-                }
-            }
+        if let Some(ids) = &self.menu_ids
+            && let Ok(event) = MenuEvent::receiver().try_recv()
+            && let Some(action) = menu_id_to_action(event.id(), ids)
+        {
+            self.handle_menu_action(action, event_loop);
         }
 
         // Check for config/theme file changes - collect events first to avoid borrow issues
@@ -1586,12 +1374,11 @@ impl ApplicationHandler for App {
         if elapsed >= TARGET_FRAME_TIME {
             self.last_frame_time = Instant::now();
 
-            if let Some(focused_id) = self.focused_window {
-                if let Some(state) = self.windows.get(&focused_id) {
-                    if !state.occluded {
-                        state.window.request_redraw();
-                    }
-                }
+            if let Some(focused_id) = self.focused_window
+                && let Some(state) = self.windows.get(&focused_id)
+                && !state.render.occluded
+            {
+                state.window.request_redraw();
             }
         }
 
@@ -1604,135 +1391,8 @@ impl ApplicationHandler for App {
 
             for (id, state) in self.windows.iter() {
                 // Skip focused window (handled above) and occluded windows
-                if Some(*id) != self.focused_window && !state.occluded {
+                if Some(*id) != self.focused_window && !state.render.occluded {
                     state.window.request_redraw();
-                }
-            }
-        }
-    }
-}
-
-/// Scroll terminal to make current search match visible
-fn scroll_to_current_match(state: &mut WindowState) {
-    if state.search.matches.is_empty() {
-        return;
-    }
-
-    let current_match = &state.search.matches[state.search.current_match];
-    let match_line = current_match.line;
-
-    // Get active shell
-    let active_tab_id = state.gpu.tab_bar.active_tab_id();
-    let shell = active_tab_id.and_then(|id| state.shells.get_mut(&id));
-    let Some(shell) = shell else { return };
-
-    let terminal = shell.terminal();
-    let screen_lines = terminal.screen_lines() as i32;
-    let display_offset = terminal.display_offset() as i32;
-
-    // Calculate viewport line (what line would the match be at in current viewport)
-    // viewport_line = grid_line + display_offset
-    let viewport_line = match_line + display_offset;
-
-    // If match is outside visible range (0 to screen_lines-1), scroll to center it
-    if viewport_line < 0 || viewport_line >= screen_lines {
-        // Target: put match roughly in the middle of the screen
-        let target_viewport_line = screen_lines / 2;
-        // New display_offset needed: match_line + new_offset = target_viewport_line
-        // new_offset = target_viewport_line - match_line
-        let new_offset = target_viewport_line - match_line;
-
-        // The scroll delta is the change in display_offset
-        // Positive delta scrolls up (increases display_offset)
-        let scroll_delta = new_offset - display_offset;
-
-        if scroll_delta != 0 {
-            shell.scroll(Scroll::Delta(scroll_delta));
-            if let Some(tab_id) = active_tab_id {
-                state.content_hashes.insert(tab_id, 0);
-            }
-        }
-    }
-}
-
-/// Update search matches based on current query
-fn update_search_matches(state: &mut WindowState) {
-    state.search.matches.clear();
-    state.search.current_match = 0;
-
-    let query = &state.search.query;
-    if query.is_empty() {
-        return;
-    }
-
-    // Get active shell's terminal content
-    let active_tab_id = state.gpu.tab_bar.active_tab_id();
-    let shell = active_tab_id.and_then(|id| state.shells.get(&id));
-    let Some(shell) = shell else { return };
-
-    let terminal = shell.terminal();
-
-    // Get all lines including history
-    let all_lines = terminal.all_lines_text();
-
-    // Search each line for the query (case-insensitive)
-    let query_lower = query.to_lowercase();
-    for (line_idx, line_text) in &all_lines {
-        let line_lower = line_text.to_lowercase();
-        let mut start = 0;
-        while let Some(pos) = line_lower[start..].find(&query_lower) {
-            let match_start = start + pos;
-            state.search.matches.push(SearchMatch {
-                line: *line_idx,
-                start_col: match_start,
-                end_col: match_start + query.len(),
-            });
-            start = match_start + 1;
-        }
-    }
-
-    // Scroll to first match if any found
-    if !state.search.matches.is_empty() {
-        scroll_to_current_match(state);
-    }
-}
-
-/// Handle context menu action (copy, paste, select all)
-fn handle_context_menu_action(state: &mut WindowState, item: ContextMenuItem) {
-    match item {
-        ContextMenuItem::Copy => {
-            if let Some(text) = get_terminal_selection_text(state) {
-                set_clipboard_content(&text);
-            }
-        }
-        ContextMenuItem::Paste => {
-            if let Some(content) = get_clipboard_content() {
-                paste_to_terminal(state, &content);
-            }
-        }
-        ContextMenuItem::SelectAll => {
-            // Select all visible content
-            if let Some(tab_id) = state.gpu.tab_bar.active_tab_id() {
-                if let Some(shell) = state.shells.get_mut(&tab_id) {
-                    use crt_core::{Column, Line, Point, SelectionType};
-                    let terminal = shell.terminal_mut();
-                    let screen_lines = terminal.screen_lines();
-                    let columns = terminal.columns();
-
-                    // Start selection at top-left
-                    terminal.start_selection(
-                        Point {
-                            line: Line(0),
-                            column: Column(0),
-                        },
-                        SelectionType::Simple,
-                    );
-                    // Extend to bottom-right
-                    terminal.update_selection(Point {
-                        line: Line(screen_lines as i32 - 1),
-                        column: Column(columns - 1),
-                    });
-                    state.dirty = true;
                 }
             }
         }
@@ -1824,7 +1484,7 @@ fn handle_scale_factor_change(
     }
 
     // Mark as dirty and invalidate content hashes
-    state.dirty = true;
+    state.render.dirty = true;
     for hash in state.content_hashes.values_mut() {
         *hash = 0;
     }

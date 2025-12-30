@@ -223,12 +223,7 @@ impl TerminalVelloRenderer {
 
         // Get base cursor rect dimensions
         let (base_x, base_y, base_w, base_h) = match self.cursor_shape {
-            CursorShape::Block => (
-                cursor.x,
-                cursor.y,
-                cursor.cell_width,
-                cursor.cell_height,
-            ),
+            CursorShape::Block => (cursor.x, cursor.y, cursor.cell_width, cursor.cell_height),
             CursorShape::Bar => (cursor.x, cursor.y, 2.0, cursor.cell_height),
             CursorShape::Underline => (
                 cursor.x,

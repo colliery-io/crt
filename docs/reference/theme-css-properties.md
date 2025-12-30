@@ -16,6 +16,11 @@ Complete reference of all CSS properties supported by CRT Terminal themes.
 | `:tab` | Individual tab styling |
 | `:tab.active` | Active tab styling |
 | `:terminal::tab-close` | Tab close button |
+| `:terminal::on-bell` | Event override: bell triggered |
+| `:terminal::on-command-success` | Event override: command exited with code 0 |
+| `:terminal::on-command-fail` | Event override: command exited with non-zero code |
+| `:terminal::on-focus` | Event override: window gained focus |
+| `:terminal::on-blur` | Event override: window lost focus |
 
 ---
 
@@ -281,6 +286,110 @@ Can also use `--ansi-{name}` in `:terminal`:
 | `color` | color | theme-based | Close button color |
 | `--hover-background` | color | red | Hover background |
 | `--hover-color` | color | white | Hover text color |
+
+---
+
+## Event Selectors (Reactive Theming)
+
+Event selectors allow temporary theme overrides that trigger on terminal events. These enable reactive animations like changing sprites on command failure, flashing on bell, etc.
+
+### Available Event Selectors
+
+| Selector | Trigger | Description |
+|----------|---------|-------------|
+| `:terminal::on-bell` | Bell character (\\a) | Alert/notification sound |
+| `:terminal::on-command-success` | Exit code 0 | Command completed successfully |
+| `:terminal::on-command-fail` | Exit code != 0 | Command failed |
+| `:terminal::on-focus` | Window focused | Terminal gained focus |
+| `:terminal::on-blur` | Window blurred | Terminal lost focus |
+
+### Event Properties
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `--duration` | duration | 500ms | How long the override lasts |
+
+### Overridable Properties
+
+Within event selectors, you can override:
+
+- **Theme colors**: `color`, `background`, `text-shadow`
+- **Cursor**: `cursor-color`
+- **Sprite patches**: All `--sprite-*` properties
+- **Effect patches**: All `--starfield-*`, `--particles-*`, `--grid-*`, `--rain-*`, `--matrix-*`, `--shape-*` properties
+
+**Note on sprite paths**: All `--sprite-path` values (both base and event overrides) are resolved relative to the theme directory. If your base sprite is `sprites/idle.png`, use `sprites/alert.png` for event overrides to load from the same subdirectory.
+
+### Duration Behavior
+
+- Non-zero duration: Override applies for specified time, then reverts
+- Zero duration (`--duration: 0ms`): Persists until cleared by another event (used for `::on-blur`)
+
+### Example: Reactive Sprite Theme
+
+```css
+:terminal::backdrop {
+    /* Default sprite */
+    --sprite-enabled: true;
+    --sprite-path: "character_idle.png";
+    --sprite-frame-width: 64;
+    --sprite-frame-height: 64;
+    --sprite-columns: 4;
+    --sprite-fps: 8;
+}
+
+/* Show happy sprite on success */
+:terminal::on-command-success {
+    --duration: 1500ms;
+    --sprite-path: "character_happy.png";
+    --sprite-opacity: 0.8;
+    text-shadow: 0 0 20px rgba(0, 255, 0, 0.6);
+}
+
+/* Show sad sprite on failure */
+:terminal::on-command-fail {
+    --duration: 3000ms;
+    --sprite-path: "character_sad.png";
+    --sprite-opacity: 0.6;
+    text-shadow: 0 0 20px rgba(255, 0, 0, 0.6);
+}
+
+/* Alert animation on bell */
+:terminal::on-bell {
+    --duration: 800ms;
+    --sprite-path: "character_alert.png";
+    --sprite-fps: 12;
+}
+
+/* Dim when unfocused */
+:terminal::on-blur {
+    --duration: 0ms;  /* Persist until focused */
+    --sprite-opacity: 0.3;
+    color: rgba(200, 200, 200, 0.7);
+}
+```
+
+### Shell Integration Requirements
+
+Command success/failure detection requires OSC 133 semantic prompt support in your shell. Add to your shell config:
+
+**Bash** (`~/.bashrc`):
+```bash
+PS1='\[\e]133;A\a\]'$PS1
+PROMPT_COMMAND='echo -ne "\033]133;D;$?\007"'
+```
+
+**Zsh** (`~/.zshrc`):
+```zsh
+precmd() { print -Pn "\e]133;A\a" }
+preexec() { print -Pn "\e]133;C\a" }
+```
+
+Also enable in `config.toml`:
+```toml
+[shell]
+semantic_prompts = true
+```
 
 ---
 

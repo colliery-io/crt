@@ -227,7 +227,7 @@ impl ShapeEffect {
         let height = bounds.height();
         let cx = width / 2.0;
         let cy = height / 2.0;
-        let speed = self.motion_speed as f64;
+        let speed = self.motion_speed;
         let t = self.time * speed;
 
         let (x, y) = match self.motion_type {

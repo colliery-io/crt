@@ -46,11 +46,14 @@ struct Globals {
 }
 
 /// Grid renderer using instanced quads
+///
+/// The renderer does not own its instance buffer - this allows for buffer pooling
+/// across window lifecycles. Use `create_instance_buffer()` to create a buffer,
+/// or provide one from a buffer pool.
 pub struct GridRenderer {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     globals_buffer: wgpu::Buffer,
-    instance_buffer: wgpu::Buffer,
     instance_capacity: usize,
     sampler: wgpu::Sampler,
     bind_group: Option<wgpu::BindGroup>,
@@ -61,7 +64,25 @@ pub struct GridRenderer {
 }
 
 impl GridRenderer {
-    const MAX_INSTANCES: usize = 32 * 1024;
+    /// Maximum number of glyph instances per render call
+    pub const MAX_INSTANCES: usize = 32 * 1024;
+
+    /// Size of instance buffer in bytes (32K instances * 48 bytes = 1.5 MB)
+    pub const INSTANCE_BUFFER_SIZE: u64 =
+        (Self::MAX_INSTANCES * std::mem::size_of::<GlyphInstance>()) as u64;
+
+    /// Create an instance buffer for use with this renderer
+    ///
+    /// Call this to create a buffer if not using a buffer pool.
+    /// The buffer can be reused across renderer instances.
+    pub fn create_instance_buffer(device: &wgpu::Device) -> wgpu::Buffer {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Grid Instance Buffer"),
+            size: Self::INSTANCE_BUFFER_SIZE,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
+    }
 
     pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -185,14 +206,6 @@ impl GridRenderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let instance_capacity = Self::MAX_INSTANCES;
-        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Grid Instance Buffer"),
-            size: (instance_capacity * std::mem::size_of::<GlyphInstance>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Grid Atlas Sampler"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -204,8 +217,7 @@ impl GridRenderer {
             pipeline,
             bind_group_layout,
             globals_buffer,
-            instance_buffer,
-            instance_capacity,
+            instance_capacity: Self::MAX_INSTANCES,
             sampler,
             bind_group: None,
             instances: Vec::with_capacity(Self::MAX_INSTANCES),
@@ -270,7 +282,15 @@ impl GridRenderer {
     }
 
     /// Upload instances and render
-    pub fn render<'a>(&'a self, queue: &wgpu::Queue, render_pass: &mut wgpu::RenderPass<'a>) {
+    ///
+    /// The instance buffer must be created with `create_instance_buffer()` or
+    /// be at least `INSTANCE_BUFFER_SIZE` bytes with VERTEX | COPY_DST usage.
+    pub fn render<'a>(
+        &'a self,
+        queue: &wgpu::Queue,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        instance_buffer: &'a wgpu::Buffer,
+    ) {
         if self.instances.is_empty() {
             return;
         }
@@ -281,15 +301,11 @@ impl GridRenderer {
         };
 
         // Upload instance data
-        queue.write_buffer(
-            &self.instance_buffer,
-            0,
-            bytemuck::cast_slice(&self.instances),
-        );
+        queue.write_buffer(instance_buffer, 0, bytemuck::cast_slice(&self.instances));
 
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
+        render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
 
         // Draw 4 vertices per instance (triangle strip quad)
         render_pass.draw(0..4, 0..self.instances.len() as u32);
@@ -302,8 +318,8 @@ impl GridRenderer {
 
 impl Drop for GridRenderer {
     fn drop(&mut self) {
-        // Destroy buffers to release GPU memory immediately
+        // Destroy globals buffer to release GPU memory immediately
+        // Note: instance buffer is external (for pooling) and not owned by renderer
         self.globals_buffer.destroy();
-        self.instance_buffer.destroy();
     }
 }

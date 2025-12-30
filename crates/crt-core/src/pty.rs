@@ -9,6 +9,19 @@ use std::thread;
 use portable_pty::{Child, CommandBuilder, PtySize, native_pty_system};
 use std::path::PathBuf;
 
+/// Options for spawning a shell with semantic prompt support
+#[derive(Debug, Clone, Default)]
+pub struct SpawnOptions {
+    /// Shell program to run (None = use $SHELL or /bin/sh)
+    pub shell: Option<String>,
+    /// Working directory (None = use home directory)
+    pub cwd: Option<PathBuf>,
+    /// Enable semantic prompts (OSC 133) via shell integration scripts
+    pub semantic_prompts: bool,
+    /// Path to shell integration assets directory
+    pub shell_assets_dir: Option<PathBuf>,
+}
+
 /// Messages sent to the PTY writer thread
 pub enum PtyInput {
     /// Data to write to the PTY
@@ -33,6 +46,161 @@ impl Pty {
     /// Spawn a new shell in a PTY
     pub fn spawn(shell: Option<&str>, cols: u16, rows: u16) -> anyhow::Result<Self> {
         Self::spawn_with_cwd(shell, cols, rows, None)
+    }
+
+    /// Spawn a new shell with full options including semantic prompt support
+    pub fn spawn_with_options(cols: u16, rows: u16, options: SpawnOptions) -> anyhow::Result<Self> {
+        let pty_system = native_pty_system();
+
+        let size = PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        };
+
+        let pair = pty_system.openpty(size)?;
+
+        // Determine shell to use
+        let shell = options
+            .shell
+            .or_else(|| std::env::var("SHELL").ok())
+            .unwrap_or_else(|| String::from("/bin/sh"));
+
+        // Detect shell type for semantic prompt integration
+        let shell_type = detect_shell_type(&shell);
+
+        let mut cmd = CommandBuilder::new(&shell);
+
+        // Set terminal-specific environment variables
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
+
+        // Set working directory if specified
+        if let Some(dir) = options.cwd {
+            cmd.cwd(dir);
+        }
+
+        // Apply semantic prompt integration based on shell type
+        if options.semantic_prompts {
+            if let Some(assets_dir) = options.shell_assets_dir {
+                match shell_type {
+                    ShellType::Bash => {
+                        // Use --rcfile to load our init script (sources user's .bashrc)
+                        let init_path = assets_dir.join("crt-bash-init");
+                        if init_path.exists() {
+                            cmd.arg("--rcfile");
+                            cmd.arg(init_path);
+                            log::info!("Bash semantic prompts enabled via --rcfile");
+                        } else {
+                            // Fall back to login shell
+                            cmd.arg("-l");
+                            log::warn!("Bash init script not found at {:?}", init_path);
+                        }
+                    }
+                    ShellType::Zsh => {
+                        // Set ZDOTDIR to our init directory (has .zshrc that sources user's)
+                        let init_dir = assets_dir.join("crt-zsh-init");
+                        if init_dir.exists() {
+                            // Save original ZDOTDIR so our script can restore it
+                            if let Ok(original) = std::env::var("ZDOTDIR") {
+                                cmd.env("CRT_ORIGINAL_ZDOTDIR", original);
+                            }
+                            cmd.env("ZDOTDIR", &init_dir);
+                            cmd.arg("-l");
+                            log::info!("Zsh semantic prompts enabled via ZDOTDIR");
+                        } else {
+                            cmd.arg("-l");
+                            log::warn!("Zsh init directory not found at {:?}", init_dir);
+                        }
+                    }
+                    ShellType::Fish => {
+                        // Fish has built-in OSC 133 support since v3.4
+                        cmd.arg("-l");
+                        log::info!("Fish has built-in semantic prompt support");
+                    }
+                    ShellType::Unknown => {
+                        // Unknown shell, just spawn as login shell
+                        cmd.arg("-l");
+                    }
+                }
+            } else {
+                // No assets dir, spawn as login shell
+                cmd.arg("-l");
+            }
+        } else {
+            // No semantic prompts, spawn as login shell
+            cmd.arg("-l");
+        }
+
+        let child = pair.slave.spawn_command(cmd)?;
+
+        // Set up channels for communication
+        let (input_tx, input_rx) = mpsc::channel::<PtyInput>();
+        let (output_tx, output_rx) = mpsc::channel::<Vec<u8>>();
+
+        // Get reader and writer from master
+        let mut reader = pair.master.try_clone_reader()?;
+        let master = pair.master;
+
+        // Spawn reader thread
+        thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if output_tx.send(buf[..n].to_vec()).is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("PTY read error: {}", e);
+                        break;
+                    }
+                }
+            }
+            log::debug!("PTY reader thread exiting");
+        });
+
+        // Spawn writer thread
+        thread::spawn(move || {
+            let mut writer = master.take_writer().expect("Failed to get PTY writer");
+
+            for msg in input_rx {
+                match msg {
+                    PtyInput::Data(data) => {
+                        if let Err(e) = writer.write_all(&data) {
+                            log::error!("PTY write error: {}", e);
+                            break;
+                        }
+                        let _ = writer.flush();
+                    }
+                    PtyInput::Resize { cols, rows } => {
+                        let size = PtySize {
+                            rows,
+                            cols,
+                            pixel_width: 0,
+                            pixel_height: 0,
+                        };
+                        if let Err(e) = master.resize(size) {
+                            log::error!("PTY resize error: {}", e);
+                        }
+                    }
+                    PtyInput::Shutdown => {
+                        log::debug!("PTY writer thread shutting down");
+                        break;
+                    }
+                }
+            }
+            log::debug!("PTY writer thread exiting");
+        });
+
+        Ok(Self {
+            input_tx,
+            output_rx,
+            child,
+        })
     }
 
     /// Spawn a new shell in a PTY with a specific working directory
@@ -232,6 +400,31 @@ fn get_process_cwd(pid: u32) -> Option<PathBuf> {
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn get_process_cwd(_pid: u32) -> Option<PathBuf> {
     None
+}
+
+/// Shell types for semantic prompt integration
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShellType {
+    Bash,
+    Zsh,
+    Fish,
+    Unknown,
+}
+
+/// Detect shell type from shell path or name
+fn detect_shell_type(shell: &str) -> ShellType {
+    // Get just the binary name from the path
+    let name = std::path::Path::new(shell)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(shell);
+
+    match name {
+        "bash" | "bash.exe" => ShellType::Bash,
+        "zsh" | "zsh.exe" => ShellType::Zsh,
+        "fish" | "fish.exe" => ShellType::Fish,
+        _ => ShellType::Unknown,
+    }
 }
 
 #[cfg(test)]

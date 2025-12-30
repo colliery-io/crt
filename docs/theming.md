@@ -371,6 +371,110 @@ Applies authentic CRT monitor effects as a post-processing pass.
 }
 ```
 
+## Reactive Theming (Event Selectors)
+
+Event selectors trigger temporary theme overrides when terminal events occur. This enables reactive animations like changing sprites on command failure or flashing on bell.
+
+### Available Events
+
+| Selector | Trigger |
+|----------|---------|
+| `:terminal::on-bell` | Bell character (\a) |
+| `:terminal::on-command-success` | Command exited with code 0 |
+| `:terminal::on-command-fail` | Command exited with non-zero code |
+| `:terminal::on-focus` | Window gained focus |
+| `:terminal::on-blur` | Window lost focus |
+
+### Duration Property
+
+```css
+:terminal::on-bell {
+    --duration: 800ms;  /* Override lasts 800ms then reverts */
+    /* ... overrides ... */
+}
+
+:terminal::on-blur {
+    --duration: 0ms;  /* 0 = persist until cleared by another event */
+}
+```
+
+### Example: Reactive Sprite Theme
+
+**Note**: All `--sprite-path` values are resolved relative to the theme directory. Use the same path structure for both base sprites and event overrides.
+
+```css
+:terminal::backdrop {
+    --sprite-enabled: true;
+    --sprite-path: "sprites/idle.png";
+    --sprite-frame-width: 64;
+    --sprite-frame-height: 64;
+    --sprite-columns: 4;
+}
+
+/* Happy sprite on success - same path structure as base sprite */
+:terminal::on-command-success {
+    --duration: 1500ms;
+    --sprite-path: "sprites/happy.png";
+    text-shadow: 0 0 20px rgba(0, 255, 0, 0.6);
+}
+
+/* Sad sprite on failure */
+:terminal::on-command-fail {
+    --duration: 3000ms;
+    --sprite-path: "sprites/sad.png";
+    text-shadow: 0 0 20px rgba(255, 0, 0, 0.6);
+}
+```
+
+### Shell Integration
+
+Command success/failure detection requires OSC 133 semantic prompts. Add to your shell:
+
+**Bash** (`~/.bashrc`):
+```bash
+PS1='\[\e]133;A\a\]'$PS1
+PROMPT_COMMAND='echo -ne "\033]133;D;$?\007"'
+```
+
+**Zsh** (`~/.zshrc`):
+```zsh
+precmd() { print -Pn "\e]133;A\a" }
+preexec() { print -Pn "\e]133;C\a" }
+```
+
+Enable in `config.toml`:
+```toml
+[shell]
+semantic_prompts = true
+```
+
+See the built-in `nyancat-responsive` and `robco-reactive` themes for complete examples.
+
+## Built-in Themes
+
+CRT includes 18 built-in themes:
+
+| Theme | Description |
+|-------|-------------|
+| `dracula` | Dark purple Dracula color scheme |
+| `synthwave` | 80s neon synthwave with grid |
+| `tron` | Cyan TRON-inspired with grid |
+| `vaporwave` | Pink/cyan vaporwave aesthetic |
+| `matrix` | Green Matrix digital rain |
+| `robco` | Fallout Pip-Boy green terminal |
+| `robco-reactive` | Pip-Boy with reactive Vault Boy sprites |
+| `alien` | Sci-fi alien hive interface |
+| `wh40k` | Warhammer 40K Imperial cogitator |
+| `solarized` | Solarized color scheme |
+| `minimal` | Clean minimal styling |
+| `starfield` | Space starfield effect |
+| `rain` | Rainy day effect |
+| `particles` | Floating particles |
+| `shape` | Animated geometric shapes |
+| `stress` | Performance stress test |
+| `nyancat` | Nyan Cat sprite animation |
+| `nyancat-responsive` | Nyan Cat with reactive events |
+
 ## Tips
 
 1. **Hot Reload**: Save your theme file and changes apply immediately
@@ -378,3 +482,4 @@ Applies authentic CRT monitor effects as a post-processing pass.
 3. **Paths**: Image paths are relative to the theme file location
 4. **Performance**: Multiple backdrop effects can impact performance
 5. **CRT Effect**: Works best with amber/green monochrome color schemes
+6. **Reactive Themes**: Require shell integration for command success/fail

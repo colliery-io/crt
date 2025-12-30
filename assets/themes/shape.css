@@ -88,3 +88,34 @@
     --hover-background: #ff5555;
     --hover-color: #f8f8f2;
 }
+
+/* UI Focus & Accessibility */
+:terminal::ui-focus {
+    --ring-color: #ff79c6;
+    --glow-color: rgba(255, 121, 198, 0.4);
+    --ring-thickness: 2px;
+    --glow-size: 4px;
+}
+
+:terminal::ui-hover {
+    background: rgba(255, 121, 198, 0.3);
+}
+
+:terminal::context-menu {
+    background: rgba(15, 5, 32, 0.98);
+    border-color: rgba(58, 42, 78, 0.8);
+    color: #f8f8f2;
+}
+
+:terminal::search-bar {
+    background: rgba(15, 5, 32, 0.95);
+    color: #f8f8f2;
+    --placeholder-color: rgba(98, 114, 164, 0.8);
+    --no-match-color: #ff5555;
+}
+
+:terminal::rename-bar {
+    background: rgba(15, 5, 32, 0.98);
+    color: #ff79c6;
+    --label-color: #6272a4;
+}

@@ -1,0 +1,30 @@
+# Clippy configuration for CRT terminal
+# See https://rust-lang.github.io/rust-clippy/master/index.html
+
+# Allow slightly longer functions for render passes and event handlers
+cognitive-complexity-threshold = 30
+
+# Allow more arguments for GPU initialization functions
+too-many-arguments-threshold = 10
+
+# Allow more lines in functions (render code tends to be verbose)
+too-many-lines-threshold = 150
+
+# Type complexity threshold for GPU types
+type-complexity-threshold = 300
+
+# Allow doc-markdown false positives for technical terms
+doc-valid-idents = [
+    "WebGPU",
+    "wgpu",
+    "vello",
+    "macOS",
+    "WGSL",
+    "OSC",
+    "PTY",
+    "VTE",
+    "CRT",
+    "Nerd Font",
+    "JetBrains",
+    "Fira",
+]

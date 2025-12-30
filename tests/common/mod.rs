@@ -5,6 +5,8 @@
 //! - Terminal test helpers
 //! - Assertion utilities
 
+#![allow(dead_code)]
+
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -395,14 +397,12 @@ impl MemoryStats {
 
     /// Format RSS in human-readable form
     pub fn rss_human(&self) -> String {
-        self.rss
-            .map_or("N/A".to_string(), |bytes| format_bytes(bytes))
+        self.rss.map_or("N/A".to_string(), format_bytes)
     }
 
     /// Format virtual size in human-readable form
     pub fn vsize_human(&self) -> String {
-        self.vsize
-            .map_or("N/A".to_string(), |bytes| format_bytes(bytes))
+        self.vsize.map_or("N/A".to_string(), format_bytes)
     }
 }
 

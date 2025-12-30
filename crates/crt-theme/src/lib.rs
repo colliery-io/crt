@@ -2,10 +2,47 @@
 //!
 //! Provides theme structures that map to shader uniforms for terminal rendering.
 
+#![allow(clippy::collapsible_if)]
+#![allow(clippy::should_implement_trait)]
+
 pub mod parser;
 
 use bytemuck::{Pod, Zeroable};
 use std::path::Path;
+
+/// Trait for patch structs that can be merged (CSS cascade: later values win)
+pub trait Mergeable {
+    /// Merge another instance into self. Fields with Some() values in other override self.
+    fn merge(&mut self, other: Self);
+}
+
+/// Helper function to merge optional patch structs
+pub fn merge_optional_patch<T: Mergeable + Default>(target: &mut Option<T>, source: Option<T>) {
+    if let Some(source_patch) = source {
+        target.get_or_insert_with(T::default).merge(source_patch);
+    }
+}
+
+/// Macro to implement Mergeable for structs with all-Option fields
+macro_rules! impl_mergeable {
+    ($type:ty, $($field:ident),+ $(,)?) => {
+        impl Mergeable for $type {
+            fn merge(&mut self, other: Self) {
+                $(
+                    if other.$field.is_some() {
+                        self.$field = other.$field;
+                    }
+                )+
+            }
+        }
+    };
+}
+
+/// Trait for converting patch/theme structs to effect config key-value pairs
+pub trait ToEffectConfig {
+    /// Convert to a vector of (key, value) pairs for effect configuration
+    fn to_config_pairs(&self) -> Vec<(&'static str, String)>;
+}
 
 /// RGBA color with f32 components (0.0 - 1.0)
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -47,6 +84,17 @@ impl Color {
 
     pub const fn to_array(self) -> [f32; 4] {
         [self.r, self.g, self.b, self.a]
+    }
+
+    /// Convert to CSS rgba() string format for effect configs
+    pub fn to_rgba_string(&self) -> String {
+        format!(
+            "rgba({}, {}, {}, {})",
+            (self.r * 255.0) as u8,
+            (self.g * 255.0) as u8,
+            (self.b * 255.0) as u8,
+            self.a
+        )
     }
 }
 
@@ -1076,6 +1124,842 @@ pub struct TabTheme {
     pub close: TabCloseStyle,
 }
 
+/// Focus indicator styling (accessibility)
+#[derive(Debug, Clone, Copy)]
+pub struct FocusStyle {
+    /// Focus ring color (bright, high contrast)
+    pub ring_color: Color,
+    /// Focus glow color (softer, more transparent)
+    pub glow_color: Color,
+    /// Focus ring thickness in pixels (before scale factor)
+    pub ring_thickness: f32,
+    /// Focus glow size in pixels (before scale factor)
+    pub glow_size: f32,
+}
+
+impl Default for FocusStyle {
+    fn default() -> Self {
+        Self {
+            ring_color: Color::rgba(0.4, 0.6, 0.9, 1.0), // Bright blue
+            glow_color: Color::rgba(0.3, 0.5, 0.8, 0.4), // Soft blue glow
+            ring_thickness: 2.0,
+            glow_size: 4.0,
+        }
+    }
+}
+
+/// Hover state styling
+#[derive(Debug, Clone, Copy)]
+pub struct HoverStyle {
+    /// Background color for hover state
+    pub background: Color,
+}
+
+impl Default for HoverStyle {
+    fn default() -> Self {
+        Self {
+            background: Color::rgba(0.25, 0.35, 0.5, 0.8),
+        }
+    }
+}
+
+/// Context menu styling
+#[derive(Debug, Clone, Copy)]
+pub struct ContextMenuStyle {
+    /// Menu background color
+    pub background: Color,
+    /// Menu border color
+    pub border_color: Color,
+    /// Menu item text color
+    pub text_color: Color,
+    /// Keyboard shortcut text color
+    pub shortcut_color: Color,
+}
+
+impl Default for ContextMenuStyle {
+    fn default() -> Self {
+        Self {
+            background: Color::rgba(0.12, 0.12, 0.15, 0.98),
+            border_color: Color::rgba(0.3, 0.3, 0.35, 0.8),
+            text_color: Color::rgba(0.9, 0.9, 0.9, 1.0),
+            shortcut_color: Color::rgba(0.5, 0.5, 0.55, 1.0),
+        }
+    }
+}
+
+/// Search bar styling
+#[derive(Debug, Clone, Copy)]
+pub struct SearchBarStyle {
+    /// Search bar background color
+    pub background: Color,
+    /// Placeholder text color
+    pub placeholder_color: Color,
+    /// Input text color
+    pub text_color: Color,
+    /// No matches text color
+    pub no_match_color: Color,
+}
+
+impl Default for SearchBarStyle {
+    fn default() -> Self {
+        Self {
+            background: Color::rgba(0.15, 0.15, 0.2, 0.95),
+            placeholder_color: Color::rgba(0.5, 0.5, 0.5, 0.8),
+            text_color: Color::rgba(0.9, 0.9, 0.9, 1.0),
+            no_match_color: Color::rgba(0.9, 0.5, 0.5, 1.0),
+        }
+    }
+}
+
+/// Window rename bar styling
+#[derive(Debug, Clone, Copy)]
+pub struct RenameBarStyle {
+    /// Rename bar background color
+    pub background: Color,
+    /// Label text color ("Rename:")
+    pub label_color: Color,
+    /// Input text color
+    pub text_color: Color,
+}
+
+impl Default for RenameBarStyle {
+    fn default() -> Self {
+        Self {
+            background: Color::rgba(0.15, 0.15, 0.2, 0.98),
+            label_color: Color::rgba(0.6, 0.6, 0.7, 1.0),
+            text_color: Color::rgba(0.95, 0.95, 0.95, 1.0),
+        }
+    }
+}
+
+/// Complete UI styling (overlays, menus, focus indicators)
+#[derive(Debug, Clone, Copy, Default)]
+pub struct UiStyle {
+    pub focus: FocusStyle,
+    pub hover: HoverStyle,
+    pub context_menu: ContextMenuStyle,
+    pub search_bar: SearchBarStyle,
+    pub rename_bar: RenameBarStyle,
+}
+
+// ============================================================================
+// Event-Driven Theming Types
+// ============================================================================
+
+/// Terminal events that can trigger theme overrides
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TerminalEvent {
+    /// Bell character (BEL, 0x07)
+    Bell,
+    /// Command completed successfully (OSC 133;D;0)
+    CommandSuccess,
+    /// Command failed with exit code (OSC 133;D;N where N != 0)
+    CommandFail(i32),
+    /// Window gained focus
+    FocusGained,
+    /// Window lost focus
+    FocusLost,
+}
+
+/// Position for overlay sprites during events
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum SpriteOverlayPosition {
+    /// Center of viewport
+    #[default]
+    Center,
+    /// At text cursor position
+    Cursor,
+    /// At current backdrop sprite position (tracks if moving)
+    Sprite,
+    /// Random position in viewport
+    Random,
+}
+
+impl SpriteOverlayPosition {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "center" => Some(Self::Center),
+            "cursor" => Some(Self::Cursor),
+            "sprite" => Some(Self::Sprite),
+            "random" => Some(Self::Random),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Center => "center",
+            Self::Cursor => "cursor",
+            Self::Sprite => "sprite",
+            Self::Random => "random",
+        }
+    }
+}
+
+/// Patches to existing backdrop sprite - keeps position and motion
+/// All fields are Optional; None means "keep current value"
+#[derive(Debug, Clone, Default)]
+pub struct SpritePatch {
+    /// Override sprite sheet path
+    pub path: Option<String>,
+    /// Override number of columns in sprite sheet
+    pub columns: Option<u32>,
+    /// Override number of rows in sprite sheet
+    pub rows: Option<u32>,
+    /// Override animation frames per second
+    pub fps: Option<f32>,
+    /// Override opacity (0.0-1.0)
+    pub opacity: Option<f32>,
+    /// Override display scale
+    pub scale: Option<f32>,
+    /// Override motion speed multiplier
+    pub motion_speed: Option<f32>,
+}
+
+/// Patches to starfield effect - all fields Optional; None means "keep current value"
+#[derive(Debug, Clone, Default)]
+pub struct StarfieldPatch {
+    /// Override star color
+    pub color: Option<Color>,
+    /// Override star density
+    pub density: Option<u32>,
+    /// Override number of parallax layers
+    pub layers: Option<u32>,
+    /// Override movement speed
+    pub speed: Option<f32>,
+    /// Override movement direction
+    pub direction: Option<StarDirection>,
+    /// Override glow radius
+    pub glow_radius: Option<f32>,
+    /// Override glow intensity
+    pub glow_intensity: Option<f32>,
+    /// Override twinkle enabled
+    pub twinkle: Option<bool>,
+    /// Override twinkle speed
+    pub twinkle_speed: Option<f32>,
+    /// Override minimum star size
+    pub min_size: Option<f32>,
+    /// Override maximum star size
+    pub max_size: Option<f32>,
+}
+
+/// Patches to particle effect - all fields Optional; None means "keep current value"
+#[derive(Debug, Clone, Default)]
+pub struct ParticlePatch {
+    /// Override particle color
+    pub color: Option<Color>,
+    /// Override particle count
+    pub count: Option<u32>,
+    /// Override particle shape
+    pub shape: Option<ParticleShape>,
+    /// Override particle behavior
+    pub behavior: Option<ParticleBehavior>,
+    /// Override particle size
+    pub size: Option<f32>,
+    /// Override movement speed
+    pub speed: Option<f32>,
+    /// Override glow radius
+    pub glow_radius: Option<f32>,
+    /// Override glow intensity
+    pub glow_intensity: Option<f32>,
+}
+
+/// Patches to grid effect - all fields Optional; None means "keep current value"
+#[derive(Debug, Clone, Default)]
+pub struct GridPatch {
+    /// Override grid color
+    pub color: Option<Color>,
+    /// Override grid spacing
+    pub spacing: Option<f32>,
+    /// Override line width
+    pub line_width: Option<f32>,
+    /// Override perspective amount
+    pub perspective: Option<f32>,
+    /// Override horizon position
+    pub horizon: Option<f32>,
+    /// Override animation speed
+    pub animation_speed: Option<f32>,
+    /// Override glow radius
+    pub glow_radius: Option<f32>,
+    /// Override glow intensity
+    pub glow_intensity: Option<f32>,
+    /// Override vanishing spread
+    pub vanishing_spread: Option<f32>,
+    /// Override curved mode
+    pub curved: Option<bool>,
+}
+
+/// Patches to rain effect - all fields Optional; None means "keep current value"
+#[derive(Debug, Clone, Default)]
+pub struct RainPatch {
+    /// Override rain color
+    pub color: Option<Color>,
+    /// Override raindrop density
+    pub density: Option<u32>,
+    /// Override fall speed
+    pub speed: Option<f32>,
+    /// Override fall angle
+    pub angle: Option<f32>,
+    /// Override raindrop length
+    pub length: Option<f32>,
+    /// Override raindrop thickness
+    pub thickness: Option<f32>,
+    /// Override glow radius
+    pub glow_radius: Option<f32>,
+    /// Override glow intensity
+    pub glow_intensity: Option<f32>,
+}
+
+/// Patches to matrix effect - all fields Optional; None means "keep current value"
+#[derive(Debug, Clone, Default)]
+pub struct MatrixPatch {
+    /// Override matrix color
+    pub color: Option<Color>,
+    /// Override column density
+    pub density: Option<f32>,
+    /// Override fall speed
+    pub speed: Option<f32>,
+    /// Override font size
+    pub font_size: Option<f32>,
+    /// Override character set
+    pub charset: Option<String>,
+}
+
+/// Patches to shape effect - all fields Optional; None means "keep current value"
+#[derive(Debug, Clone, Default)]
+pub struct ShapePatch {
+    /// Override shape type
+    pub shape_type: Option<ShapeType>,
+    /// Override size
+    pub size: Option<f32>,
+    /// Override fill color
+    pub fill: Option<Color>,
+    /// Override stroke color
+    pub stroke: Option<Color>,
+    /// Override stroke width
+    pub stroke_width: Option<f32>,
+    /// Override glow radius
+    pub glow_radius: Option<f32>,
+    /// Override glow color
+    pub glow_color: Option<Color>,
+    /// Override rotation mode
+    pub rotation: Option<ShapeRotation>,
+    /// Override rotation speed
+    pub rotation_speed: Option<f32>,
+    /// Override motion mode
+    pub motion: Option<ShapeMotion>,
+    /// Override motion speed
+    pub motion_speed: Option<f32>,
+    /// Override polygon sides
+    pub polygon_sides: Option<u32>,
+}
+
+// Implement Mergeable for all patch structs
+impl_mergeable!(
+    SpritePatch,
+    path,
+    columns,
+    rows,
+    fps,
+    opacity,
+    scale,
+    motion_speed
+);
+impl_mergeable!(
+    StarfieldPatch,
+    color,
+    density,
+    layers,
+    speed,
+    direction,
+    glow_radius,
+    glow_intensity,
+    twinkle,
+    twinkle_speed,
+    min_size,
+    max_size
+);
+impl_mergeable!(
+    ParticlePatch,
+    color,
+    count,
+    shape,
+    behavior,
+    size,
+    speed,
+    glow_radius,
+    glow_intensity
+);
+impl_mergeable!(
+    GridPatch,
+    color,
+    spacing,
+    line_width,
+    perspective,
+    horizon,
+    animation_speed,
+    glow_radius,
+    glow_intensity,
+    vanishing_spread,
+    curved
+);
+impl_mergeable!(
+    RainPatch,
+    color,
+    density,
+    speed,
+    angle,
+    length,
+    thickness,
+    glow_radius,
+    glow_intensity
+);
+impl_mergeable!(MatrixPatch, color, density, speed, font_size, charset);
+impl_mergeable!(
+    ShapePatch,
+    shape_type,
+    size,
+    fill,
+    stroke,
+    stroke_width,
+    glow_radius,
+    glow_color,
+    rotation,
+    rotation_speed,
+    motion,
+    motion_speed,
+    polygon_sides
+);
+
+// Implement ToEffectConfig for all patch structs
+impl ToEffectConfig for StarfieldPatch {
+    fn to_config_pairs(&self) -> Vec<(&'static str, String)> {
+        let mut pairs = Vec::new();
+        if let Some(ref color) = self.color {
+            pairs.push(("color", color.to_rgba_string()));
+        }
+        if let Some(density) = self.density {
+            pairs.push(("density", density.to_string()));
+        }
+        if let Some(layers) = self.layers {
+            pairs.push(("layers", layers.to_string()));
+        }
+        if let Some(speed) = self.speed {
+            pairs.push(("speed", speed.to_string()));
+        }
+        if let Some(direction) = self.direction {
+            pairs.push(("direction", direction.as_str().to_string()));
+        }
+        if let Some(glow_radius) = self.glow_radius {
+            pairs.push(("glow-radius", glow_radius.to_string()));
+        }
+        if let Some(glow_intensity) = self.glow_intensity {
+            pairs.push(("glow-intensity", glow_intensity.to_string()));
+        }
+        if let Some(twinkle) = self.twinkle {
+            pairs.push((
+                "twinkle",
+                if twinkle { "true" } else { "false" }.to_string(),
+            ));
+        }
+        if let Some(twinkle_speed) = self.twinkle_speed {
+            pairs.push(("twinkle-speed", twinkle_speed.to_string()));
+        }
+        if let Some(min_size) = self.min_size {
+            pairs.push(("min-size", min_size.to_string()));
+        }
+        if let Some(max_size) = self.max_size {
+            pairs.push(("max-size", max_size.to_string()));
+        }
+        pairs
+    }
+}
+
+impl ToEffectConfig for ParticlePatch {
+    fn to_config_pairs(&self) -> Vec<(&'static str, String)> {
+        let mut pairs = Vec::new();
+        if let Some(ref color) = self.color {
+            pairs.push(("color", color.to_rgba_string()));
+        }
+        if let Some(count) = self.count {
+            pairs.push(("count", count.to_string()));
+        }
+        if let Some(shape) = self.shape {
+            pairs.push(("shape", shape.as_str().to_string()));
+        }
+        if let Some(behavior) = self.behavior {
+            pairs.push(("behavior", behavior.as_str().to_string()));
+        }
+        if let Some(size) = self.size {
+            pairs.push(("size", size.to_string()));
+        }
+        if let Some(speed) = self.speed {
+            pairs.push(("speed", speed.to_string()));
+        }
+        if let Some(glow_radius) = self.glow_radius {
+            pairs.push(("glow-radius", glow_radius.to_string()));
+        }
+        if let Some(glow_intensity) = self.glow_intensity {
+            pairs.push(("glow-intensity", glow_intensity.to_string()));
+        }
+        pairs
+    }
+}
+
+impl ToEffectConfig for GridPatch {
+    fn to_config_pairs(&self) -> Vec<(&'static str, String)> {
+        let mut pairs = Vec::new();
+        if let Some(ref color) = self.color {
+            pairs.push(("color", color.to_rgba_string()));
+        }
+        if let Some(spacing) = self.spacing {
+            pairs.push(("spacing", spacing.to_string()));
+        }
+        if let Some(line_width) = self.line_width {
+            pairs.push(("line-width", line_width.to_string()));
+        }
+        if let Some(perspective) = self.perspective {
+            pairs.push(("perspective", perspective.to_string()));
+        }
+        if let Some(horizon) = self.horizon {
+            pairs.push(("horizon", horizon.to_string()));
+        }
+        if let Some(animation_speed) = self.animation_speed {
+            pairs.push(("animation-speed", animation_speed.to_string()));
+        }
+        if let Some(glow_radius) = self.glow_radius {
+            pairs.push(("glow-radius", glow_radius.to_string()));
+        }
+        if let Some(glow_intensity) = self.glow_intensity {
+            pairs.push(("glow-intensity", glow_intensity.to_string()));
+        }
+        if let Some(vanishing_spread) = self.vanishing_spread {
+            pairs.push(("vanishing-spread", vanishing_spread.to_string()));
+        }
+        if let Some(curved) = self.curved {
+            pairs.push(("curved", if curved { "true" } else { "false" }.to_string()));
+        }
+        pairs
+    }
+}
+
+impl ToEffectConfig for RainPatch {
+    fn to_config_pairs(&self) -> Vec<(&'static str, String)> {
+        let mut pairs = Vec::new();
+        if let Some(ref color) = self.color {
+            pairs.push(("color", color.to_rgba_string()));
+        }
+        if let Some(density) = self.density {
+            pairs.push(("density", density.to_string()));
+        }
+        if let Some(speed) = self.speed {
+            pairs.push(("speed", speed.to_string()));
+        }
+        if let Some(angle) = self.angle {
+            pairs.push(("angle", angle.to_string()));
+        }
+        if let Some(length) = self.length {
+            pairs.push(("length", length.to_string()));
+        }
+        if let Some(thickness) = self.thickness {
+            pairs.push(("thickness", thickness.to_string()));
+        }
+        if let Some(glow_radius) = self.glow_radius {
+            pairs.push(("glow-radius", glow_radius.to_string()));
+        }
+        if let Some(glow_intensity) = self.glow_intensity {
+            pairs.push(("glow-intensity", glow_intensity.to_string()));
+        }
+        pairs
+    }
+}
+
+impl ToEffectConfig for MatrixPatch {
+    fn to_config_pairs(&self) -> Vec<(&'static str, String)> {
+        let mut pairs = Vec::new();
+        if let Some(ref color) = self.color {
+            pairs.push(("color", color.to_rgba_string()));
+        }
+        if let Some(density) = self.density {
+            pairs.push(("density", density.to_string()));
+        }
+        if let Some(speed) = self.speed {
+            pairs.push(("speed", speed.to_string()));
+        }
+        if let Some(font_size) = self.font_size {
+            pairs.push(("font-size", font_size.to_string()));
+        }
+        if let Some(ref charset) = self.charset {
+            pairs.push(("charset", charset.clone()));
+        }
+        pairs
+    }
+}
+
+impl ToEffectConfig for ShapePatch {
+    fn to_config_pairs(&self) -> Vec<(&'static str, String)> {
+        let mut pairs = Vec::new();
+        if let Some(shape_type) = self.shape_type {
+            pairs.push(("type", shape_type.as_str().to_string()));
+        }
+        if let Some(size) = self.size {
+            pairs.push(("size", size.to_string()));
+        }
+        if let Some(ref fill) = self.fill {
+            pairs.push(("fill", fill.to_rgba_string()));
+        }
+        if let Some(ref stroke) = self.stroke {
+            pairs.push(("stroke", stroke.to_rgba_string()));
+        }
+        if let Some(stroke_width) = self.stroke_width {
+            pairs.push(("stroke-width", stroke_width.to_string()));
+        }
+        if let Some(glow_radius) = self.glow_radius {
+            pairs.push(("glow-radius", glow_radius.to_string()));
+        }
+        if let Some(ref glow_color) = self.glow_color {
+            pairs.push(("glow-color", glow_color.to_rgba_string()));
+        }
+        if let Some(rotation) = self.rotation {
+            pairs.push(("rotation", rotation.as_str().to_string()));
+        }
+        if let Some(rotation_speed) = self.rotation_speed {
+            pairs.push(("rotation-speed", rotation_speed.to_string()));
+        }
+        if let Some(motion) = self.motion {
+            pairs.push(("motion", motion.as_str().to_string()));
+        }
+        if let Some(motion_speed) = self.motion_speed {
+            pairs.push(("motion-speed", motion_speed.to_string()));
+        }
+        if let Some(polygon_sides) = self.polygon_sides {
+            pairs.push(("polygon-sides", polygon_sides.to_string()));
+        }
+        pairs
+    }
+}
+
+// Implement ToEffectConfig for base effect structs (for restore operations)
+impl ToEffectConfig for StarfieldEffect {
+    fn to_config_pairs(&self) -> Vec<(&'static str, String)> {
+        vec![
+            ("color", self.color.to_rgba_string()),
+            ("density", self.density.to_string()),
+            ("layers", self.layers.to_string()),
+            ("speed", self.speed.to_string()),
+            ("direction", self.direction.as_str().to_string()),
+            ("glow-radius", self.glow_radius.to_string()),
+            ("glow-intensity", self.glow_intensity.to_string()),
+            (
+                "twinkle",
+                if self.twinkle { "true" } else { "false" }.to_string(),
+            ),
+            ("twinkle-speed", self.twinkle_speed.to_string()),
+            ("min-size", self.min_size.to_string()),
+            ("max-size", self.max_size.to_string()),
+        ]
+    }
+}
+
+impl ToEffectConfig for ParticleEffect {
+    fn to_config_pairs(&self) -> Vec<(&'static str, String)> {
+        vec![
+            ("color", self.color.to_rgba_string()),
+            ("count", self.count.to_string()),
+            ("shape", self.shape.as_str().to_string()),
+            ("behavior", self.behavior.as_str().to_string()),
+            ("size", self.size.to_string()),
+            ("speed", self.speed.to_string()),
+            ("glow-radius", self.glow_radius.to_string()),
+            ("glow-intensity", self.glow_intensity.to_string()),
+        ]
+    }
+}
+
+impl ToEffectConfig for GridEffect {
+    fn to_config_pairs(&self) -> Vec<(&'static str, String)> {
+        vec![
+            ("color", self.color.to_rgba_string()),
+            ("spacing", self.spacing.to_string()),
+            ("line-width", self.line_width.to_string()),
+            ("perspective", self.perspective.to_string()),
+            ("horizon", self.horizon.to_string()),
+            ("animation-speed", self.animation_speed.to_string()),
+            ("glow-radius", self.glow_radius.to_string()),
+            ("glow-intensity", self.glow_intensity.to_string()),
+            ("vanishing-spread", self.vanishing_spread.to_string()),
+            (
+                "curved",
+                if self.curved { "true" } else { "false" }.to_string(),
+            ),
+        ]
+    }
+}
+
+impl ToEffectConfig for RainEffect {
+    fn to_config_pairs(&self) -> Vec<(&'static str, String)> {
+        vec![
+            ("color", self.color.to_rgba_string()),
+            ("density", self.density.to_string()),
+            ("speed", self.speed.to_string()),
+            ("angle", self.angle.to_string()),
+            ("length", self.length.to_string()),
+            ("thickness", self.thickness.to_string()),
+            ("glow-radius", self.glow_radius.to_string()),
+            ("glow-intensity", self.glow_intensity.to_string()),
+        ]
+    }
+}
+
+impl ToEffectConfig for MatrixEffect {
+    fn to_config_pairs(&self) -> Vec<(&'static str, String)> {
+        vec![
+            ("color", self.color.to_rgba_string()),
+            ("density", self.density.to_string()),
+            ("speed", self.speed.to_string()),
+            ("font-size", self.font_size.to_string()),
+            ("charset", self.charset.clone()),
+        ]
+    }
+}
+
+impl ToEffectConfig for ShapeEffect {
+    fn to_config_pairs(&self) -> Vec<(&'static str, String)> {
+        let mut pairs = vec![
+            ("type", self.shape_type.as_str().to_string()),
+            ("size", self.size.to_string()),
+        ];
+        if let Some(ref fill) = self.fill {
+            pairs.push(("fill", fill.to_rgba_string()));
+        } else {
+            pairs.push(("fill", "none".to_string()));
+        }
+        if let Some(ref stroke) = self.stroke {
+            pairs.push(("stroke", stroke.to_rgba_string()));
+        } else {
+            pairs.push(("stroke", "none".to_string()));
+        }
+        pairs.push(("stroke-width", self.stroke_width.to_string()));
+        pairs.push(("glow-radius", self.glow_radius.to_string()));
+        if let Some(ref glow_color) = self.glow_color {
+            pairs.push(("glow-color", glow_color.to_rgba_string()));
+        }
+        pairs.push(("rotation", self.rotation.as_str().to_string()));
+        pairs.push(("rotation-speed", self.rotation_speed.to_string()));
+        pairs.push(("motion", self.motion.as_str().to_string()));
+        pairs.push(("motion-speed", self.motion_speed.to_string()));
+        pairs.push(("polygon-sides", self.polygon_sides.to_string()));
+        pairs
+    }
+}
+
+/// One-shot overlay sprite at specified position
+#[derive(Debug, Clone)]
+pub struct SpriteOverlay {
+    /// Path to sprite sheet (required)
+    pub path: String,
+    /// Position for the overlay
+    pub position: SpriteOverlayPosition,
+    /// Number of columns in sprite sheet
+    pub columns: u32,
+    /// Number of rows in sprite sheet
+    pub rows: u32,
+    /// Animation frames per second
+    pub fps: f32,
+    /// Display scale
+    pub scale: f32,
+    /// Opacity (0.0-1.0)
+    pub opacity: f32,
+}
+
+impl Default for SpriteOverlay {
+    fn default() -> Self {
+        Self {
+            path: String::new(),
+            position: SpriteOverlayPosition::Center,
+            columns: 1,
+            rows: 1,
+            fps: 12.0,
+            scale: 1.0,
+            opacity: 1.0,
+        }
+    }
+}
+
+/// Event override - temporary theme modifications triggered by terminal events
+/// Duration of 0 means "persist until cleared by another event" (used for ::on-blur)
+#[derive(Debug, Clone, Default)]
+pub struct EventOverride {
+    /// Duration in milliseconds. 0 = persist until cleared by another event
+    pub duration_ms: u32,
+
+    /// Patches to existing backdrop sprite (keeps position/motion)
+    pub sprite_patch: Option<SpritePatch>,
+
+    /// Separate overlay sprite (one-shot effect at specified position)
+    pub sprite_overlay: Option<SpriteOverlay>,
+
+    // Theme property overrides (all optional - None means "keep base theme value")
+    /// Override foreground color
+    pub foreground: Option<Color>,
+    /// Override background gradient
+    pub background: Option<LinearGradient>,
+    /// Override cursor color
+    pub cursor_color: Option<Color>,
+    /// Override text shadow/glow
+    pub text_shadow: Option<TextShadow>,
+    /// Patches to starfield effect
+    pub starfield_patch: Option<StarfieldPatch>,
+    /// Patches to particle effect
+    pub particle_patch: Option<ParticlePatch>,
+    /// Patches to grid effect
+    pub grid_patch: Option<GridPatch>,
+    /// Patches to rain effect
+    pub rain_patch: Option<RainPatch>,
+    /// Patches to matrix effect
+    pub matrix_patch: Option<MatrixPatch>,
+    /// Patches to shape effect
+    pub shape_patch: Option<ShapePatch>,
+}
+
+impl EventOverride {
+    /// Merge another EventOverride into this one (CSS cascade: later values win)
+    pub fn merge(&mut self, other: EventOverride) {
+        // Duration: non-zero wins
+        if other.duration_ms > 0 {
+            self.duration_ms = other.duration_ms;
+        }
+
+        // Merge patch structs using trait
+        merge_optional_patch(&mut self.sprite_patch, other.sprite_patch);
+        merge_optional_patch(&mut self.starfield_patch, other.starfield_patch);
+        merge_optional_patch(&mut self.particle_patch, other.particle_patch);
+        merge_optional_patch(&mut self.grid_patch, other.grid_patch);
+        merge_optional_patch(&mut self.rain_patch, other.rain_patch);
+        merge_optional_patch(&mut self.matrix_patch, other.matrix_patch);
+        merge_optional_patch(&mut self.shape_patch, other.shape_patch);
+
+        // Overlay replaces entirely if specified
+        if other.sprite_overlay.is_some() {
+            self.sprite_overlay = other.sprite_overlay;
+        }
+
+        // Theme properties: later wins
+        if other.foreground.is_some() {
+            self.foreground = other.foreground;
+        }
+        if other.background.is_some() {
+            self.background = other.background;
+        }
+        if other.cursor_color.is_some() {
+            self.cursor_color = other.cursor_color;
+        }
+        if other.text_shadow.is_some() {
+            self.text_shadow = other.text_shadow;
+        }
+    }
+}
+
 /// Complete terminal theme
 #[derive(Debug, Clone)]
 pub struct Theme {
@@ -1107,6 +1991,16 @@ pub struct Theme {
 
     // Tab styling
     pub tabs: TabTheme,
+
+    // UI styling (focus, hover, menus)
+    pub ui: UiStyle,
+
+    // Event-driven theme overrides
+    pub on_bell: Option<EventOverride>,
+    pub on_command_fail: Option<EventOverride>,
+    pub on_command_success: Option<EventOverride>,
+    pub on_focus: Option<EventOverride>,
+    pub on_blur: Option<EventOverride>,
 }
 
 impl Default for Theme {
@@ -1150,6 +2044,12 @@ impl Theme {
             sprite: None,
             crt: None,
             tabs: TabTheme::default(),
+            ui: UiStyle::default(),
+            on_bell: None,
+            on_command_fail: None,
+            on_command_success: None,
+            on_focus: None,
+            on_blur: None,
         }
     }
 
@@ -1178,6 +2078,12 @@ impl Theme {
             sprite: None,
             crt: None,
             tabs: TabTheme::default(),
+            ui: UiStyle::default(),
+            on_bell: None,
+            on_command_fail: None,
+            on_command_success: None,
+            on_focus: None,
+            on_blur: None,
         }
     }
 
@@ -1345,5 +2251,209 @@ mod tests {
         let c255 = AnsiPalette::calculate_extended(255);
         assert!((c255.r - c255.g).abs() < 0.01); // Should be gray
         assert!(c255.r > 0.8); // Light gray
+    }
+
+    // ============================================
+    // EventOverride Merge Tests
+    // ============================================
+
+    #[test]
+    fn test_event_override_merge_duration() {
+        let mut base = EventOverride {
+            duration_ms: 500,
+            ..Default::default()
+        };
+        let other = EventOverride {
+            duration_ms: 1000,
+            ..Default::default()
+        };
+        base.merge(other);
+        assert_eq!(base.duration_ms, 1000);
+    }
+
+    #[test]
+    fn test_event_override_merge_zero_duration_preserves_base() {
+        let mut base = EventOverride {
+            duration_ms: 500,
+            ..Default::default()
+        };
+        let other = EventOverride {
+            duration_ms: 0,
+            ..Default::default()
+        };
+        base.merge(other);
+        assert_eq!(base.duration_ms, 500);
+    }
+
+    #[test]
+    fn test_event_override_merge_starfield_patch() {
+        let mut base = EventOverride {
+            starfield_patch: Some(StarfieldPatch {
+                speed: Some(0.5),
+                color: Some(Color::rgb(1.0, 0.0, 0.0)),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let other = EventOverride {
+            starfield_patch: Some(StarfieldPatch {
+                speed: Some(1.0),
+                glow_radius: Some(5.0),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        base.merge(other);
+
+        let patch = base.starfield_patch.unwrap();
+        // Speed should be overwritten
+        assert_eq!(patch.speed, Some(1.0));
+        // Color should be preserved from base
+        assert!(patch.color.is_some());
+        // Glow radius should be added from other
+        assert_eq!(patch.glow_radius, Some(5.0));
+    }
+
+    #[test]
+    fn test_event_override_merge_particle_patch() {
+        let mut base = EventOverride {
+            particle_patch: Some(ParticlePatch {
+                count: Some(50),
+                speed: Some(0.5),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let other = EventOverride {
+            particle_patch: Some(ParticlePatch {
+                count: Some(100),
+                shape: Some(ParticleShape::Sparkle),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        base.merge(other);
+
+        let patch = base.particle_patch.unwrap();
+        assert_eq!(patch.count, Some(100)); // Overwritten
+        assert_eq!(patch.speed, Some(0.5)); // Preserved
+        assert_eq!(patch.shape, Some(ParticleShape::Sparkle)); // Added
+    }
+
+    #[test]
+    fn test_event_override_merge_grid_patch() {
+        let mut base = EventOverride::default();
+        let other = EventOverride {
+            grid_patch: Some(GridPatch {
+                color: Some(Color::rgb(1.0, 0.0, 0.0)),
+                animation_speed: Some(2.0),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        base.merge(other);
+
+        assert!(base.grid_patch.is_some());
+        let patch = base.grid_patch.unwrap();
+        assert!(patch.color.is_some());
+        assert_eq!(patch.animation_speed, Some(2.0));
+    }
+
+    #[test]
+    fn test_event_override_merge_multiple_patches() {
+        let mut base = EventOverride {
+            duration_ms: 500,
+            cursor_color: Some(Color::rgb(1.0, 1.0, 1.0)),
+            starfield_patch: Some(StarfieldPatch {
+                speed: Some(0.3),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let other = EventOverride {
+            duration_ms: 1000,
+            particle_patch: Some(ParticlePatch {
+                count: Some(50),
+                ..Default::default()
+            }),
+            grid_patch: Some(GridPatch {
+                animation_speed: Some(2.0),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        base.merge(other);
+
+        assert_eq!(base.duration_ms, 1000);
+        assert!(base.cursor_color.is_some()); // Preserved
+        assert!(base.starfield_patch.is_some()); // Preserved
+        assert!(base.particle_patch.is_some()); // Added
+        assert!(base.grid_patch.is_some()); // Added
+    }
+
+    #[test]
+    fn test_sprite_patch_default() {
+        let patch = SpritePatch::default();
+        assert!(patch.path.is_none());
+        assert!(patch.fps.is_none());
+        assert!(patch.opacity.is_none());
+        assert!(patch.scale.is_none());
+        assert!(patch.motion_speed.is_none());
+    }
+
+    #[test]
+    fn test_starfield_patch_default() {
+        let patch = StarfieldPatch::default();
+        assert!(patch.color.is_none());
+        assert!(patch.speed.is_none());
+        assert!(patch.density.is_none());
+        assert!(patch.glow_radius.is_none());
+    }
+
+    #[test]
+    fn test_particle_patch_default() {
+        let patch = ParticlePatch::default();
+        assert!(patch.color.is_none());
+        assert!(patch.count.is_none());
+        assert!(patch.shape.is_none());
+        assert!(patch.behavior.is_none());
+    }
+
+    #[test]
+    fn test_grid_patch_default() {
+        let patch = GridPatch::default();
+        assert!(patch.color.is_none());
+        assert!(patch.spacing.is_none());
+        assert!(patch.animation_speed.is_none());
+        assert!(patch.curved.is_none());
+    }
+
+    #[test]
+    fn test_rain_patch_default() {
+        let patch = RainPatch::default();
+        assert!(patch.color.is_none());
+        assert!(patch.density.is_none());
+        assert!(patch.speed.is_none());
+        assert!(patch.angle.is_none());
+    }
+
+    #[test]
+    fn test_matrix_patch_default() {
+        let patch = MatrixPatch::default();
+        assert!(patch.color.is_none());
+        assert!(patch.density.is_none());
+        assert!(patch.speed.is_none());
+        assert!(patch.charset.is_none());
+    }
+
+    #[test]
+    fn test_shape_patch_default() {
+        let patch = ShapePatch::default();
+        assert!(patch.shape_type.is_none());
+        assert!(patch.size.is_none());
+        assert!(patch.fill.is_none());
+        assert!(patch.stroke.is_none());
+        assert!(patch.rotation.is_none());
+        assert!(patch.motion.is_none());
     }
 }

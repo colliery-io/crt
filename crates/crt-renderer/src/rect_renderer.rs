@@ -28,11 +28,14 @@ struct Globals {
 }
 
 /// Rect renderer using instanced quads
+///
+/// The renderer does not own its instance buffer - this allows for buffer pooling
+/// across window lifecycles. Use `create_instance_buffer()` to create a buffer,
+/// or provide one from a buffer pool.
 pub struct RectRenderer {
     pipeline: wgpu::RenderPipeline,
     globals_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
-    instance_buffer: wgpu::Buffer,
     instance_capacity: usize,
     /// Pending instances to render
     instances: Vec<RectInstance>,
@@ -41,7 +44,25 @@ pub struct RectRenderer {
 }
 
 impl RectRenderer {
-    const MAX_INSTANCES: usize = 16 * 1024;
+    /// Maximum number of rect instances per render call
+    pub const MAX_INSTANCES: usize = 16 * 1024;
+
+    /// Size of instance buffer in bytes (16K instances * 32 bytes = 512 KB)
+    pub const INSTANCE_BUFFER_SIZE: u64 =
+        (Self::MAX_INSTANCES * std::mem::size_of::<RectInstance>()) as u64;
+
+    /// Create an instance buffer for use with this renderer
+    ///
+    /// Call this to create a buffer if not using a buffer pool.
+    /// The buffer can be reused across renderer instances.
+    pub fn create_instance_buffer(device: &wgpu::Device) -> wgpu::Buffer {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Rect Instance Buffer"),
+            size: Self::INSTANCE_BUFFER_SIZE,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
+    }
 
     pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -144,20 +165,11 @@ impl RectRenderer {
             }],
         });
 
-        let instance_capacity = Self::MAX_INSTANCES;
-        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Rect Instance Buffer"),
-            size: (instance_capacity * std::mem::size_of::<RectInstance>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
         Self {
             pipeline,
             globals_buffer,
             bind_group,
-            instance_buffer,
-            instance_capacity,
+            instance_capacity: Self::MAX_INSTANCES,
             instances: Vec::with_capacity(Self::MAX_INSTANCES),
             cached_screen_size: (0.0, 0.0),
         }
@@ -200,21 +212,25 @@ impl RectRenderer {
     }
 
     /// Upload instances and render
-    pub fn render<'a>(&'a self, queue: &wgpu::Queue, render_pass: &mut wgpu::RenderPass<'a>) {
+    ///
+    /// The instance buffer must be created with `create_instance_buffer()` or
+    /// be at least `INSTANCE_BUFFER_SIZE` bytes with VERTEX | COPY_DST usage.
+    pub fn render<'a>(
+        &'a self,
+        queue: &wgpu::Queue,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        instance_buffer: &'a wgpu::Buffer,
+    ) {
         if self.instances.is_empty() {
             return;
         }
 
         // Upload instance data
-        queue.write_buffer(
-            &self.instance_buffer,
-            0,
-            bytemuck::cast_slice(&self.instances),
-        );
+        queue.write_buffer(instance_buffer, 0, bytemuck::cast_slice(&self.instances));
 
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
+        render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
 
         // Draw 4 vertices per instance (triangle strip quad)
         render_pass.draw(0..4, 0..self.instances.len() as u32);
@@ -223,8 +239,8 @@ impl RectRenderer {
 
 impl Drop for RectRenderer {
     fn drop(&mut self) {
-        // Destroy buffers to release GPU memory immediately
+        // Destroy globals buffer to release GPU memory immediately
+        // Note: instance buffer is external (for pooling) and not owned by renderer
         self.globals_buffer.destroy();
-        self.instance_buffer.destroy();
     }
 }

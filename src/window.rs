@@ -2,15 +2,15 @@
 //!
 //! Per-window state including shells, GPU resources, and interaction state.
 
-use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hasher;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crt_core::{AnsiColor, CellFlags, SemanticZone, ShellTerminal, Size};
+use crt_core::{AnsiColor, CellFlags, SemanticZone, ShellEvent, ShellTerminal, Size, SpawnOptions};
 use crt_renderer::GlyphStyle;
-use crt_theme::AnsiPalette;
+use crt_theme::{AnsiPalette, EventOverride};
 use winit::window::Window;
 
 use crate::gpu::{SharedGpuState, WindowGpuState};
@@ -108,35 +108,52 @@ pub struct WindowState {
     pub scale_factor: f32,
     // User font scale multiplier (1.0 = default)
     pub font_scale: f32,
-    // Rendering state
-    pub dirty: bool,
-    pub frame_count: u32,
-    /// Window is occluded (hidden, minimized, or fully covered)
-    pub occluded: bool,
-    /// Window has keyboard focus (effects animate only when focused)
-    pub focused: bool,
-    // Interaction state
-    pub cursor_position: (f32, f32),
-    pub last_click_time: Option<Instant>,
-    pub last_click_tab: Option<TabId>,
-    // Terminal selection state
-    pub mouse_pressed: bool,
-    pub selection_click_count: u8,
-    pub last_selection_click_time: Option<Instant>,
-    pub last_selection_click_pos: Option<(usize, usize)>,
-    // Cached render state (decorations persist across frames)
-    pub cached_render: CachedRenderState,
-    // Detected URLs in current viewport
-    pub detected_urls: Vec<crate::input::DetectedUrl>,
-    // Index of currently hovered URL (for hover underline effect)
-    pub hovered_url_index: Option<usize>,
-    // Search state
-    pub search: SearchState,
-    // Bell state for visual flash
-    pub bell: BellState,
-    // Context menu state
-    pub context_menu: ContextMenu,
+    // Rendering state (dirty, frame_count, occluded, focused, cached)
+    pub render: RenderState,
+    // Interaction state (cursor, mouse, selection, URLs)
+    pub interaction: InteractionState,
+    // UI overlay state (search, bell, context menu)
+    pub ui: UiState,
+    // Custom window title (None = use default "CRT Terminal")
+    pub custom_title: Option<String>,
+}
 
+/// Window rename input state
+#[derive(Debug, Clone, Default)]
+pub struct WindowRenameState {
+    /// Whether rename mode is active
+    pub active: bool,
+    /// Current input text
+    pub input: String,
+}
+
+impl WindowRenameState {
+    /// Start renaming with current window title
+    pub fn start(&mut self, current_title: &str) {
+        self.active = true;
+        self.input = current_title.to_string();
+    }
+
+    /// Cancel renaming
+    pub fn cancel(&mut self) {
+        self.active = false;
+        self.input.clear();
+    }
+
+    /// Confirm and return the new title
+    pub fn confirm(&mut self) -> Option<String> {
+        if self.active {
+            self.active = false;
+            let title = std::mem::take(&mut self.input);
+            if title.is_empty() {
+                None // Empty means reset to default
+            } else {
+                Some(title)
+            }
+        } else {
+            None
+        }
+    }
 }
 
 /// Bell visual flash state
@@ -208,6 +225,265 @@ impl BellState {
     }
 }
 
+/// Event type that triggered an override
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverrideEventType {
+    Bell,
+    CommandSuccess,
+    CommandFail,
+    FocusGained,
+    FocusLost,
+}
+
+impl From<ShellEvent> for OverrideEventType {
+    fn from(event: ShellEvent) -> Self {
+        match event {
+            ShellEvent::Bell => OverrideEventType::Bell,
+            ShellEvent::CommandSuccess => OverrideEventType::CommandSuccess,
+            ShellEvent::CommandFail(_) => OverrideEventType::CommandFail,
+        }
+    }
+}
+
+/// Active theme override state (triggered by events like bell, command success/fail)
+///
+/// Stores a temporary theme override with timing for duration-based effects.
+#[derive(Debug, Clone)]
+pub struct ActiveOverride {
+    /// The event type that triggered this override
+    pub event_type: OverrideEventType,
+    /// The override properties from the theme
+    pub properties: EventOverride,
+    /// When the override was triggered
+    pub triggered_at: Instant,
+}
+
+#[allow(dead_code)]
+impl ActiveOverride {
+    /// Create a new active override from an event
+    pub fn new(event_type: OverrideEventType, properties: EventOverride) -> Self {
+        Self {
+            event_type,
+            properties,
+            triggered_at: Instant::now(),
+        }
+    }
+
+    /// Get the duration of this override in milliseconds
+    pub fn duration_ms(&self) -> u32 {
+        self.properties.duration_ms
+    }
+
+    /// Check if the override is still active
+    pub fn is_active(&self) -> bool {
+        let duration = Duration::from_millis(self.properties.duration_ms as u64);
+        self.triggered_at.elapsed() < duration
+    }
+
+    /// Get the remaining intensity (1.0 at start, fades to 0.0 at end)
+    ///
+    /// Uses a smooth ease-out curve for natural fading.
+    pub fn intensity(&self) -> f32 {
+        let duration = Duration::from_millis(self.properties.duration_ms as u64);
+        let elapsed = self.triggered_at.elapsed();
+
+        if elapsed >= duration {
+            return 0.0;
+        }
+
+        let progress = elapsed.as_secs_f32() / duration.as_secs_f32();
+        // Ease-out: 1 - progress^2 gives smooth fade
+        1.0 - (progress * progress)
+    }
+
+    /// Get the elapsed time since the override was triggered
+    pub fn elapsed(&self) -> Duration {
+        self.triggered_at.elapsed()
+    }
+}
+
+/// Manager for active theme overrides
+///
+/// Handles multiple simultaneous overrides with priority and duration tracking.
+#[derive(Debug, Clone, Default)]
+pub struct OverrideState {
+    /// Currently active overrides (may have multiple from different events)
+    pub active: Vec<ActiveOverride>,
+    /// Track which effects are currently patched (e.g., "starfield", "particles", "sprite")
+    patched_effects: HashSet<String>,
+}
+
+#[allow(dead_code)]
+impl OverrideState {
+    /// Add a new override, potentially replacing an existing one of the same type
+    pub fn add(&mut self, event_type: OverrideEventType, properties: EventOverride) {
+        // Remove any existing override of the same type
+        self.active.retain(|o| o.event_type != event_type);
+
+        // Add the new override
+        self.active
+            .push(ActiveOverride::new(event_type, properties));
+    }
+
+    /// Check if any override is active
+    pub fn has_active(&self) -> bool {
+        self.active.iter().any(|o| o.is_active())
+    }
+
+    /// Update state, removing expired overrides
+    ///
+    /// Returns true if any overrides were removed (caller may want to reset theme)
+    pub fn update(&mut self) -> bool {
+        let before_len = self.active.len();
+        self.active.retain(|o| o.is_active());
+        let removed = self.active.len() < before_len;
+
+        if removed {
+            log::debug!("Theme overrides expired, {} remaining", self.active.len());
+        }
+
+        removed
+    }
+
+    /// Check if an effect is currently patched
+    pub fn is_patched(&self, effect: &str) -> bool {
+        self.patched_effects.contains(effect)
+    }
+
+    /// Mark an effect as patched
+    pub fn set_patched(&mut self, effect: &str) {
+        self.patched_effects.insert(effect.to_string());
+    }
+
+    /// Clear the patched state for an effect
+    pub fn clear_patched(&mut self, effect: &str) {
+        self.patched_effects.remove(effect);
+    }
+
+    /// Get the most recent active override for sprite patching
+    pub fn get_sprite_patch(&self) -> Option<&crt_theme::SpritePatch> {
+        self.active
+            .iter()
+            .filter(|o| o.is_active())
+            .filter_map(|o| o.properties.sprite_patch.as_ref())
+            .next_back()
+    }
+
+    /// Get the most recent active override for sprite overlay
+    pub fn get_sprite_overlay(&self) -> Option<&crt_theme::SpriteOverlay> {
+        self.active
+            .iter()
+            .filter(|o| o.is_active())
+            .filter_map(|o| o.properties.sprite_overlay.as_ref())
+            .next_back()
+    }
+
+    /// Get blended foreground color from active overrides
+    pub fn get_foreground(&self) -> Option<crt_theme::Color> {
+        // Return the foreground from the most recent active override that has one
+        self.active
+            .iter()
+            .filter(|o| o.is_active())
+            .filter_map(|o| o.properties.foreground)
+            .next_back()
+    }
+
+    /// Get blended background from active overrides
+    pub fn get_background(&self) -> Option<crt_theme::LinearGradient> {
+        self.active
+            .iter()
+            .filter(|o| o.is_active())
+            .filter_map(|o| o.properties.background)
+            .next_back()
+    }
+
+    /// Get cursor color from active overrides
+    pub fn get_cursor_color(&self) -> Option<crt_theme::Color> {
+        self.active
+            .iter()
+            .filter(|o| o.is_active())
+            .filter_map(|o| o.properties.cursor_color)
+            .next_back()
+    }
+
+    /// Get text shadow from active overrides
+    pub fn get_text_shadow(&self) -> Option<crt_theme::TextShadow> {
+        self.active
+            .iter()
+            .filter(|o| o.is_active())
+            .filter_map(|o| o.properties.text_shadow)
+            .next_back()
+    }
+
+    /// Get the most recent active starfield patch
+    pub fn get_starfield_patch(&self) -> Option<&crt_theme::StarfieldPatch> {
+        self.active
+            .iter()
+            .filter(|o| o.is_active())
+            .filter_map(|o| o.properties.starfield_patch.as_ref())
+            .next_back()
+    }
+
+    /// Get the most recent active particle patch
+    pub fn get_particle_patch(&self) -> Option<&crt_theme::ParticlePatch> {
+        self.active
+            .iter()
+            .filter(|o| o.is_active())
+            .filter_map(|o| o.properties.particle_patch.as_ref())
+            .next_back()
+    }
+
+    /// Get the most recent active grid patch
+    pub fn get_grid_patch(&self) -> Option<&crt_theme::GridPatch> {
+        self.active
+            .iter()
+            .filter(|o| o.is_active())
+            .filter_map(|o| o.properties.grid_patch.as_ref())
+            .next_back()
+    }
+
+    /// Get the most recent active rain patch
+    pub fn get_rain_patch(&self) -> Option<&crt_theme::RainPatch> {
+        self.active
+            .iter()
+            .filter(|o| o.is_active())
+            .filter_map(|o| o.properties.rain_patch.as_ref())
+            .next_back()
+    }
+
+    /// Get the most recent active matrix patch
+    pub fn get_matrix_patch(&self) -> Option<&crt_theme::MatrixPatch> {
+        self.active
+            .iter()
+            .filter(|o| o.is_active())
+            .filter_map(|o| o.properties.matrix_patch.as_ref())
+            .next_back()
+    }
+
+    /// Get the most recent active shape patch
+    pub fn get_shape_patch(&self) -> Option<&crt_theme::ShapePatch> {
+        self.active
+            .iter()
+            .filter(|o| o.is_active())
+            .filter_map(|o| o.properties.shape_patch.as_ref())
+            .next_back()
+    }
+
+    /// Clear all overrides
+    pub fn clear(&mut self) {
+        self.active.clear();
+    }
+
+    /// Clear overrides of a specific event type
+    pub fn clear_event(&mut self, event_type: OverrideEventType) {
+        let before_len = self.active.len();
+        self.active.retain(|o| o.event_type != event_type);
+        if self.active.len() < before_len {
+            log::debug!("Cleared {:?} override", event_type);
+        }
+    }
+}
+
 /// Search match position in terminal
 #[derive(Debug, Clone, Copy)]
 pub struct SearchMatch {
@@ -276,6 +552,223 @@ impl ContextMenuItem {
     }
 }
 
+/// Interaction state (cursor, mouse, selection, URLs)
+///
+/// Groups state related to user interaction and mouse handling.
+#[derive(Default)]
+pub struct InteractionState {
+    /// Current cursor position in pixels
+    pub cursor_position: (f32, f32),
+    /// Last click time for double-click detection
+    pub last_click_time: Option<Instant>,
+    /// Last clicked tab for double-click detection
+    pub last_click_tab: Option<TabId>,
+    /// Whether mouse button is currently pressed
+    pub mouse_pressed: bool,
+    /// Click count for multi-click selection (1=single, 2=word, 3=line)
+    pub selection_click_count: u8,
+    /// Last selection click time for multi-click detection
+    pub last_selection_click_time: Option<Instant>,
+    /// Last selection click position (col, line) for multi-click detection
+    pub last_selection_click_pos: Option<(usize, usize)>,
+    /// Detected URLs in current viewport
+    pub detected_urls: Vec<crate::input::DetectedUrl>,
+    /// Index of currently hovered URL (for hover underline effect)
+    pub hovered_url_index: Option<usize>,
+}
+
+/// Render state (dirty tracking, frame count, visibility)
+///
+/// Groups state related to rendering decisions and caching.
+#[derive(Default)]
+pub struct RenderState {
+    /// Whether the window needs redrawing
+    pub dirty: bool,
+    /// Frame counter for periodic operations
+    pub frame_count: u32,
+    /// Window is occluded (hidden, minimized, or fully covered)
+    pub occluded: bool,
+    /// Window has keyboard focus (effects animate only when focused)
+    pub focused: bool,
+    /// Cached decorations from last content update
+    pub cached: CachedRenderState,
+}
+
+/// UI overlay state (search, bell, context menu, zoom indicator, toast)
+///
+/// Groups transient UI state that overlays the terminal content.
+#[derive(Default)]
+pub struct UiState {
+    /// Search state for find-in-terminal functionality
+    pub search: SearchState,
+    /// Bell state for visual flash
+    pub bell: BellState,
+    /// Context menu state
+    pub context_menu: ContextMenu,
+    /// Zoom indicator state (shows current zoom level temporarily)
+    pub zoom_indicator: ZoomIndicator,
+    /// Copy indicator state (shows brief "Copied!" feedback)
+    pub copy_indicator: CopyIndicator,
+    /// Toast notification for errors and status messages
+    pub toast: Toast,
+    /// Window rename input state
+    pub window_rename: WindowRenameState,
+    /// Active theme overrides from events (bell, command success/fail, focus)
+    pub overrides: OverrideState,
+}
+
+/// Toast notification for errors and status messages
+#[derive(Debug, Clone, Default)]
+pub struct Toast {
+    /// Message to display
+    pub message: String,
+    /// When the toast was triggered
+    pub triggered_at: Option<Instant>,
+    /// Display duration
+    pub display_duration: Duration,
+    /// Toast type (affects styling)
+    pub toast_type: ToastType,
+}
+
+/// Type of toast notification
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum ToastType {
+    #[default]
+    Info,
+    #[allow(dead_code)]
+    Warning,
+    Error,
+}
+
+impl Toast {
+    /// Show a toast message
+    pub fn show(&mut self, message: impl Into<String>, toast_type: ToastType) {
+        self.message = message.into();
+        self.triggered_at = Some(Instant::now());
+        self.display_duration = Duration::from_secs(5);
+        self.toast_type = toast_type;
+    }
+
+    /// Check if the toast should be visible
+    pub fn is_visible(&self) -> bool {
+        self.triggered_at
+            .map(|t| t.elapsed() < self.display_duration)
+            .unwrap_or(false)
+    }
+
+    /// Get the opacity (fades out over last 1s)
+    pub fn opacity(&self) -> f32 {
+        let Some(triggered_at) = self.triggered_at else {
+            return 0.0;
+        };
+        let elapsed = triggered_at.elapsed();
+        if elapsed >= self.display_duration {
+            return 0.0;
+        }
+        let fade_start = self.display_duration.saturating_sub(Duration::from_secs(1));
+        if elapsed < fade_start {
+            1.0
+        } else {
+            let fade_elapsed = elapsed - fade_start;
+            let fade_duration = Duration::from_secs(1);
+            1.0 - (fade_elapsed.as_secs_f32() / fade_duration.as_secs_f32())
+        }
+    }
+}
+
+/// Zoom indicator state for font size feedback
+#[derive(Debug, Clone, Default)]
+pub struct ZoomIndicator {
+    /// When the zoom was last changed (None if not showing)
+    pub triggered_at: Option<Instant>,
+    /// Current zoom scale (1.0 = 100%)
+    pub scale: f32,
+    /// Display duration before fade out
+    pub display_duration: Duration,
+}
+
+impl ZoomIndicator {
+    /// Trigger the zoom indicator with the current scale
+    pub fn trigger(&mut self, scale: f32) {
+        self.triggered_at = Some(Instant::now());
+        self.scale = scale;
+        self.display_duration = Duration::from_millis(1500);
+    }
+
+    /// Check if the indicator should be visible
+    pub fn is_visible(&self) -> bool {
+        self.triggered_at
+            .map(|t| t.elapsed() < self.display_duration)
+            .unwrap_or(false)
+    }
+
+    /// Get the opacity (fades out over last 500ms)
+    pub fn opacity(&self) -> f32 {
+        let Some(triggered_at) = self.triggered_at else {
+            return 0.0;
+        };
+        let elapsed = triggered_at.elapsed();
+        if elapsed >= self.display_duration {
+            return 0.0;
+        }
+        let fade_start = self
+            .display_duration
+            .saturating_sub(Duration::from_millis(500));
+        if elapsed < fade_start {
+            1.0
+        } else {
+            let fade_elapsed = elapsed - fade_start;
+            let fade_duration = Duration::from_millis(500);
+            1.0 - (fade_elapsed.as_secs_f32() / fade_duration.as_secs_f32())
+        }
+    }
+}
+
+/// Copy indicator state (shows brief "Copied!" feedback)
+#[derive(Debug, Clone, Default)]
+pub struct CopyIndicator {
+    /// When copy was triggered (None if not showing)
+    pub triggered_at: Option<Instant>,
+    /// Display duration before fade out
+    pub display_duration: Duration,
+}
+
+impl CopyIndicator {
+    /// Trigger the copy indicator
+    pub fn trigger(&mut self) {
+        self.triggered_at = Some(Instant::now());
+        self.display_duration = Duration::from_millis(800);
+    }
+
+    /// Check if the indicator should be visible
+    pub fn is_visible(&self) -> bool {
+        self.triggered_at
+            .map(|t| t.elapsed() < self.display_duration)
+            .unwrap_or(false)
+    }
+
+    /// Get the opacity (fades out over last 300ms)
+    pub fn opacity(&self) -> f32 {
+        let Some(triggered_at) = self.triggered_at else {
+            return 0.0;
+        };
+        let elapsed = triggered_at.elapsed();
+        if elapsed >= self.display_duration {
+            return 0.0;
+        }
+        let fade_start = self
+            .display_duration
+            .saturating_sub(Duration::from_millis(300));
+        if elapsed < fade_start {
+            1.0
+        } else {
+            let fade_elapsed = elapsed - fade_start;
+            let fade_duration = Duration::from_millis(300);
+            1.0 - (fade_elapsed.as_secs_f32() / fade_duration.as_secs_f32())
+        }
+    }
+}
+
 /// Context menu state
 #[derive(Debug, Clone, Default)]
 pub struct ContextMenu {
@@ -284,8 +777,10 @@ pub struct ContextMenu {
     /// Position of the menu (top-left corner)
     pub x: f32,
     pub y: f32,
-    /// Currently hovered item index
+    /// Currently hovered item index (from mouse)
     pub hovered_item: Option<usize>,
+    /// Currently focused item index (from keyboard navigation)
+    pub focused_item: Option<usize>,
     /// Menu dimensions (computed during render)
     pub width: f32,
     pub height: f32,
@@ -299,12 +794,54 @@ impl ContextMenu {
         self.x = x;
         self.y = y;
         self.hovered_item = None;
+        self.focused_item = Some(0); // Focus first item for keyboard accessibility
     }
 
     /// Hide the context menu
     pub fn hide(&mut self) {
         self.visible = false;
         self.hovered_item = None;
+        self.focused_item = None;
+    }
+
+    /// Move focus to the next item (wraps around)
+    pub fn focus_next(&mut self) {
+        if !self.visible {
+            return;
+        }
+        let item_count = ContextMenuItem::all().len();
+        self.focused_item = Some(match self.focused_item {
+            Some(idx) => (idx + 1) % item_count,
+            None => 0,
+        });
+        // Clear hover when using keyboard
+        self.hovered_item = None;
+    }
+
+    /// Move focus to the previous item (wraps around)
+    pub fn focus_prev(&mut self) {
+        if !self.visible {
+            return;
+        }
+        let item_count = ContextMenuItem::all().len();
+        self.focused_item = Some(match self.focused_item {
+            Some(idx) => {
+                if idx == 0 {
+                    item_count - 1
+                } else {
+                    idx - 1
+                }
+            }
+            None => item_count - 1,
+        });
+        // Clear hover when using keyboard
+        self.hovered_item = None;
+    }
+
+    /// Get the currently focused item
+    pub fn get_focused_item(&self) -> Option<ContextMenuItem> {
+        self.focused_item
+            .and_then(|idx| ContextMenuItem::all().get(idx).copied())
     }
 
     /// Check if a point is inside the menu
@@ -427,9 +964,7 @@ impl WindowState {
         let active_tab_id = self.gpu.tab_bar.active_tab_id();
         let shell = active_tab_id.and_then(|id| self.shells.get(&id));
 
-        if shell.is_none() {
-            return None;
-        }
+        shell?;
         let shell = shell.unwrap();
         let terminal = shell.terminal();
 
@@ -492,21 +1027,22 @@ impl WindowState {
         // This avoids a second terminal.renderable_content() call
         // Reuse cached collections to avoid per-update allocations
         // Clear line_texts values (keeping keys to reuse String allocations)
-        for s in self.cached_render.line_texts.values_mut() {
+        for s in self.render.cached.line_texts.values_mut() {
             s.clear();
         }
-        self.cached_render.collected_cells.clear();
+        self.render.cached.collected_cells.clear();
 
         for cell in content.display_iter {
             let viewport_line = cell.point.line.0 + display_offset;
-            self.cached_render
+            self.render
+                .cached
                 .line_texts
                 .entry(viewport_line)
                 .or_default()
                 .push(cell.c);
 
             // Collect cell data for rendering pass
-            self.cached_render.collected_cells.push(CollectedCell {
+            self.render.cached.collected_cells.push(CollectedCell {
                 col: cell.point.column.0,
                 grid_line: cell.point.line.0,
                 c: cell.c,
@@ -517,10 +1053,10 @@ impl WindowState {
         }
 
         // Detect URLs before rendering so we can underline them with text color
-        self.detected_urls.clear();
-        for (viewport_line, line_text) in &self.cached_render.line_texts {
+        self.interaction.detected_urls.clear();
+        for (viewport_line, line_text) in &self.render.cached.line_texts {
             let urls = detect_urls_in_line(line_text, *viewport_line as usize);
-            self.detected_urls.extend(urls);
+            self.interaction.detected_urls.extend(urls);
         }
 
         // Check if shell supports OSC 133 semantic zones
@@ -542,7 +1078,7 @@ impl WindowState {
             .to_array();
 
         // Render cells from collected data (avoids second terminal.renderable_content() call)
-        for cell in &self.cached_render.collected_cells {
+        for cell in &self.render.cached.collected_cells {
             let col = cell.col;
             // Convert grid line to viewport line (grid lines can be negative for history)
             let grid_line = cell.grid_line;
@@ -571,9 +1107,8 @@ impl WindowState {
             // Get background color and add decoration if non-default
             // Skip spacer cells (for wide characters) and hidden cells - they shouldn't have
             // their own background decorations as this causes visual artifacts
-            let is_spacer = flags.intersects(
-                CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER,
-            );
+            let is_spacer =
+                flags.intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER);
             let is_hidden = flags.contains(CellFlags::HIDDEN);
 
             if !is_spacer && !is_hidden {
@@ -615,35 +1150,33 @@ impl WindowState {
             }
 
             // Check if this cell is part of the hovered URL and add underline
-            if let Some(hovered_idx) = self.hovered_url_index {
-                if let Some(hovered_url) = self.detected_urls.get(hovered_idx) {
-                    if hovered_url.line == viewport_line as usize
-                        && col >= hovered_url.start_col
-                        && col < hovered_url.end_col
-                    {
-                        decorations.push(TextDecoration {
-                            x,
-                            y,
-                            cell_width,
-                            cell_height: line_height,
-                            color: fg_color,
-                            kind: DecorationKind::Underline,
-                        });
-                    }
-                }
+            if let Some(hovered_idx) = self.interaction.hovered_url_index
+                && let Some(hovered_url) = self.interaction.detected_urls.get(hovered_idx)
+                && hovered_url.line == viewport_line as usize
+                && col >= hovered_url.start_col
+                && col < hovered_url.end_col
+            {
+                decorations.push(TextDecoration {
+                    x,
+                    y,
+                    cell_width,
+                    cell_height: line_height,
+                    color: fg_color,
+                    kind: DecorationKind::Underline,
+                });
             }
 
             // Check if this cell is part of a search match and add background highlight
-            if self.search.active && !self.search.matches.is_empty() {
+            if self.ui.search.active && !self.ui.search.matches.is_empty() {
                 let highlight_style = &self.gpu.effect_pipeline.theme().highlight;
-                for (match_idx, search_match) in self.search.matches.iter().enumerate() {
+                for (match_idx, search_match) in self.ui.search.matches.iter().enumerate() {
                     // Compare against grid_line (search matches use grid-relative coordinates)
                     if search_match.line == grid_line
                         && col >= search_match.start_col
                         && col < search_match.end_col
                     {
                         // Use brighter color for current match, theme color for others
-                        let highlight_color = if match_idx == self.search.current_match {
+                        let highlight_color = if match_idx == self.ui.search.current_match {
                             highlight_style.current_background.to_array()
                         } else {
                             highlight_style.background.to_array()
@@ -711,15 +1244,15 @@ impl WindowState {
         })
     }
 
-    /// Create a shell for a new tab with a specific working directory
-    pub fn create_shell_for_tab_with_cwd(&mut self, tab_id: u64, cwd: Option<std::path::PathBuf>) {
+    /// Create a shell for a new tab with spawn options
+    pub fn create_shell_for_tab(&mut self, tab_id: u64, options: SpawnOptions) {
         let size = Size::new(self.cols, self.rows);
-        let result = if let Some(dir) = cwd {
-            log::info!("Spawning shell in directory: {:?}", dir);
-            ShellTerminal::with_cwd(size, dir)
-        } else {
-            ShellTerminal::new(size)
-        };
+        log::info!(
+            "Spawning shell for tab {} with semantic_prompts={}",
+            tab_id,
+            options.semantic_prompts
+        );
+        let result = ShellTerminal::with_options(size, options);
 
         match result {
             Ok(shell) => {
@@ -751,7 +1284,7 @@ impl WindowState {
     pub fn force_active_tab_redraw(&mut self) {
         if let Some(tab_id) = self.gpu.tab_bar.active_tab_id() {
             self.content_hashes.insert(tab_id, 0);
-            self.dirty = true;
+            self.render.dirty = true;
         }
     }
 }

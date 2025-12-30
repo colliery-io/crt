@@ -127,6 +127,16 @@ impl TabBar {
         self.state.active_tab_id()
     }
 
+    /// Get active tab rectangle (for focus indicator rendering)
+    /// Returns (x, y, width, height) in physical pixels
+    pub fn active_tab_rect(&self) -> Option<(f32, f32, f32, f32)> {
+        let active_idx = self.state.active_tab_index();
+        self.layout
+            .tab_rects()
+            .get(active_idx)
+            .map(|r| (r.x, r.y, r.width, r.height))
+    }
+
     /// Get number of tabs
     pub fn tab_count(&self) -> usize {
         self.state.tab_count()

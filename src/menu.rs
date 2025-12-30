@@ -14,6 +14,7 @@ pub enum MenuAction {
     // Shell menu
     NewTab,
     NewWindow,
+    RenameWindow,
     CloseTab,
     CloseWindow,
     Quit,
@@ -49,6 +50,7 @@ pub enum MenuAction {
 pub struct MenuIds {
     pub new_tab: MenuId,
     pub new_window: MenuId,
+    pub rename_window: MenuId,
     pub close_tab: MenuId,
     pub close_window: MenuId,
     pub quit: MenuId,
@@ -106,6 +108,15 @@ pub fn build_menu_bar() -> (Menu, MenuIds, Submenu) {
         true,
         Some(Accelerator::new(Some(AccelMods::SUPER), Code::KeyN)),
     );
+    let rename_window = MenuItem::with_id(
+        "rename_window",
+        "Rename Window...",
+        true,
+        Some(Accelerator::new(
+            Some(AccelMods::SUPER | AccelMods::SHIFT),
+            Code::KeyR,
+        )),
+    );
     let close_tab = MenuItem::with_id(
         "close_tab",
         "Close Tab",
@@ -134,6 +145,8 @@ pub fn build_menu_bar() -> (Menu, MenuIds, Submenu) {
         &[
             &new_tab,
             &new_window,
+            &PredefinedMenuItem::separator(),
+            &rename_window,
             &PredefinedMenuItem::separator(),
             &close_tab,
             &close_window,
@@ -360,6 +373,7 @@ pub fn build_menu_bar() -> (Menu, MenuIds, Submenu) {
     let ids = MenuIds {
         new_tab: new_tab.id().clone(),
         new_window: new_window.id().clone(),
+        rename_window: rename_window.id().clone(),
         close_tab: close_tab.id().clone(),
         close_window: close_window.id().clone(),
         quit: quit.id().clone(),
@@ -396,9 +410,9 @@ pub fn build_menu_bar() -> (Menu, MenuIds, Submenu) {
 /// This enables automatic window listing in the menu and dock
 #[cfg(target_os = "macos")]
 pub fn set_windows_menu(window_submenu: &Submenu) {
+    use objc2::msg_send;
     use objc2::rc::Retained;
     use objc2::runtime::AnyObject;
-    use objc2::msg_send;
     use objc2_app_kit::NSApplication;
     use objc2_foundation::MainThreadMarker;
 
@@ -425,6 +439,9 @@ pub fn menu_id_to_action(id: &MenuId, ids: &MenuIds) -> Option<MenuAction> {
     }
     if *id == ids.new_window {
         return Some(MenuAction::NewWindow);
+    }
+    if *id == ids.rename_window {
+        return Some(MenuAction::RenameWindow);
     }
     if *id == ids.close_tab {
         return Some(MenuAction::CloseTab);

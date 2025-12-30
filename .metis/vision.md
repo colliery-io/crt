@@ -1,15 +1,15 @@
 ---
-id: crt
+id: crt-crt-rust-terminal
 level: vision
 title: "CRT - CRT Rust Terminal"
 short_code: "CRT-V-0001"
 created_at: 2025-11-25T00:28:56.171659+00:00
-updated_at: 2025-11-25T00:28:56.171659+00:00
+updated_at: 2025-12-29T14:25:43.681264+00:00
 archived: false
 
 tags:
   - "#vision"
-  - "#phase/draft"
+  - "#phase/published"
 
 
 exit_criteria_met: false

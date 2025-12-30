@@ -204,3 +204,34 @@
     --hover-background: #dc322f;
     --hover-color: #fdf6e3;
 }
+
+/* UI Focus & Accessibility */
+:terminal::ui-focus {
+    --ring-color: #268bd2;
+    --glow-color: rgba(38, 139, 210, 0.4);
+    --ring-thickness: 2px;
+    --glow-size: 4px;
+}
+
+:terminal::ui-hover {
+    background: rgba(7, 54, 66, 0.8);
+}
+
+:terminal::context-menu {
+    background: rgba(0, 43, 54, 0.98);
+    border-color: #073642;
+    color: #93a1a1;
+}
+
+:terminal::search-bar {
+    background: rgba(0, 43, 54, 0.95);
+    color: #93a1a1;
+    --placeholder-color: rgba(88, 110, 117, 0.8);
+    --no-match-color: #dc322f;
+}
+
+:terminal::rename-bar {
+    background: rgba(0, 43, 54, 0.98);
+    color: #93a1a1;
+    --label-color: #586e75;
+}

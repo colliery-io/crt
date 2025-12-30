@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
+use crt_theme::{SpriteOverlay, SpriteOverlayPosition, SpritePatch};
+use image::GenericImageView;
+
 /// Sprite position on screen
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpritePosition {
@@ -472,25 +475,19 @@ pub struct SpriteConfig {
     pub motion: SpriteMotion,
     /// Motion speed multiplier
     pub motion_speed: f32,
+    /// Base directory for resolving relative paths (from theme)
+    pub base_dir: PathBuf,
 }
 
-impl Default for SpriteConfig {
-    fn default() -> Self {
-        Self {
-            path: PathBuf::new(),
-            frame_width: 32,
-            frame_height: 32,
-            columns: 1,
-            rows: 1,
-            frame_count: None,
-            fps: 12.0,
-            scale: 1.0,
-            opacity: 1.0,
-            position: SpritePosition::BottomRight,
-            motion: SpriteMotion::Static,
-            motion_speed: 1.0,
-        }
-    }
+
+/// Stored original sprite values for restoration after patch expires
+#[derive(Debug, Clone)]
+pub struct OriginalSpriteValues {
+    pub fps: f32,
+    pub opacity: f32,
+    pub scale: f32,
+    pub motion_speed: f32,
+    pub path: String,
 }
 
 /// Complete sprite animation state (similar to BackgroundImageState)
@@ -518,6 +515,14 @@ pub struct SpriteAnimationState {
     /// Sprite dimensions (scaled)
     sprite_width: f32,
     sprite_height: f32,
+    /// Original values for restoration after patch expires
+    original_values: OriginalSpriteValues,
+    /// Whether a patch is currently applied
+    patch_applied: bool,
+    /// Base directory for resolving relative sprite paths (from theme)
+    base_dir: std::path::PathBuf,
+    /// Original sprite sheet for restoration after patch
+    original_sheet: Option<Arc<SpriteSheet>>,
 }
 
 impl SpriteAnimationState {
@@ -560,6 +565,18 @@ impl SpriteAnimationState {
             SpriteMotion::Wander => (50.0 * config.motion_speed, 30.0 * config.motion_speed),
         };
 
+        // Store original values for restoration after patches
+        let original_values = OriginalSpriteValues {
+            fps: config.fps,
+            opacity: config.opacity,
+            scale: config.scale,
+            motion_speed: config.motion_speed,
+            path: config.path.to_string_lossy().to_string(),
+        };
+
+        // Use base_dir from config (set from theme directory)
+        let base_dir = config.base_dir.clone();
+
         Ok(Self {
             renderer,
             config,
@@ -574,6 +591,10 @@ impl SpriteAnimationState {
             position_initialized: false,
             sprite_width,
             sprite_height,
+            original_values,
+            patch_applied: false,
+            base_dir,
+            original_sheet: None,
         })
     }
 
@@ -694,5 +715,429 @@ impl SpriteAnimationState {
     /// Check if loaded
     pub fn is_loaded(&self) -> bool {
         self.renderer.is_loaded()
+    }
+
+    /// Check if a patch is currently applied
+    pub fn has_patch(&self) -> bool {
+        self.patch_applied
+    }
+
+    /// Apply a sprite patch, overriding specific properties
+    ///
+    /// The patch preserves the current position and motion pattern while
+    /// allowing properties like fps, opacity, scale, and motion_speed to
+    /// be temporarily overridden.
+    ///
+    /// Note: Changing the sprite path requires device/queue and is not
+    /// yet supported - patches can only modify animation properties.
+    pub fn apply_patch(&mut self, patch: &SpritePatch) {
+        // Apply FPS override
+        if let Some(fps) = patch.fps {
+            self.config.fps = fps;
+            self.seconds_per_frame = if fps > 0.0 { 1.0 / fps } else { 1.0 / 12.0 };
+            log::debug!("Sprite patch: fps = {}", fps);
+        }
+
+        // Apply opacity override
+        if let Some(opacity) = patch.opacity {
+            self.config.opacity = opacity;
+            log::debug!("Sprite patch: opacity = {}", opacity);
+        }
+
+        // Apply scale override
+        if let Some(scale) = patch.scale {
+            // Update config and recalculate sprite dimensions
+            let old_scale = self.config.scale;
+            self.config.scale = scale;
+
+            // Recalculate sprite dimensions using frame dimensions from renderer
+            if let Some(sheet) = self.renderer.sheet() {
+                self.sprite_width = sheet.frame_width as f32 * scale;
+                self.sprite_height = sheet.frame_height as f32 * scale;
+            } else {
+                // Fallback: scale proportionally
+                self.sprite_width *= scale / old_scale;
+                self.sprite_height *= scale / old_scale;
+            }
+            log::debug!("Sprite patch: scale = {}", scale);
+        }
+
+        // Apply motion speed override
+        if let Some(motion_speed) = patch.motion_speed {
+            let old_speed = self.config.motion_speed;
+            self.config.motion_speed = motion_speed;
+
+            // Scale velocity proportionally
+            if old_speed > 0.0 {
+                let ratio = motion_speed / old_speed;
+                self.vel_x *= ratio;
+                self.vel_y *= ratio;
+            }
+            log::debug!("Sprite patch: motion_speed = {}", motion_speed);
+        }
+
+        self.patch_applied = true;
+        log::debug!("Sprite patch applied");
+    }
+
+    /// Apply a sprite patch with device/queue access for texture reloading
+    pub fn apply_patch_with_device(
+        &mut self,
+        patch: &crt_theme::SpritePatch,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) {
+        // Handle path change - reload texture
+        if let Some(ref new_path) = patch.path {
+            // Store original sheet before replacing
+            if self.original_sheet.is_none() {
+                self.original_sheet = self.renderer.sheet.clone();
+            }
+
+            // Resolve the path relative to base_dir (theme directory)
+            let full_path = self.base_dir.join(new_path);
+
+            log::info!("Loading patch sprite from: {:?}", full_path);
+
+            // Load new sprite sheet with same frame dimensions
+            match SpriteSheet::load(
+                &full_path,
+                self.config.frame_width,
+                self.config.frame_height,
+                self.config.columns,
+                self.config.rows,
+                self.config.frame_count,
+            ) {
+                Ok(sheet) => {
+                    self.renderer.load_sheet(device, queue, sheet);
+                    log::info!("Sprite patch: loaded new sprite sheet");
+                }
+                Err(e) => {
+                    log::error!("Failed to load patch sprite: {}", e);
+                }
+            }
+        }
+
+        // Apply other patch values (fps, opacity, scale, motion_speed)
+        self.apply_patch(patch);
+    }
+
+    /// Restore original sprite values after patch expires
+    pub fn restore(&mut self) {
+        if !self.patch_applied {
+            return;
+        }
+
+        // Restore FPS
+        self.config.fps = self.original_values.fps;
+        self.seconds_per_frame = if self.original_values.fps > 0.0 {
+            1.0 / self.original_values.fps
+        } else {
+            1.0 / 12.0
+        };
+
+        // Restore opacity
+        self.config.opacity = self.original_values.opacity;
+
+        // Restore scale and recalculate dimensions
+        let old_scale = self.config.scale;
+        self.config.scale = self.original_values.scale;
+
+        if let Some(sheet) = self.renderer.sheet() {
+            self.sprite_width = sheet.frame_width as f32 * self.original_values.scale;
+            self.sprite_height = sheet.frame_height as f32 * self.original_values.scale;
+        } else {
+            let ratio = self.original_values.scale / old_scale;
+            self.sprite_width *= ratio;
+            self.sprite_height *= ratio;
+        }
+
+        // Restore motion speed and velocity
+        let old_speed = self.config.motion_speed;
+        self.config.motion_speed = self.original_values.motion_speed;
+
+        if old_speed > 0.0 {
+            let ratio = self.original_values.motion_speed / old_speed;
+            self.vel_x *= ratio;
+            self.vel_y *= ratio;
+        }
+
+        self.patch_applied = false;
+        log::debug!("Sprite restored to original values");
+    }
+
+    /// Restore original sprite values with device access for texture reloading
+    pub fn restore_with_device(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        if !self.patch_applied {
+            return;
+        }
+
+        // Restore original sprite sheet if it was changed
+        if let Some(ref original_sheet) = self.original_sheet.take() {
+            // Clone the sheet to reload
+            let sheet = SpriteSheet {
+                data: original_sheet.data.clone(),
+                width: original_sheet.width,
+                height: original_sheet.height,
+                frame_width: original_sheet.frame_width,
+                frame_height: original_sheet.frame_height,
+                columns: original_sheet.columns,
+                rows: original_sheet.rows,
+                frame_count: original_sheet.frame_count,
+            };
+            self.renderer.load_sheet(device, queue, sheet);
+            log::info!("Restored original sprite sheet");
+        }
+
+        // Restore other values
+        self.restore();
+    }
+
+    /// Check if a sprite path change is pending (needs device access)
+    pub fn needs_device_for_patch(patch: &crt_theme::SpritePatch) -> bool {
+        patch.path.is_some()
+    }
+
+    /// Get the original (un-patched) sprite values
+    pub fn original_values(&self) -> &OriginalSpriteValues {
+        &self.original_values
+    }
+
+    /// Get current position (for overlay tracking)
+    pub fn current_position(&self) -> (f32, f32) {
+        (self.pos_x, self.pos_y)
+    }
+}
+
+/// One-shot overlay sprite state for event effects
+///
+/// Unlike SpriteAnimationState which loops continuously, this plays
+/// the animation once and marks itself as completed.
+pub struct SpriteOverlayState {
+    /// Renderer for GPU operations
+    renderer: SpriteRenderer,
+    /// Configuration from theme
+    config: SpriteOverlay,
+    /// Current animation frame
+    current_frame: u32,
+    /// Total frames in animation
+    total_frames: u32,
+    /// Time accumulator for frame timing
+    frame_time_accum: f32,
+    /// Seconds per frame
+    seconds_per_frame: f32,
+    /// Computed position (x, y)
+    position: (f32, f32),
+    /// Initial random position (stored for Random position type)
+    random_position: Option<(f32, f32)>,
+    /// Whether the animation has completed (played all frames once)
+    completed: bool,
+    /// Sprite dimensions (scaled) - retained for potential future use
+    #[allow(dead_code)]
+    sprite_width: f32,
+    #[allow(dead_code)]
+    sprite_height: f32,
+}
+
+impl SpriteOverlayState {
+    /// Create a new sprite overlay from config
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        config: SpriteOverlay,
+        base_path: &Path,
+        target_format: wgpu::TextureFormat,
+        screen_width: f32,
+        screen_height: f32,
+    ) -> Result<Self, String> {
+        let mut renderer = SpriteRenderer::new(device, target_format);
+
+        // Resolve path relative to base (theme directory)
+        let sprite_path = base_path.join(&config.path);
+
+        // Calculate frame dimensions from sheet and grid
+        // We need to load the image to get its dimensions first
+        let img = image::open(&sprite_path)
+            .map_err(|e| format!("Failed to load overlay sprite {:?}: {}", sprite_path, e))?;
+        let (sheet_width, sheet_height) = img.dimensions();
+
+        let frame_width = sheet_width / config.columns;
+        let frame_height = sheet_height / config.rows;
+
+        // Load sprite sheet
+        let sheet = SpriteSheet::load(
+            &sprite_path,
+            frame_width,
+            frame_height,
+            config.columns,
+            config.rows,
+            None, // Use all frames
+        )?;
+
+        let total_frames = sheet.frame_count;
+        let sprite_width = frame_width as f32 * config.scale;
+        let sprite_height = frame_height as f32 * config.scale;
+
+        renderer.load_sheet(device, queue, sheet);
+
+        let seconds_per_frame = if config.fps > 0.0 {
+            1.0 / config.fps
+        } else {
+            1.0 / 12.0
+        };
+
+        // Calculate initial position based on position type
+        let (position, random_position) = match config.position {
+            SpriteOverlayPosition::Center => ((screen_width / 2.0, screen_height / 2.0), None),
+            SpriteOverlayPosition::Random => {
+                // Generate random position within screen bounds
+                use std::time::{SystemTime, UNIX_EPOCH};
+                let seed = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos() as u64;
+
+                let margin = sprite_width.max(sprite_height) / 2.0 + 20.0;
+                let x_range = screen_width - 2.0 * margin;
+                let y_range = screen_height - 2.0 * margin;
+
+                // Simple pseudo-random using seed
+                let x = margin + (seed % 1000) as f32 / 1000.0 * x_range;
+                let y = margin + ((seed / 1000) % 1000) as f32 / 1000.0 * y_range;
+
+                let pos = (x, y);
+                (pos, Some(pos))
+            }
+            // Cursor and Sprite positions are updated dynamically
+            SpriteOverlayPosition::Cursor | SpriteOverlayPosition::Sprite => {
+                ((screen_width / 2.0, screen_height / 2.0), None) // Default until first update
+            }
+        };
+
+        log::info!(
+            "Created sprite overlay: {:?}, {}x{} frames, position: {:?}",
+            sprite_path,
+            config.columns,
+            config.rows,
+            config.position
+        );
+
+        Ok(Self {
+            renderer,
+            config,
+            current_frame: 0,
+            total_frames,
+            frame_time_accum: 0.0,
+            seconds_per_frame,
+            position,
+            random_position,
+            completed: false,
+            sprite_width,
+            sprite_height,
+        })
+    }
+
+    /// Update overlay animation state
+    ///
+    /// # Arguments
+    /// * `dt` - Delta time in seconds
+    /// * `backdrop_pos` - Current backdrop sprite position (for Sprite position type)
+    /// * `cursor_pos` - Current text cursor position in pixels (for Cursor position type)
+    /// * `screen_width` - Screen width for bounds checking
+    /// * `screen_height` - Screen height for bounds checking
+    pub fn update(
+        &mut self,
+        dt: f32,
+        backdrop_pos: Option<(f32, f32)>,
+        cursor_pos: (f32, f32),
+        screen_width: f32,
+        screen_height: f32,
+    ) {
+        if self.completed {
+            return;
+        }
+
+        // Update position based on position type
+        match self.config.position {
+            SpriteOverlayPosition::Center => {
+                self.position = (screen_width / 2.0, screen_height / 2.0);
+            }
+            SpriteOverlayPosition::Cursor => {
+                self.position = cursor_pos;
+            }
+            SpriteOverlayPosition::Sprite => {
+                if let Some(pos) = backdrop_pos {
+                    self.position = pos;
+                }
+            }
+            SpriteOverlayPosition::Random => {
+                // Keep the initially computed random position
+                if let Some(pos) = self.random_position {
+                    self.position = pos;
+                }
+            }
+        }
+
+        // Advance animation (one-shot - stop at last frame)
+        self.frame_time_accum += dt;
+        while self.frame_time_accum >= self.seconds_per_frame && !self.completed {
+            self.frame_time_accum -= self.seconds_per_frame;
+            self.current_frame += 1;
+
+            if self.current_frame >= self.total_frames {
+                self.completed = true;
+                self.current_frame = self.total_frames - 1; // Stay on last frame
+                log::debug!("Sprite overlay animation completed");
+            }
+        }
+    }
+
+    /// Render the overlay sprite
+    pub fn render<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        queue: &wgpu::Queue,
+        screen_width: f32,
+        screen_height: f32,
+    ) {
+        if self.completed {
+            return;
+        }
+
+        self.renderer.render(
+            pass,
+            queue,
+            self.current_frame,
+            screen_width,
+            screen_height,
+            self.position.0,
+            self.position.1,
+            self.config.scale,
+            self.config.opacity,
+        );
+    }
+
+    /// Check if the overlay animation has completed
+    pub fn is_completed(&self) -> bool {
+        self.completed
+    }
+
+    /// Check if the overlay is loaded and ready
+    pub fn is_loaded(&self) -> bool {
+        self.renderer.is_loaded()
+    }
+
+    /// Get current animation progress (0.0 to 1.0)
+    pub fn progress(&self) -> f32 {
+        if self.total_frames == 0 {
+            1.0
+        } else {
+            self.current_frame as f32 / self.total_frames as f32
+        }
+    }
+
+    /// Get the position type
+    pub fn position_type(&self) -> SpriteOverlayPosition {
+        self.config.position
     }
 }

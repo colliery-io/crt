@@ -15,9 +15,11 @@ use lightningcss::values::color::CssColor;
 
 use crate::{
     BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, Color, CrtEffect,
-    GridEffect, LinearGradient, MatrixEffect, ParticleBehavior, ParticleEffect, ParticleShape,
-    RainEffect, ShapeEffect, ShapeMotion, ShapeRotation, ShapeType, SpriteEffect, SpriteMotion,
-    SpritePosition, StarDirection, StarfieldEffect, TextShadow, Theme,
+    EventOverride, GridEffect, GridPatch, LinearGradient, MatrixEffect, MatrixPatch,
+    ParticleBehavior, ParticleEffect, ParticlePatch, ParticleShape, RainEffect, RainPatch,
+    ShapeEffect, ShapeMotion, ShapePatch, ShapeRotation, ShapeType, SpriteEffect, SpriteMotion,
+    SpriteOverlay, SpriteOverlayPosition, SpritePatch, SpritePosition, StarDirection,
+    StarfieldEffect, StarfieldPatch, TextShadow, Theme,
 };
 
 #[derive(Error, Debug)]
@@ -352,16 +354,16 @@ pub fn parse_background_size(value: &str) -> BackgroundSize {
         "auto" | "auto auto" => BackgroundSize::Auto,
         _ => {
             // Try to parse as percentage (e.g., "30%" for canvas-relative)
-            if value.ends_with('%') {
-                if let Ok(pct) = value.trim_end_matches('%').parse::<f32>() {
-                    return BackgroundSize::CanvasPercent(pct);
-                }
+            if value.ends_with('%')
+                && let Ok(pct) = value.trim_end_matches('%').parse::<f32>()
+            {
+                return BackgroundSize::CanvasPercent(pct);
             }
             // Try to parse as scale factor (e.g., "2x" or "0.5x" for image-relative)
-            if value.ends_with('x') {
-                if let Ok(scale) = value.trim_end_matches('x').parse::<f32>() {
-                    return BackgroundSize::ImageScale(scale);
-                }
+            if value.ends_with('x')
+                && let Ok(scale) = value.trim_end_matches('x').parse::<f32>()
+            {
+                return BackgroundSize::ImageScale(scale);
             }
             // Try to parse as fixed dimensions (e.g., "100px 200px")
             let parts: Vec<&str> = value.split_whitespace().collect();
@@ -373,10 +375,10 @@ pub fn parse_background_size(value: &str) -> BackgroundSize {
                 }
             }
             // Single value in pixels
-            if value.ends_with("px") {
-                if let Ok(px) = value.trim_end_matches("px").parse::<u32>() {
-                    return BackgroundSize::Fixed(px, px);
-                }
+            if value.ends_with("px")
+                && let Ok(px) = value.trim_end_matches("px").parse::<u32>()
+            {
+                return BackgroundSize::Fixed(px, px);
             }
             BackgroundSize::Cover
         }
@@ -458,6 +460,11 @@ fn extract_properties(rule: &lightningcss::rules::style::StyleRule) -> RulePrope
                                 value_parts.push(s);
                             }
                         }
+                        TokenOrValue::Time(time) => {
+                            if let Ok(s) = time.to_css_string(opts()) {
+                                value_parts.push(s);
+                            }
+                        }
                         _ => {
                             // Other token types - skip for now
                         }
@@ -493,29 +500,30 @@ fn extract_properties(rule: &lightningcss::rules::style::StyleRule) -> RulePrope
                         }
                         Image::None => {
                             // No image, check color
-                            if let Ok(css_str) = bg.color.to_css_string(opts()) {
-                                if !standard.contains_key("background") {
-                                    standard.insert("background".to_string(), css_str);
-                                }
+                            if let Ok(css_str) = bg.color.to_css_string(opts())
+                                && !standard.contains_key("background")
+                            {
+                                standard.insert("background".to_string(), css_str);
                             }
                         }
                         _ => {}
                     }
                     // Also extract background-size, position, repeat from shorthand
-                    if let Ok(css_str) = bg.size.to_css_string(opts()) {
-                        if css_str != "auto" && css_str != "auto auto" {
-                            standard.insert("background-size".to_string(), css_str);
-                        }
+                    if let Ok(css_str) = bg.size.to_css_string(opts())
+                        && css_str != "auto"
+                        && css_str != "auto auto"
+                    {
+                        standard.insert("background-size".to_string(), css_str);
                     }
-                    if let Ok(css_str) = bg.position.to_css_string(opts()) {
-                        if css_str != "0% 0%" {
-                            standard.insert("background-position".to_string(), css_str);
-                        }
+                    if let Ok(css_str) = bg.position.to_css_string(opts())
+                        && css_str != "0% 0%"
+                    {
+                        standard.insert("background-position".to_string(), css_str);
                     }
-                    if let Ok(css_str) = bg.repeat.to_css_string(opts()) {
-                        if css_str != "repeat" {
-                            standard.insert("background-repeat".to_string(), css_str);
-                        }
+                    if let Ok(css_str) = bg.repeat.to_css_string(opts())
+                        && css_str != "repeat"
+                    {
+                        standard.insert("background-repeat".to_string(), css_str);
                     }
                 }
             }
@@ -523,33 +531,30 @@ fn extract_properties(rule: &lightningcss::rules::style::StyleRule) -> RulePrope
                 // Handle background-image property directly
                 use lightningcss::values::image::Image;
                 for img in images.iter() {
-                    match img {
-                        Image::Url(url) => {
-                            standard.insert("background-image".to_string(), url.url.to_string());
-                        }
-                        _ => {}
+                    if let Image::Url(url) = img {
+                        standard.insert("background-image".to_string(), url.url.to_string());
                     }
                 }
             }
             Property::BackgroundSize(sizes) => {
-                if let Some(size) = sizes.first() {
-                    if let Ok(css_str) = size.to_css_string(opts()) {
-                        standard.insert("background-size".to_string(), css_str);
-                    }
+                if let Some(size) = sizes.first()
+                    && let Ok(css_str) = size.to_css_string(opts())
+                {
+                    standard.insert("background-size".to_string(), css_str);
                 }
             }
             Property::BackgroundPosition(positions) => {
-                if let Some(pos) = positions.first() {
-                    if let Ok(css_str) = pos.to_css_string(opts()) {
-                        standard.insert("background-position".to_string(), css_str);
-                    }
+                if let Some(pos) = positions.first()
+                    && let Ok(css_str) = pos.to_css_string(opts())
+                {
+                    standard.insert("background-position".to_string(), css_str);
                 }
             }
             Property::BackgroundRepeat(repeats) => {
-                if let Some(repeat) = repeats.first() {
-                    if let Ok(css_str) = repeat.to_css_string(opts()) {
-                        standard.insert("background-repeat".to_string(), css_str);
-                    }
+                if let Some(repeat) = repeats.first()
+                    && let Ok(css_str) = repeat.to_css_string(opts())
+                {
+                    standard.insert("background-repeat".to_string(), css_str);
                 }
             }
             Property::FontFamily(families) => {
@@ -591,10 +596,10 @@ fn extract_properties(rule: &lightningcss::rules::style::StyleRule) -> RulePrope
             }
             Property::TextShadow(shadows) => {
                 // Take first shadow
-                if let Some(shadow) = shadows.first() {
-                    if let Ok(css_str) = shadow.to_css_string(opts()) {
-                        standard.insert("text-shadow".to_string(), css_str);
-                    }
+                if let Some(shadow) = shadows.first()
+                    && let Ok(css_str) = shadow.to_css_string(opts())
+                {
+                    standard.insert("text-shadow".to_string(), css_str);
                 }
             }
             Property::Width(width) => {
@@ -732,6 +737,37 @@ fn apply_properties(
         }
         ":terminal::palette" | "terminal::palette" => {
             apply_palette_properties(theme, custom)?;
+        }
+        ":terminal::ui-focus" | "terminal::ui-focus" | ":focus" => {
+            apply_focus_properties(theme, standard, custom)?;
+        }
+        ":terminal::ui-hover" | "terminal::ui-hover" | ":hover" => {
+            apply_hover_properties(theme, standard)?;
+        }
+        ":terminal::context-menu" | "terminal::context-menu" => {
+            apply_context_menu_properties(theme, standard)?;
+        }
+        ":terminal::search-bar" | "terminal::search-bar" => {
+            apply_search_bar_properties(theme, standard, custom)?;
+        }
+        ":terminal::rename-bar" | "terminal::rename-bar" => {
+            apply_rename_bar_properties(theme, standard, custom)?;
+        }
+        // Event-driven theming selectors
+        ":terminal::on-bell" | "terminal::on-bell" => {
+            apply_event_properties(&mut theme.on_bell, standard, custom)?;
+        }
+        ":terminal::on-command-fail" | "terminal::on-command-fail" => {
+            apply_event_properties(&mut theme.on_command_fail, standard, custom)?;
+        }
+        ":terminal::on-command-success" | "terminal::on-command-success" => {
+            apply_event_properties(&mut theme.on_command_success, standard, custom)?;
+        }
+        ":terminal::on-focus" | "terminal::on-focus" => {
+            apply_event_properties(&mut theme.on_focus, standard, custom)?;
+        }
+        ":terminal::on-blur" | "terminal::on-blur" => {
+            apply_event_properties(&mut theme.on_blur, standard, custom)?;
         }
         _ => {
             // Ignore unknown selectors
@@ -1388,6 +1424,511 @@ fn apply_tab_close_properties(
     Ok(())
 }
 
+fn apply_focus_properties(
+    theme: &mut Theme,
+    standard: &HashMap<String, String>,
+    custom: &HashMap<String, String>,
+) -> Result<(), ThemeParseError> {
+    // Standard properties
+    if let Some(c) = standard.get("outline-color") {
+        theme.ui.focus.ring_color = parse_color(c)?;
+    }
+    if let Some(v) = standard.get("outline-width") {
+        theme.ui.focus.ring_thickness = v.trim_end_matches("px").parse().unwrap_or(2.0);
+    }
+
+    // Custom properties
+    if let Some(c) = custom.get("--ring-color") {
+        theme.ui.focus.ring_color = parse_color(c)?;
+    }
+    if let Some(c) = custom.get("--glow-color") {
+        theme.ui.focus.glow_color = parse_color(c)?;
+    }
+    if let Some(v) = custom.get("--ring-thickness") {
+        theme.ui.focus.ring_thickness = v.trim_end_matches("px").parse().unwrap_or(2.0);
+    }
+    if let Some(v) = custom.get("--glow-size") {
+        theme.ui.focus.glow_size = v.trim_end_matches("px").parse().unwrap_or(4.0);
+    }
+    Ok(())
+}
+
+fn apply_hover_properties(
+    theme: &mut Theme,
+    standard: &HashMap<String, String>,
+) -> Result<(), ThemeParseError> {
+    if let Some(bg) = standard.get("background") {
+        theme.ui.hover.background = parse_color(bg)?;
+    }
+    Ok(())
+}
+
+fn apply_context_menu_properties(
+    theme: &mut Theme,
+    standard: &HashMap<String, String>,
+) -> Result<(), ThemeParseError> {
+    if let Some(bg) = standard.get("background") {
+        theme.ui.context_menu.background = parse_color(bg)?;
+    }
+    if let Some(c) = standard.get("border-color") {
+        theme.ui.context_menu.border_color = parse_color(c)?;
+    }
+    if let Some(c) = standard.get("color") {
+        theme.ui.context_menu.text_color = parse_color(c)?;
+    }
+    Ok(())
+}
+
+fn apply_search_bar_properties(
+    theme: &mut Theme,
+    standard: &HashMap<String, String>,
+    custom: &HashMap<String, String>,
+) -> Result<(), ThemeParseError> {
+    if let Some(bg) = standard.get("background") {
+        theme.ui.search_bar.background = parse_color(bg)?;
+    }
+    if let Some(c) = standard.get("color") {
+        theme.ui.search_bar.text_color = parse_color(c)?;
+    }
+    if let Some(c) = custom.get("--placeholder-color") {
+        theme.ui.search_bar.placeholder_color = parse_color(c)?;
+    }
+    if let Some(c) = custom.get("--no-match-color") {
+        theme.ui.search_bar.no_match_color = parse_color(c)?;
+    }
+    Ok(())
+}
+
+fn apply_rename_bar_properties(
+    theme: &mut Theme,
+    standard: &HashMap<String, String>,
+    custom: &HashMap<String, String>,
+) -> Result<(), ThemeParseError> {
+    if let Some(bg) = standard.get("background") {
+        theme.ui.rename_bar.background = parse_color(bg)?;
+    }
+    if let Some(c) = standard.get("color") {
+        theme.ui.rename_bar.text_color = parse_color(c)?;
+    }
+    if let Some(c) = custom.get("--label-color") {
+        theme.ui.rename_bar.label_color = parse_color(c)?;
+    }
+    Ok(())
+}
+
+/// Apply event override properties (::on-bell, ::on-command-fail, etc.)
+/// Multiple blocks for the same event are merged (CSS cascade)
+fn apply_event_properties(
+    event: &mut Option<EventOverride>,
+    standard: &HashMap<String, String>,
+    custom: &HashMap<String, String>,
+) -> Result<(), ThemeParseError> {
+    // Create new override or merge into existing
+    let mut override_block = EventOverride::default();
+
+    // Parse --duration (e.g., "500ms", "1s", "1000")
+    if let Some(v) = custom.get("--duration") {
+        override_block.duration_ms = parse_duration(v);
+    }
+
+    // Parse sprite patch properties (--sprite-*)
+    let has_sprite_patch = custom
+        .keys()
+        .any(|k| k.starts_with("--sprite-") && !k.starts_with("--sprite-overlay"));
+    if has_sprite_patch {
+        let mut patch = SpritePatch::default();
+
+        if let Some(v) = custom.get("--sprite-path") {
+            patch.path = Some(strip_quotes(v));
+        }
+        if let Some(v) = custom.get("--sprite-columns") {
+            patch.columns = v.parse().ok();
+        }
+        if let Some(v) = custom.get("--sprite-rows") {
+            patch.rows = v.parse().ok();
+        }
+        if let Some(v) = custom.get("--sprite-fps") {
+            patch.fps = v.parse().ok();
+        }
+        if let Some(v) = custom.get("--sprite-opacity") {
+            patch.opacity = v.parse().ok();
+        }
+        if let Some(v) = custom.get("--sprite-scale") {
+            patch.scale = v.parse().ok();
+        }
+        if let Some(v) = custom.get("--sprite-motion-speed") {
+            patch.motion_speed = v.parse().ok();
+        }
+
+        override_block.sprite_patch = Some(patch);
+    }
+
+    // Parse sprite overlay properties (--sprite-overlay-*)
+    if let Some(path) = custom.get("--sprite-overlay") {
+        let mut overlay = SpriteOverlay {
+            path: strip_quotes(path),
+            ..Default::default()
+        };
+
+        if let Some(v) = custom.get("--sprite-overlay-position") {
+            if let Some(pos) = SpriteOverlayPosition::from_str(v.trim()) {
+                overlay.position = pos;
+            }
+        }
+        if let Some(v) = custom.get("--sprite-overlay-columns") {
+            overlay.columns = v.parse().unwrap_or(1);
+        }
+        if let Some(v) = custom.get("--sprite-overlay-rows") {
+            overlay.rows = v.parse().unwrap_or(1);
+        }
+        if let Some(v) = custom.get("--sprite-overlay-fps") {
+            overlay.fps = v.parse().unwrap_or(12.0);
+        }
+        if let Some(v) = custom.get("--sprite-overlay-scale") {
+            overlay.scale = v.parse().unwrap_or(1.0);
+        }
+        if let Some(v) = custom.get("--sprite-overlay-opacity") {
+            overlay.opacity = v.parse().unwrap_or(1.0);
+        }
+
+        override_block.sprite_overlay = Some(overlay);
+    }
+
+    // Parse theme property overrides
+    if let Some(c) = standard.get("color") {
+        override_block.foreground = Some(parse_color(c)?);
+    }
+    if let Some(bg) = standard.get("background") {
+        // Try to parse as gradient first, fall back to solid color
+        if let Ok(gradient) = parse_linear_gradient(bg) {
+            override_block.background = Some(gradient);
+        } else if let Ok(color) = parse_color(bg) {
+            override_block.background = Some(LinearGradient {
+                top: color,
+                bottom: color,
+            });
+        }
+    }
+    if let Some(c) = standard.get("cursor-color") {
+        override_block.cursor_color = Some(parse_color(c)?);
+    }
+    if let Some(c) = custom.get("--cursor-color") {
+        override_block.cursor_color = Some(parse_color(c)?);
+    }
+    if let Some(ts) = standard.get("text-shadow") {
+        if let Ok(shadow) = parse_text_shadow(ts) {
+            override_block.text_shadow = Some(shadow);
+        }
+    }
+
+    // Parse starfield patch properties
+    let mut starfield_patch = StarfieldPatch::default();
+    let mut has_starfield_patch = false;
+
+    if let Some(c) = custom.get("--starfield-color") {
+        starfield_patch.color = Some(parse_color(c)?);
+        has_starfield_patch = true;
+    }
+    if let Some(v) = custom.get("--starfield-density") {
+        starfield_patch.density = v.parse().ok();
+        has_starfield_patch = true;
+    }
+    if let Some(v) = custom.get("--starfield-layers") {
+        starfield_patch.layers = v.parse().ok();
+        has_starfield_patch = true;
+    }
+    if let Some(v) = custom.get("--starfield-speed") {
+        starfield_patch.speed = v.parse().ok();
+        has_starfield_patch = true;
+    }
+    if let Some(v) = custom.get("--starfield-direction") {
+        starfield_patch.direction = StarDirection::from_str(v);
+        has_starfield_patch = true;
+    }
+    if let Some(v) = custom.get("--starfield-glow-radius") {
+        starfield_patch.glow_radius = v.parse().ok();
+        has_starfield_patch = true;
+    }
+    if let Some(v) = custom.get("--starfield-glow-intensity") {
+        starfield_patch.glow_intensity = v.parse().ok();
+        has_starfield_patch = true;
+    }
+    if let Some(v) = custom.get("--starfield-twinkle") {
+        starfield_patch.twinkle = Some(v == "true" || v == "1");
+        has_starfield_patch = true;
+    }
+    if let Some(v) = custom.get("--starfield-twinkle-speed") {
+        starfield_patch.twinkle_speed = v.parse().ok();
+        has_starfield_patch = true;
+    }
+    if let Some(v) = custom.get("--starfield-min-size") {
+        starfield_patch.min_size = v.parse().ok();
+        has_starfield_patch = true;
+    }
+    if let Some(v) = custom.get("--starfield-max-size") {
+        starfield_patch.max_size = v.parse().ok();
+        has_starfield_patch = true;
+    }
+
+    if has_starfield_patch {
+        override_block.starfield_patch = Some(starfield_patch);
+    }
+
+    // Parse particle patch properties
+    let mut particle_patch = ParticlePatch::default();
+    let mut has_particle_patch = false;
+
+    if let Some(c) = custom.get("--particles-color") {
+        particle_patch.color = Some(parse_color(c)?);
+        has_particle_patch = true;
+    }
+    if let Some(v) = custom.get("--particles-count") {
+        particle_patch.count = v.parse().ok();
+        has_particle_patch = true;
+    }
+    if let Some(v) = custom.get("--particles-shape") {
+        particle_patch.shape = ParticleShape::from_str(v);
+        has_particle_patch = true;
+    }
+    if let Some(v) = custom.get("--particles-behavior") {
+        particle_patch.behavior = ParticleBehavior::from_str(v);
+        has_particle_patch = true;
+    }
+    if let Some(v) = custom.get("--particles-size") {
+        particle_patch.size = v.parse().ok();
+        has_particle_patch = true;
+    }
+    if let Some(v) = custom.get("--particles-speed") {
+        particle_patch.speed = v.parse().ok();
+        has_particle_patch = true;
+    }
+    if let Some(v) = custom.get("--particles-glow-radius") {
+        particle_patch.glow_radius = v.parse().ok();
+        has_particle_patch = true;
+    }
+    if let Some(v) = custom.get("--particles-glow-intensity") {
+        particle_patch.glow_intensity = v.parse().ok();
+        has_particle_patch = true;
+    }
+
+    if has_particle_patch {
+        override_block.particle_patch = Some(particle_patch);
+    }
+
+    // Parse grid patch properties
+    let mut grid_patch = GridPatch::default();
+    let mut has_grid_patch = false;
+
+    if let Some(c) = custom.get("--grid-color") {
+        grid_patch.color = Some(parse_color(c)?);
+        has_grid_patch = true;
+    }
+    if let Some(v) = custom.get("--grid-spacing") {
+        grid_patch.spacing = v.parse().ok();
+        has_grid_patch = true;
+    }
+    if let Some(v) = custom.get("--grid-line-width") {
+        grid_patch.line_width = v.parse().ok();
+        has_grid_patch = true;
+    }
+    if let Some(v) = custom.get("--grid-perspective") {
+        grid_patch.perspective = v.parse().ok();
+        has_grid_patch = true;
+    }
+    if let Some(v) = custom.get("--grid-horizon") {
+        grid_patch.horizon = v.parse().ok();
+        has_grid_patch = true;
+    }
+    if let Some(v) = custom.get("--grid-animation-speed") {
+        grid_patch.animation_speed = v.parse().ok();
+        has_grid_patch = true;
+    }
+    if let Some(v) = custom.get("--grid-glow-radius") {
+        grid_patch.glow_radius = v.parse().ok();
+        has_grid_patch = true;
+    }
+    if let Some(v) = custom.get("--grid-glow-intensity") {
+        grid_patch.glow_intensity = v.parse().ok();
+        has_grid_patch = true;
+    }
+    if let Some(v) = custom.get("--grid-vanishing-spread") {
+        grid_patch.vanishing_spread = v.parse().ok();
+        has_grid_patch = true;
+    }
+    if let Some(v) = custom.get("--grid-curved") {
+        grid_patch.curved = Some(v == "true" || v == "1");
+        has_grid_patch = true;
+    }
+
+    if has_grid_patch {
+        override_block.grid_patch = Some(grid_patch);
+    }
+
+    // Parse rain patch properties
+    let mut rain_patch = RainPatch::default();
+    let mut has_rain_patch = false;
+
+    if let Some(c) = custom.get("--rain-color") {
+        rain_patch.color = Some(parse_color(c)?);
+        has_rain_patch = true;
+    }
+    if let Some(v) = custom.get("--rain-density") {
+        rain_patch.density = v.parse().ok();
+        has_rain_patch = true;
+    }
+    if let Some(v) = custom.get("--rain-speed") {
+        rain_patch.speed = v.parse().ok();
+        has_rain_patch = true;
+    }
+    if let Some(v) = custom.get("--rain-angle") {
+        rain_patch.angle = v.parse().ok();
+        has_rain_patch = true;
+    }
+    if let Some(v) = custom.get("--rain-length") {
+        rain_patch.length = v.parse().ok();
+        has_rain_patch = true;
+    }
+    if let Some(v) = custom.get("--rain-thickness") {
+        rain_patch.thickness = v.parse().ok();
+        has_rain_patch = true;
+    }
+    if let Some(v) = custom.get("--rain-glow-radius") {
+        rain_patch.glow_radius = v.parse().ok();
+        has_rain_patch = true;
+    }
+    if let Some(v) = custom.get("--rain-glow-intensity") {
+        rain_patch.glow_intensity = v.parse().ok();
+        has_rain_patch = true;
+    }
+
+    if has_rain_patch {
+        override_block.rain_patch = Some(rain_patch);
+    }
+
+    // Parse matrix patch properties
+    let mut matrix_patch = MatrixPatch::default();
+    let mut has_matrix_patch = false;
+
+    if let Some(c) = custom.get("--matrix-color") {
+        matrix_patch.color = Some(parse_color(c)?);
+        has_matrix_patch = true;
+    }
+    if let Some(v) = custom.get("--matrix-density") {
+        matrix_patch.density = v.parse().ok();
+        has_matrix_patch = true;
+    }
+    if let Some(v) = custom.get("--matrix-speed") {
+        matrix_patch.speed = v.parse().ok();
+        has_matrix_patch = true;
+    }
+    if let Some(v) = custom.get("--matrix-font-size") {
+        matrix_patch.font_size = v.parse().ok();
+        has_matrix_patch = true;
+    }
+    if let Some(v) = custom.get("--matrix-charset") {
+        matrix_patch.charset = Some(v.clone());
+        has_matrix_patch = true;
+    }
+
+    if has_matrix_patch {
+        override_block.matrix_patch = Some(matrix_patch);
+    }
+
+    // Parse shape patch properties
+    let mut shape_patch = ShapePatch::default();
+    let mut has_shape_patch = false;
+
+    if let Some(v) = custom.get("--shape-type") {
+        shape_patch.shape_type = ShapeType::from_str(v);
+        has_shape_patch = true;
+    }
+    if let Some(v) = custom.get("--shape-size") {
+        shape_patch.size = v.parse().ok();
+        has_shape_patch = true;
+    }
+    if let Some(c) = custom.get("--shape-fill") {
+        if c != "none" {
+            shape_patch.fill = Some(parse_color(c)?);
+            has_shape_patch = true;
+        }
+    }
+    if let Some(c) = custom.get("--shape-stroke") {
+        if c != "none" {
+            shape_patch.stroke = Some(parse_color(c)?);
+            has_shape_patch = true;
+        }
+    }
+    if let Some(v) = custom.get("--shape-stroke-width") {
+        shape_patch.stroke_width = v.parse().ok();
+        has_shape_patch = true;
+    }
+    if let Some(v) = custom.get("--shape-glow-radius") {
+        shape_patch.glow_radius = v.parse().ok();
+        has_shape_patch = true;
+    }
+    if let Some(c) = custom.get("--shape-glow-color") {
+        shape_patch.glow_color = Some(parse_color(c)?);
+        has_shape_patch = true;
+    }
+    if let Some(v) = custom.get("--shape-rotation") {
+        shape_patch.rotation = ShapeRotation::from_str(v);
+        has_shape_patch = true;
+    }
+    if let Some(v) = custom.get("--shape-rotation-speed") {
+        shape_patch.rotation_speed = v.parse().ok();
+        has_shape_patch = true;
+    }
+    if let Some(v) = custom.get("--shape-motion") {
+        shape_patch.motion = ShapeMotion::from_str(v);
+        has_shape_patch = true;
+    }
+    if let Some(v) = custom.get("--shape-motion-speed") {
+        shape_patch.motion_speed = v.parse().ok();
+        has_shape_patch = true;
+    }
+    if let Some(v) = custom.get("--shape-polygon-sides") {
+        shape_patch.polygon_sides = v.parse().ok();
+        has_shape_patch = true;
+    }
+
+    if has_shape_patch {
+        override_block.shape_patch = Some(shape_patch);
+    }
+
+    // Merge with existing or set as new
+    if let Some(existing) = event.as_mut() {
+        existing.merge(override_block);
+    } else {
+        *event = Some(override_block);
+    }
+
+    Ok(())
+}
+
+/// Parse duration string (e.g., "500ms", "1.5s", "1000") to milliseconds
+fn parse_duration(s: &str) -> u32 {
+    let s = s.trim();
+    if s.ends_with("ms") {
+        s.trim_end_matches("ms").trim().parse().unwrap_or(0)
+    } else if s.ends_with('s') {
+        let secs: f32 = s.trim_end_matches('s').trim().parse().unwrap_or(0.0);
+        (secs * 1000.0) as u32
+    } else {
+        // Assume milliseconds if no unit
+        s.parse().unwrap_or(0)
+    }
+}
+
+/// Strip surrounding quotes from a string
+fn strip_quotes(s: &str) -> String {
+    let s = s.trim();
+    if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
+        s[1..s.len() - 1].to_string()
+    } else {
+        s.to_string()
+    }
+}
+
 /// Apply ANSI palette colors from custom properties
 /// Supports multiple naming conventions:
 /// - --ansi-black, --ansi-red, etc. (preferred)
@@ -1757,5 +2298,948 @@ mod tests {
         assert!((glow.color.g - 0.0).abs() < 0.01);
         assert!((glow.color.b - 1.0).abs() < 0.01);
         assert!((glow.color.a - 0.8).abs() < 0.01);
+    }
+
+    // ========== Color Parsing Edge Cases ==========
+
+    #[test]
+    fn test_hex_color_3_digit() {
+        // #rgb shorthand expands to #rrggbb
+        let c = parse_hex_color("#f00").unwrap();
+        assert!((c.r - 1.0).abs() < 0.001);
+        assert!((c.g - 0.0).abs() < 0.001);
+        assert!((c.b - 0.0).abs() < 0.001);
+        assert!((c.a - 1.0).abs() < 0.001);
+
+        let c = parse_hex_color("#abc").unwrap();
+        assert!((c.r - 0xaa as f32 / 255.0).abs() < 0.001);
+        assert!((c.g - 0xbb as f32 / 255.0).abs() < 0.001);
+        assert!((c.b - 0xcc as f32 / 255.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_hex_color_4_digit() {
+        // #rgba shorthand
+        let c = parse_hex_color("#f008").unwrap();
+        assert!((c.r - 1.0).abs() < 0.001);
+        assert!((c.g - 0.0).abs() < 0.001);
+        assert!((c.b - 0.0).abs() < 0.001);
+        assert!((c.a - 0x88 as f32 / 255.0).abs() < 0.001);
+
+        let c = parse_hex_color("#0000").unwrap();
+        assert!((c.r - 0.0).abs() < 0.001);
+        assert!((c.a - 0.0).abs() < 0.001);
+
+        let c = parse_hex_color("#ffff").unwrap();
+        assert!((c.r - 1.0).abs() < 0.001);
+        assert!((c.a - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_hex_color_6_digit() {
+        let c = parse_hex_color("#000000").unwrap();
+        assert!((c.r - 0.0).abs() < 0.001);
+        assert!((c.g - 0.0).abs() < 0.001);
+        assert!((c.b - 0.0).abs() < 0.001);
+
+        let c = parse_hex_color("#ffffff").unwrap();
+        assert!((c.r - 1.0).abs() < 0.001);
+        assert!((c.g - 1.0).abs() < 0.001);
+        assert!((c.b - 1.0).abs() < 0.001);
+
+        let c = parse_hex_color("#1a2b3c").unwrap();
+        assert!((c.r - 0x1a as f32 / 255.0).abs() < 0.001);
+        assert!((c.g - 0x2b as f32 / 255.0).abs() < 0.001);
+        assert!((c.b - 0x3c as f32 / 255.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_hex_color_8_digit() {
+        let c = parse_hex_color("#ff000080").unwrap();
+        assert!((c.r - 1.0).abs() < 0.001);
+        assert!((c.g - 0.0).abs() < 0.001);
+        assert!((c.b - 0.0).abs() < 0.001);
+        assert!((c.a - 0x80 as f32 / 255.0).abs() < 0.001);
+
+        let c = parse_hex_color("#00000000").unwrap();
+        assert!((c.a - 0.0).abs() < 0.001);
+
+        let c = parse_hex_color("#ffffffff").unwrap();
+        assert!((c.a - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_hex_color_uppercase() {
+        let c = parse_hex_color("#FF5500").unwrap();
+        assert!((c.r - 1.0).abs() < 0.001);
+        assert!((c.g - 0x55 as f32 / 255.0).abs() < 0.001);
+
+        let c = parse_hex_color("#ABC").unwrap();
+        assert!((c.r - 0xaa as f32 / 255.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_hex_color_without_hash() {
+        // parse_hex_color strips leading #
+        let c = parse_hex_color("ff0000").unwrap();
+        assert!((c.r - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_hex_color_invalid() {
+        // Invalid length
+        assert!(parse_hex_color("#f").is_err());
+        assert!(parse_hex_color("#ff").is_err());
+        assert!(parse_hex_color("#fffff").is_err());
+        assert!(parse_hex_color("#fffffff").is_err());
+
+        // Invalid characters
+        assert!(parse_hex_color("#gggggg").is_err());
+        assert!(parse_hex_color("#xyz").is_err());
+    }
+
+    #[test]
+    fn test_rgb_color_0_255_values() {
+        let c = parse_rgb_color("rgb(255, 128, 0)").unwrap();
+        assert!((c.r - 1.0).abs() < 0.001);
+        assert!((c.g - 128.0 / 255.0).abs() < 0.001);
+        assert!((c.b - 0.0).abs() < 0.001);
+
+        let c = parse_rgb_color("rgb(0, 0, 0)").unwrap();
+        assert!((c.r - 0.0).abs() < 0.001);
+
+        let c = parse_rgb_color("rgb(255, 255, 255)").unwrap();
+        assert!((c.r - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rgb_color_0_1_values() {
+        let c = parse_rgb_color("rgb(1.0, 0.5, 0.0)").unwrap();
+        assert!((c.r - 1.0).abs() < 0.001);
+        assert!((c.g - 0.5).abs() < 0.001);
+        assert!((c.b - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rgba_color() {
+        let c = parse_rgb_color("rgba(255, 0, 0, 0.5)").unwrap();
+        assert!((c.r - 1.0).abs() < 0.001);
+        assert!((c.a - 0.5).abs() < 0.001);
+
+        let c = parse_rgb_color("rgba(0, 0, 0, 0)").unwrap();
+        assert!((c.a - 0.0).abs() < 0.001);
+
+        let c = parse_rgb_color("rgba(255, 255, 255, 1.0)").unwrap();
+        assert!((c.a - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rgb_color_whitespace() {
+        let c = parse_rgb_color("rgb( 255 , 128 , 64 )").unwrap();
+        assert!((c.r - 1.0).abs() < 0.001);
+        assert!((c.g - 128.0 / 255.0).abs() < 0.001);
+
+        let c = parse_rgb_color("  rgb(100, 100, 100)  ").unwrap();
+        assert!((c.r - 100.0 / 255.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rgb_color_invalid() {
+        // Missing parenthesis
+        assert!(parse_rgb_color("rgb(255, 128, 64").is_err());
+        assert!(parse_rgb_color("rgb 255, 128, 64)").is_err());
+
+        // Wrong number of components
+        assert!(parse_rgb_color("rgb(255, 128)").is_err());
+        assert!(parse_rgb_color("rgba(255, 128, 64)").is_err());
+        assert!(parse_rgb_color("rgb(255, 128, 64, 0.5)").is_err());
+
+        // Invalid values
+        assert!(parse_rgb_color("rgb(abc, 128, 64)").is_err());
+    }
+
+    #[test]
+    fn test_named_color_basic() {
+        let c = parse_named_color("black").unwrap();
+        assert!((c.r - 0.0).abs() < 0.001);
+        assert!((c.g - 0.0).abs() < 0.001);
+        assert!((c.b - 0.0).abs() < 0.001);
+
+        let c = parse_named_color("white").unwrap();
+        assert!((c.r - 1.0).abs() < 0.001);
+
+        let c = parse_named_color("red").unwrap();
+        assert!((c.r - 1.0).abs() < 0.001);
+        assert!((c.g - 0.0).abs() < 0.001);
+
+        let c = parse_named_color("blue").unwrap();
+        assert!((c.b - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_named_color_case_insensitive() {
+        let c1 = parse_named_color("red").unwrap();
+        let c2 = parse_named_color("RED").unwrap();
+        let c3 = parse_named_color("Red").unwrap();
+        let c4 = parse_named_color("rEd").unwrap();
+
+        assert!((c1.r - c2.r).abs() < 0.001);
+        assert!((c2.r - c3.r).abs() < 0.001);
+        assert!((c3.r - c4.r).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_named_color_gray_grey_variants() {
+        let gray = parse_named_color("gray").unwrap();
+        let grey = parse_named_color("grey").unwrap();
+        assert!((gray.r - grey.r).abs() < 0.001);
+
+        let lightgray = parse_named_color("lightgray").unwrap();
+        let lightgrey = parse_named_color("lightgrey").unwrap();
+        assert!((lightgray.r - lightgrey.r).abs() < 0.001);
+
+        let darkgray = parse_named_color("darkgray").unwrap();
+        let darkgrey = parse_named_color("darkgrey").unwrap();
+        assert!((darkgray.r - darkgrey.r).abs() < 0.001);
+
+        let slategray = parse_named_color("slategray").unwrap();
+        let slategrey = parse_named_color("slategrey").unwrap();
+        assert!((slategray.r - slategrey.r).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_named_color_cyan_aqua_alias() {
+        let cyan = parse_named_color("cyan").unwrap();
+        let aqua = parse_named_color("aqua").unwrap();
+        assert!((cyan.r - aqua.r).abs() < 0.001);
+        assert!((cyan.g - aqua.g).abs() < 0.001);
+        assert!((cyan.b - aqua.b).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_named_color_magenta_fuchsia_alias() {
+        let magenta = parse_named_color("magenta").unwrap();
+        let fuchsia = parse_named_color("fuchsia").unwrap();
+        assert!((magenta.r - fuchsia.r).abs() < 0.001);
+        assert!((magenta.g - fuchsia.g).abs() < 0.001);
+        assert!((magenta.b - fuchsia.b).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_named_color_transparent() {
+        let c = parse_named_color("transparent").unwrap();
+        assert!((c.r - 0.0).abs() < 0.001);
+        assert!((c.g - 0.0).abs() < 0.001);
+        assert!((c.b - 0.0).abs() < 0.001);
+        assert!((c.a - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_named_color_extended() {
+        // Test various extended CSS colors
+        let gold = parse_named_color("gold").unwrap();
+        assert!((gold.r - 1.0).abs() < 0.001);
+        assert!((gold.g - 215.0 / 255.0).abs() < 0.001);
+
+        let coral = parse_named_color("coral").unwrap();
+        assert!((coral.r - 1.0).abs() < 0.001);
+
+        let hotpink = parse_named_color("hotpink").unwrap();
+        assert!((hotpink.r - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_named_color_unknown() {
+        assert!(parse_named_color("notacolor").is_none());
+        assert!(parse_named_color("").is_none());
+        assert!(parse_named_color("redd").is_none());
+    }
+
+    #[test]
+    fn test_parse_color_dispatch() {
+        // parse_color should dispatch to correct parser
+        let hex = parse_color("#ff0000").unwrap();
+        assert!((hex.r - 1.0).abs() < 0.001);
+
+        let rgb = parse_color("rgb(0, 255, 0)").unwrap();
+        assert!((rgb.g - 1.0).abs() < 0.001);
+
+        let rgba = parse_color("rgba(0, 0, 255, 0.5)").unwrap();
+        assert!((rgba.b - 1.0).abs() < 0.001);
+        assert!((rgba.a - 0.5).abs() < 0.001);
+
+        let named = parse_color("blue").unwrap();
+        assert!((named.b - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_color_whitespace_handling() {
+        let c = parse_color("  #ff0000  ").unwrap();
+        assert!((c.r - 1.0).abs() < 0.001);
+
+        let c = parse_color("  blue  ").unwrap();
+        assert!((c.b - 1.0).abs() < 0.001);
+    }
+
+    // ========== Gradient Parsing Edge Cases ==========
+
+    #[test]
+    fn test_gradient_with_direction() {
+        let g = parse_linear_gradient("linear-gradient(to bottom, #ff0000, #0000ff)").unwrap();
+        assert!((g.top.r - 1.0).abs() < 0.001);
+        assert!((g.top.b - 0.0).abs() < 0.001);
+        assert!((g.bottom.r - 0.0).abs() < 0.001);
+        assert!((g.bottom.b - 1.0).abs() < 0.001);
+
+        let g = parse_linear_gradient("linear-gradient(to top, #000000, #ffffff)").unwrap();
+        assert!((g.top.r - 0.0).abs() < 0.001);
+        assert!((g.bottom.r - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_gradient_without_direction() {
+        let g = parse_linear_gradient("linear-gradient(#ff0000, #00ff00)").unwrap();
+        assert!((g.top.r - 1.0).abs() < 0.001);
+        assert!((g.top.g - 0.0).abs() < 0.001);
+        assert!((g.bottom.r - 0.0).abs() < 0.001);
+        assert!((g.bottom.g - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_gradient_with_color_stops() {
+        // Color stops with percentages should work (percentage gets stripped)
+        let g =
+            parse_linear_gradient("linear-gradient(to bottom, #ff0000 0%, #0000ff 100%)").unwrap();
+        assert!((g.top.r - 1.0).abs() < 0.001);
+        assert!((g.bottom.b - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_gradient_with_named_colors() {
+        let g = parse_linear_gradient("linear-gradient(red, blue)").unwrap();
+        assert!((g.top.r - 1.0).abs() < 0.001);
+        assert!((g.bottom.b - 1.0).abs() < 0.001);
+
+        let g = parse_linear_gradient("linear-gradient(to bottom, white, black)").unwrap();
+        assert!((g.top.r - 1.0).abs() < 0.001);
+        assert!((g.bottom.r - 0.0).abs() < 0.001);
+    }
+
+    // Note: rgb()/rgba() colors inside gradients are not supported by the simple
+    // string-based parser due to comma splitting. Gradients with rgb() colors
+    // should be pre-parsed by lightningcss which handles them correctly.
+
+    #[test]
+    fn test_gradient_whitespace_handling() {
+        let g = parse_linear_gradient("  linear-gradient(#ff0000, #00ff00)  ").unwrap();
+        assert!((g.top.r - 1.0).abs() < 0.001);
+
+        let g = parse_linear_gradient("linear-gradient( to bottom , #ff0000 , #00ff00 )").unwrap();
+        assert!((g.top.r - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_gradient_invalid_format() {
+        // Not a gradient
+        assert!(parse_linear_gradient("red").is_err());
+        assert!(parse_linear_gradient("#ff0000").is_err());
+        assert!(parse_linear_gradient("rgb(255, 0, 0)").is_err());
+
+        // Missing parenthesis
+        assert!(parse_linear_gradient("linear-gradient(#ff0000, #00ff00").is_err());
+        assert!(parse_linear_gradient("linear-gradient #ff0000, #00ff00)").is_err());
+
+        // Only one color
+        assert!(parse_linear_gradient("linear-gradient(#ff0000)").is_err());
+    }
+
+    #[test]
+    fn test_gradient_mixed_color_formats() {
+        // Hex top, named bottom
+        let g = parse_linear_gradient("linear-gradient(#ff0000, blue)").unwrap();
+        assert!((g.top.r - 1.0).abs() < 0.001);
+        assert!((g.bottom.b - 1.0).abs() < 0.001);
+
+        // Named top, hex bottom
+        let g = parse_linear_gradient("linear-gradient(red, #0000ff)").unwrap();
+        assert!((g.top.r - 1.0).abs() < 0.001);
+        assert!((g.bottom.b - 1.0).abs() < 0.001);
+    }
+
+    // ========== Text Shadow Parsing ==========
+
+    #[test]
+    fn test_text_shadow_basic() {
+        let s = parse_text_shadow("0 0 10px #ff00ff").unwrap();
+        assert!((s.radius - 10.0).abs() < 0.01);
+        assert!((s.color.r - 1.0).abs() < 0.001);
+        assert!((s.color.g - 0.0).abs() < 0.001);
+        assert!((s.color.b - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_text_shadow_with_rgba() {
+        let s = parse_text_shadow("0 0 15px rgba(255, 0, 255, 0.8)").unwrap();
+        assert!((s.radius - 15.0).abs() < 0.01);
+        assert!((s.color.r - 1.0).abs() < 0.001);
+        assert!((s.color.a - 0.8).abs() < 0.001);
+        assert!((s.intensity - 0.8).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_text_shadow_with_rgb() {
+        let s = parse_text_shadow("0 0 8px rgb(0, 255, 0)").unwrap();
+        assert!((s.radius - 8.0).abs() < 0.01);
+        assert!((s.color.g - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_text_shadow_different_radii() {
+        let s = parse_text_shadow("0 0 5px #ffffff").unwrap();
+        assert!((s.radius - 5.0).abs() < 0.01);
+
+        let s = parse_text_shadow("0 0 20px #ffffff").unwrap();
+        assert!((s.radius - 20.0).abs() < 0.01);
+
+        let s = parse_text_shadow("0 0 0px #ffffff").unwrap();
+        assert!((s.radius - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_text_shadow_invalid() {
+        // No color found
+        assert!(parse_text_shadow("0 0 10px").is_err());
+        assert!(parse_text_shadow("notacolor").is_err());
+    }
+
+    // ========== Background Size Parsing ==========
+
+    #[test]
+    fn test_background_size_keywords() {
+        assert_eq!(parse_background_size("cover"), BackgroundSize::Cover);
+        assert_eq!(parse_background_size("COVER"), BackgroundSize::Cover);
+        assert_eq!(parse_background_size("contain"), BackgroundSize::Contain);
+        assert_eq!(parse_background_size("auto"), BackgroundSize::Auto);
+        assert_eq!(parse_background_size("auto auto"), BackgroundSize::Auto);
+    }
+
+    #[test]
+    fn test_background_size_fixed_dimensions() {
+        assert_eq!(
+            parse_background_size("100px 200px"),
+            BackgroundSize::Fixed(100, 200)
+        );
+        assert_eq!(
+            parse_background_size("50px 50px"),
+            BackgroundSize::Fixed(50, 50)
+        );
+    }
+
+    #[test]
+    fn test_background_size_single_px() {
+        assert_eq!(
+            parse_background_size("100px"),
+            BackgroundSize::Fixed(100, 100)
+        );
+    }
+
+    #[test]
+    fn test_background_size_canvas_percent() {
+        assert_eq!(
+            parse_background_size("50%"),
+            BackgroundSize::CanvasPercent(50.0)
+        );
+        assert_eq!(
+            parse_background_size("100%"),
+            BackgroundSize::CanvasPercent(100.0)
+        );
+    }
+
+    #[test]
+    fn test_background_size_image_scale() {
+        assert_eq!(parse_background_size("2x"), BackgroundSize::ImageScale(2.0));
+        assert_eq!(
+            parse_background_size("0.5x"),
+            BackgroundSize::ImageScale(0.5)
+        );
+    }
+
+    #[test]
+    fn test_background_size_whitespace() {
+        assert_eq!(parse_background_size("  cover  "), BackgroundSize::Cover);
+        assert_eq!(
+            parse_background_size("  100px 200px  "),
+            BackgroundSize::Fixed(100, 200)
+        );
+    }
+
+    // ========== Background Position Parsing ==========
+
+    #[test]
+    fn test_background_position_keywords() {
+        assert_eq!(
+            parse_background_position("center"),
+            BackgroundPosition::Center
+        );
+        assert_eq!(
+            parse_background_position("center center"),
+            BackgroundPosition::Center
+        );
+        assert_eq!(parse_background_position("top"), BackgroundPosition::Top);
+        assert_eq!(
+            parse_background_position("bottom"),
+            BackgroundPosition::Bottom
+        );
+        assert_eq!(parse_background_position("left"), BackgroundPosition::Left);
+        assert_eq!(
+            parse_background_position("right"),
+            BackgroundPosition::Right
+        );
+    }
+
+    #[test]
+    fn test_background_position_corners() {
+        assert_eq!(
+            parse_background_position("top left"),
+            BackgroundPosition::TopLeft
+        );
+        assert_eq!(
+            parse_background_position("left top"),
+            BackgroundPosition::TopLeft
+        );
+        assert_eq!(
+            parse_background_position("top right"),
+            BackgroundPosition::TopRight
+        );
+        assert_eq!(
+            parse_background_position("bottom left"),
+            BackgroundPosition::BottomLeft
+        );
+        assert_eq!(
+            parse_background_position("bottom right"),
+            BackgroundPosition::BottomRight
+        );
+    }
+
+    #[test]
+    fn test_background_position_percentages() {
+        assert_eq!(
+            parse_background_position("50% 50%"),
+            BackgroundPosition::Center
+        );
+        assert_eq!(
+            parse_background_position("0% 0%"),
+            BackgroundPosition::TopLeft
+        );
+        assert_eq!(
+            parse_background_position("100% 100%"),
+            BackgroundPosition::BottomRight
+        );
+
+        // Non-standard percentages
+        if let BackgroundPosition::Percent(x, y) = parse_background_position("25% 75%") {
+            assert!((x - 0.25).abs() < 0.001);
+            assert!((y - 0.75).abs() < 0.001);
+        } else {
+            panic!("Expected Percent variant");
+        }
+    }
+
+    #[test]
+    fn test_background_position_case_insensitive() {
+        assert_eq!(
+            parse_background_position("CENTER"),
+            BackgroundPosition::Center
+        );
+        assert_eq!(
+            parse_background_position("Top Left"),
+            BackgroundPosition::TopLeft
+        );
+    }
+
+    // ========== Background Repeat Parsing ==========
+
+    #[test]
+    fn test_background_repeat_keywords() {
+        assert_eq!(
+            parse_background_repeat("no-repeat"),
+            BackgroundRepeat::NoRepeat
+        );
+        assert_eq!(parse_background_repeat("repeat"), BackgroundRepeat::Repeat);
+        assert_eq!(
+            parse_background_repeat("repeat-x"),
+            BackgroundRepeat::RepeatX
+        );
+        assert_eq!(
+            parse_background_repeat("repeat-y"),
+            BackgroundRepeat::RepeatY
+        );
+    }
+
+    #[test]
+    fn test_background_repeat_two_value_syntax() {
+        assert_eq!(
+            parse_background_repeat("repeat repeat"),
+            BackgroundRepeat::Repeat
+        );
+        assert_eq!(
+            parse_background_repeat("repeat no-repeat"),
+            BackgroundRepeat::RepeatX
+        );
+        assert_eq!(
+            parse_background_repeat("no-repeat repeat"),
+            BackgroundRepeat::RepeatY
+        );
+    }
+
+    #[test]
+    fn test_background_repeat_case_insensitive() {
+        assert_eq!(
+            parse_background_repeat("NO-REPEAT"),
+            BackgroundRepeat::NoRepeat
+        );
+        assert_eq!(parse_background_repeat("REPEAT"), BackgroundRepeat::Repeat);
+    }
+
+    #[test]
+    fn test_background_repeat_unknown_defaults_to_no_repeat() {
+        assert_eq!(
+            parse_background_repeat("invalid"),
+            BackgroundRepeat::NoRepeat
+        );
+        assert_eq!(parse_background_repeat(""), BackgroundRepeat::NoRepeat);
+    }
+
+    // ============================================
+    // Event Override / Responsive Theming Tests
+    // ============================================
+
+    #[test]
+    fn test_parse_on_bell_event() {
+        let css = r#"
+            :terminal { color: #ffffff; background: #000000; }
+            :terminal::on-bell {
+                --duration: 300ms;
+                --cursor-color: #ff0000;
+            }
+        "#;
+        let theme = parse_theme(css).unwrap();
+        assert!(theme.on_bell.is_some());
+        let on_bell = theme.on_bell.unwrap();
+        assert_eq!(on_bell.duration_ms, 300);
+        assert!(on_bell.cursor_color.is_some());
+        let cursor = on_bell.cursor_color.unwrap();
+        assert_eq!((cursor.r * 255.0) as u8, 255);
+        assert_eq!((cursor.g * 255.0) as u8, 0);
+        assert_eq!((cursor.b * 255.0) as u8, 0);
+    }
+
+    #[test]
+    fn test_parse_on_command_success_event() {
+        let css = r#"
+            :terminal { color: #ffffff; background: #000000; }
+            :terminal::on-command-success {
+                --duration: 500ms;
+                --cursor-color: #00ff00;
+            }
+        "#;
+        let theme = parse_theme(css).unwrap();
+        assert!(theme.on_command_success.is_some());
+        let event = theme.on_command_success.unwrap();
+        assert_eq!(event.duration_ms, 500);
+        assert!(event.cursor_color.is_some());
+    }
+
+    #[test]
+    fn test_parse_on_command_fail_event() {
+        let css = r#"
+            :terminal { color: #ffffff; background: #000000; }
+            :terminal::on-command-fail {
+                --duration: 1000ms;
+                --cursor-color: #ff0000;
+                text-shadow: 0 0 10px rgba(255, 0, 0, 0.8);
+            }
+        "#;
+        let theme = parse_theme(css).unwrap();
+        assert!(theme.on_command_fail.is_some());
+        let event = theme.on_command_fail.unwrap();
+        assert_eq!(event.duration_ms, 1000);
+        assert!(event.cursor_color.is_some());
+        assert!(event.text_shadow.is_some());
+    }
+
+    #[test]
+    fn test_parse_on_focus_event() {
+        let css = r#"
+            :terminal { color: #ffffff; background: #000000; }
+            :terminal::on-focus {
+                --duration: 200ms;
+                --cursor-color: #00ffff;
+            }
+        "#;
+        let theme = parse_theme(css).unwrap();
+        assert!(theme.on_focus.is_some());
+        let event = theme.on_focus.unwrap();
+        assert_eq!(event.duration_ms, 200);
+    }
+
+    #[test]
+    fn test_parse_on_blur_event() {
+        let css = r#"
+            :terminal { color: #ffffff; background: #000000; }
+            :terminal::on-blur {
+                --duration: 0;
+                --cursor-color: #808080;
+            }
+        "#;
+        let theme = parse_theme(css).unwrap();
+        assert!(theme.on_blur.is_some());
+        let event = theme.on_blur.unwrap();
+        // Duration 0 means persist until cleared
+        assert_eq!(event.duration_ms, 0);
+    }
+
+    #[test]
+    fn test_parse_starfield_patch_in_event() {
+        let css = r#"
+            :terminal { color: #ffffff; background: #000000; }
+            :terminal::on-command-fail {
+                --duration: 5000ms;
+                --starfield-color: rgba(255, 100, 50, 0.9);
+                --starfield-speed: 0.3;
+                --starfield-glow-radius: 6;
+                --starfield-glow-intensity: 0.8;
+            }
+        "#;
+        let theme = parse_theme(css).unwrap();
+        assert!(theme.on_command_fail.is_some());
+        let event = theme.on_command_fail.unwrap();
+        assert!(event.starfield_patch.is_some());
+        let patch = event.starfield_patch.unwrap();
+        assert!(patch.color.is_some());
+        assert_eq!(patch.speed, Some(0.3));
+        assert_eq!(patch.glow_radius, Some(6.0));
+        assert_eq!(patch.glow_intensity, Some(0.8));
+    }
+
+    #[test]
+    fn test_parse_particle_patch_in_event() {
+        let css = r#"
+            :terminal { color: #ffffff; background: #000000; }
+            :terminal::on-command-fail {
+                --duration: 5000ms;
+                --particles-color: #ff4500;
+                --particles-count: 50;
+                --particles-speed: 0.6;
+                --particles-shape: sparkle;
+            }
+        "#;
+        let theme = parse_theme(css).unwrap();
+        assert!(theme.on_command_fail.is_some());
+        let event = theme.on_command_fail.unwrap();
+        assert!(event.particle_patch.is_some());
+        let patch = event.particle_patch.unwrap();
+        assert!(patch.color.is_some());
+        assert_eq!(patch.count, Some(50));
+        assert_eq!(patch.speed, Some(0.6));
+        assert_eq!(patch.shape, Some(crate::ParticleShape::Sparkle));
+    }
+
+    #[test]
+    fn test_parse_grid_patch_in_event() {
+        let css = r#"
+            :terminal { color: #ffffff; background: #000000; }
+            :terminal::on-bell {
+                --duration: 300ms;
+                --grid-color: rgba(255, 0, 0, 0.5);
+                --grid-animation-speed: 2.0;
+                --grid-glow-intensity: 0.9;
+            }
+        "#;
+        let theme = parse_theme(css).unwrap();
+        assert!(theme.on_bell.is_some());
+        let event = theme.on_bell.unwrap();
+        assert!(event.grid_patch.is_some());
+        let patch = event.grid_patch.unwrap();
+        assert!(patch.color.is_some());
+        assert_eq!(patch.animation_speed, Some(2.0));
+        assert_eq!(patch.glow_intensity, Some(0.9));
+    }
+
+    #[test]
+    fn test_parse_rain_patch_in_event() {
+        let css = r#"
+            :terminal { color: #ffffff; background: #000000; }
+            :terminal::on-command-fail {
+                --duration: 10000ms;
+                --rain-color: rgba(180, 0, 0, 0.8);
+                --rain-speed: 2.0;
+                --rain-density: 200;
+            }
+        "#;
+        let theme = parse_theme(css).unwrap();
+        assert!(theme.on_command_fail.is_some());
+        let event = theme.on_command_fail.unwrap();
+        assert!(event.rain_patch.is_some());
+        let patch = event.rain_patch.unwrap();
+        assert!(patch.color.is_some());
+        assert_eq!(patch.speed, Some(2.0));
+        assert_eq!(patch.density, Some(200));
+    }
+
+    #[test]
+    fn test_parse_matrix_patch_in_event() {
+        let css = r#"
+            :terminal { color: #ffffff; background: #000000; }
+            :terminal::on-bell {
+                --duration: 500ms;
+                --matrix-color: #ff0000;
+                --matrix-speed: 15.0;
+                --matrix-density: 2.0;
+            }
+        "#;
+        let theme = parse_theme(css).unwrap();
+        assert!(theme.on_bell.is_some());
+        let event = theme.on_bell.unwrap();
+        assert!(event.matrix_patch.is_some());
+        let patch = event.matrix_patch.unwrap();
+        assert!(patch.color.is_some());
+        assert_eq!(patch.speed, Some(15.0));
+        assert_eq!(patch.density, Some(2.0));
+    }
+
+    #[test]
+    fn test_parse_shape_patch_in_event() {
+        let css = r#"
+            :terminal { color: #ffffff; background: #000000; }
+            :terminal::on-command-success {
+                --duration: 1000ms;
+                --shape-type: star;
+                --shape-size: 150;
+                --shape-fill: rgba(0, 255, 0, 0.8);
+                --shape-rotation-speed: 2.0;
+            }
+        "#;
+        let theme = parse_theme(css).unwrap();
+        assert!(theme.on_command_success.is_some());
+        let event = theme.on_command_success.unwrap();
+        assert!(event.shape_patch.is_some());
+        let patch = event.shape_patch.unwrap();
+        assert_eq!(patch.shape_type, Some(crate::ShapeType::Star));
+        assert_eq!(patch.size, Some(150.0));
+        assert!(patch.fill.is_some());
+        assert_eq!(patch.rotation_speed, Some(2.0));
+    }
+
+    #[test]
+    fn test_parse_sprite_patch_in_event() {
+        let css = r#"
+            :terminal { color: #ffffff; background: #000000; }
+            :terminal::on-command-fail {
+                --duration: 86400000ms;
+                --sprite-path: "flames.png";
+                --sprite-fps: 16;
+                --sprite-opacity: 0.6;
+                --sprite-motion-speed: 0.5;
+            }
+        "#;
+        let theme = parse_theme(css).unwrap();
+        assert!(theme.on_command_fail.is_some());
+        let event = theme.on_command_fail.unwrap();
+        assert!(event.sprite_patch.is_some());
+        let patch = event.sprite_patch.unwrap();
+        assert_eq!(patch.path, Some("flames.png".to_string()));
+        assert_eq!(patch.fps, Some(16.0));
+        assert_eq!(patch.opacity, Some(0.6));
+        assert_eq!(patch.motion_speed, Some(0.5));
+    }
+
+    #[test]
+    fn test_parse_duration_formats() {
+        // Test milliseconds
+        let css = r#"
+            :terminal { color: #ffffff; background: #000000; }
+            :terminal::on-bell { --duration: 500ms; }
+        "#;
+        let theme = parse_theme(css).unwrap();
+        assert_eq!(theme.on_bell.unwrap().duration_ms, 500);
+
+        // Test seconds
+        let css = r#"
+            :terminal { color: #ffffff; background: #000000; }
+            :terminal::on-bell { --duration: 1.5s; }
+        "#;
+        let theme = parse_theme(css).unwrap();
+        assert_eq!(theme.on_bell.unwrap().duration_ms, 1500);
+
+        // Test bare number (treated as ms)
+        let css = r#"
+            :terminal { color: #ffffff; background: #000000; }
+            :terminal::on-bell { --duration: 750; }
+        "#;
+        let theme = parse_theme(css).unwrap();
+        assert_eq!(theme.on_bell.unwrap().duration_ms, 750);
+    }
+
+    #[test]
+    fn test_multiple_events_in_theme() {
+        let css = r#"
+            :terminal { color: #ffffff; background: #000000; }
+            :terminal::on-bell {
+                --duration: 300ms;
+                --cursor-color: #ffff00;
+            }
+            :terminal::on-command-success {
+                --duration: 500ms;
+                --cursor-color: #00ff00;
+            }
+            :terminal::on-command-fail {
+                --duration: 1000ms;
+                --cursor-color: #ff0000;
+            }
+        "#;
+        let theme = parse_theme(css).unwrap();
+        assert!(theme.on_bell.is_some());
+        assert!(theme.on_command_success.is_some());
+        assert!(theme.on_command_fail.is_some());
+
+        assert_eq!(theme.on_bell.unwrap().duration_ms, 300);
+        assert_eq!(theme.on_command_success.unwrap().duration_ms, 500);
+        assert_eq!(theme.on_command_fail.unwrap().duration_ms, 1000);
+    }
+
+    #[test]
+    fn test_combined_patches_in_single_event() {
+        let css = r#"
+            :terminal { color: #ffffff; background: #000000; }
+            :terminal::on-command-fail {
+                --duration: 5000ms;
+                --cursor-color: #ff0000;
+                --starfield-color: rgba(255, 100, 50, 0.9);
+                --starfield-speed: 0.3;
+                --particles-color: #ff4500;
+                --particles-count: 50;
+                --sprite-fps: 16;
+                --sprite-opacity: 0.6;
+            }
+        "#;
+        let theme = parse_theme(css).unwrap();
+        let event = theme.on_command_fail.unwrap();
+
+        // Check all patches are present
+        assert!(event.cursor_color.is_some());
+        assert!(event.starfield_patch.is_some());
+        assert!(event.particle_patch.is_some());
+        assert!(event.sprite_patch.is_some());
+
+        // Verify values
+        let starfield = event.starfield_patch.unwrap();
+        assert_eq!(starfield.speed, Some(0.3));
+
+        let particles = event.particle_patch.unwrap();
+        assert_eq!(particles.count, Some(50));
+
+        let sprite = event.sprite_patch.unwrap();
+        assert_eq!(sprite.fps, Some(16.0));
     }
 }

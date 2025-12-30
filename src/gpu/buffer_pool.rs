@@ -4,22 +4,16 @@
 //! Buffers are checked out when windows are created and automatically
 //! returned to the pool when dropped.
 //!
-//! # Status: Not Yet Integrated
+//! # Status: API Ready, Pool Integration Optional
 //!
-//! This module is implemented but not yet wired into the renderers.
-//! The texture pool (texture_pool.rs) is integrated and provides the main
-//! memory savings (~32MB per window for render textures).
+//! The renderers (GridRenderer, RectRenderer) now accept external instance
+//! buffers, enabling buffer pooling. Currently WindowGpuState uses plain
+//! wgpu::Buffer created via the renderer's `create_instance_buffer()` method.
 //!
-//! # Integration Steps Required
-//!
-//! To integrate buffer pooling (~2MB additional savings per window):
-//!
-//! 1. Move `BufferPool` to `crates/crt-renderer/` or create a shared crate
-//! 2. Modify `GridRenderer::new()` to accept a `PooledBuffer` parameter
-//!    instead of creating its own instance buffer
-//! 3. Modify `RectRenderer::new()` similarly
-//! 4. Update `SharedGpuState` to own the `BufferPool`
-//! 5. Update window creation in `main.rs` to checkout buffers and pass them
+//! To enable actual buffer reuse across window lifecycles (~2MB savings):
+//! 1. Change WindowGpuState buffer fields from `wgpu::Buffer` to `PooledBuffer`
+//! 2. Use `buffer_pool.checkout(BufferClass::GridInstance)` in main.rs
+//! 3. Pass `pooled_buffer.buffer()` to render calls
 //!
 //! The RAII pattern means buffers auto-return to pool when windows close.
 
@@ -43,8 +37,8 @@ impl BufferClass {
     /// Get the size in bytes for this buffer class
     pub fn size_bytes(&self) -> u64 {
         match self {
-            Self::GridInstance => 32 * 1024 * 48,  // 1.5 MB
-            Self::RectInstance => 16 * 1024 * 32,  // 512 KB
+            Self::GridInstance => 32 * 1024 * 48, // 1.5 MB
+            Self::RectInstance => 16 * 1024 * 32, // 512 KB
             Self::SmallUniform => 256,
         }
     }
@@ -55,9 +49,7 @@ impl BufferClass {
             Self::GridInstance | Self::RectInstance => {
                 wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
             }
-            Self::SmallUniform => {
-                wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST
-            }
+            Self::SmallUniform => wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         }
     }
 
@@ -100,11 +92,19 @@ impl BufferPoolInner {
     fn checkout(&mut self, class: BufferClass) -> wgpu::Buffer {
         if let Some(buffer) = self.pools.get_mut(&class).and_then(|v| v.pop()) {
             self.stats.reuses += 1;
-            log::debug!("Reusing pooled {:?} buffer (reuses: {})", class, self.stats.reuses);
+            log::debug!(
+                "Reusing pooled {:?} buffer (reuses: {})",
+                class,
+                self.stats.reuses
+            );
             buffer
         } else {
             self.stats.allocations += 1;
-            log::debug!("Allocating new {:?} buffer (allocations: {})", class, self.stats.allocations);
+            log::debug!(
+                "Allocating new {:?} buffer (allocations: {})",
+                class,
+                self.stats.allocations
+            );
             self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(class.label()),
                 size: class.size_bytes(),
@@ -115,10 +115,14 @@ impl BufferPoolInner {
     }
 
     fn return_buffer(&mut self, class: BufferClass, buffer: wgpu::Buffer) {
-        let pool = self.pools.entry(class).or_insert_with(Vec::new);
+        let pool = self.pools.entry(class).or_default();
         if pool.len() < self.max_per_class {
             self.stats.returns += 1;
-            log::debug!("Returning {:?} buffer to pool (size: {})", class, pool.len() + 1);
+            log::debug!(
+                "Returning {:?} buffer to pool (size: {})",
+                class,
+                pool.len() + 1
+            );
             pool.push(buffer);
         } else {
             log::debug!("Pool full for {:?}, destroying buffer", class);
@@ -168,25 +172,43 @@ impl BufferPool {
     ///
     /// Returns a pooled buffer if available, otherwise allocates a new one.
     /// The buffer is automatically returned to the pool when the PooledBuffer is dropped.
-    pub fn checkout(&self, class: BufferClass) -> PooledBuffer {
-        let buffer = self.inner.lock().unwrap().checkout(class);
-        PooledBuffer {
+    /// Returns None if the pool lock is poisoned.
+    pub fn checkout(&self, class: BufferClass) -> Option<PooledBuffer> {
+        let buffer = match self.inner.lock() {
+            Ok(mut inner) => inner.checkout(class),
+            Err(e) => {
+                log::error!("Buffer pool lock poisoned: {}", e);
+                return None;
+            }
+        };
+        Some(PooledBuffer {
             buffer: Some(buffer),
             class,
             pool: Arc::downgrade(&self.inner),
-        }
+        })
     }
 
     /// Get current pool statistics
     pub fn stats(&self) -> PoolStats {
-        self.inner.lock().unwrap().stats.clone()
+        match self.inner.lock() {
+            Ok(inner) => inner.stats.clone(),
+            Err(e) => {
+                log::warn!("Buffer pool lock poisoned, returning default stats: {}", e);
+                PoolStats::default()
+            }
+        }
     }
 
     /// Shrink the pool by releasing excess buffers
     ///
     /// Call this after closing windows to free up GPU memory.
     pub fn shrink(&self) {
-        self.inner.lock().unwrap().shrink();
+        match self.inner.lock() {
+            Ok(mut inner) => inner.shrink(),
+            Err(e) => {
+                log::warn!("Buffer pool lock poisoned, skipping shrink: {}", e);
+            }
+        }
     }
 }
 
@@ -214,11 +236,11 @@ impl PooledBuffer {
 impl Drop for PooledBuffer {
     fn drop(&mut self) {
         if let Some(buffer) = self.buffer.take() {
-            if let Some(pool) = self.pool.upgrade() {
-                if let Ok(mut inner) = pool.lock() {
-                    inner.return_buffer(self.class, buffer);
-                    return;
-                }
+            if let Some(pool) = self.pool.upgrade()
+                && let Ok(mut inner) = pool.lock()
+            {
+                inner.return_buffer(self.class, buffer);
+                return;
             }
             // Pool is gone, destroy the buffer
             buffer.destroy();

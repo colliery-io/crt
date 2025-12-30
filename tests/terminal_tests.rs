@@ -541,9 +541,10 @@ fn test_selection_after_scroll_then_scroll_back() {
     let display_offset = harness.terminal().display_offset() as i32;
     let grid_line = -display_offset + 2; // A couple lines down from top of view
 
-    harness
-        .terminal_mut()
-        .start_selection(Point::new(Line(grid_line), Column(0)), SelectionType::Simple);
+    harness.terminal_mut().start_selection(
+        Point::new(Line(grid_line), Column(0)),
+        SelectionType::Simple,
+    );
     harness
         .terminal_mut()
         .update_selection(Point::new(Line(grid_line), Column(9)));

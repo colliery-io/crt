@@ -1,0 +1,277 @@
+/* RobCo Reactive Theme - Fallout Pip-Boy Terminal with Reactive Sprites */
+
+:terminal {
+    /* Typography */
+    font-family: "MesloLGS NF", "Fira Code", monospace;
+    font-size: 14;
+    line-height: 1.5;
+    font-bold: "MesloLGS NF Bold";
+    font-italic: "MesloLGS NF Italic";
+    font-bold-italic: "MesloLGS NF Bold Italic";
+    ligatures: true;
+
+    /* Pip-Boy green */
+    color: #61fe71;
+    background: #0a1a0d;
+    background-image: url("scanlines.png");
+    background-size: cover;
+    background-repeat: repeat;
+    --background-opacity: 0.08;
+
+    /* Green text glow - stronger for visibility */
+    text-shadow: 0 0 15px rgba(97, 254, 113, 0.5);
+}
+
+:terminal::cursor {
+    background: #61fe71;
+}
+
+:terminal::selection {
+    background: #44475a;
+    color: #f8f8f2;
+}
+
+:terminal::highlight {
+    background: #e6db74;
+    color: #1a1a1a;
+}
+
+:terminal::backdrop {
+    /* Disable grid */
+    --grid-enabled: false;
+
+    /* Default Vault Boy sprite - head 1 (normal/idle) */
+    /* walk_head images are 944x252 with 8 frames = 118x252 per frame */
+    --sprite-enabled: true;
+    --sprite-path: "robco/walk_head_1.png";
+    --sprite-frame-width: 118;
+    --sprite-frame-height: 252;
+    --sprite-columns: 8;
+    --sprite-rows: 1;
+    --sprite-frame-count: 8;
+    --sprite-fps: 10;
+    --sprite-scale: 1.5;
+    --sprite-opacity: 0.4;
+    --sprite-motion: none;
+    --sprite-motion-speed: 0;
+    --sprite-position: bottom-right;
+}
+
+/* Command failed - show concerned/worried head (head 2) */
+:terminal::on-command-fail {
+    --duration: 3000ms;
+    --sprite-path: "robco/walk_head_2.png";
+    --sprite-frame-width: 118;
+    --sprite-frame-height: 252;
+    --sprite-columns: 8;
+    --sprite-rows: 1;
+    --sprite-frame-count: 8;
+    --sprite-fps: 10;
+    --sprite-scale: 1.5;
+    --sprite-opacity: 0.5;
+    /* Add amber warning glow */
+    text-shadow: 0 0 20px rgba(255, 107, 53, 0.6);
+}
+
+/* Bell event - animated head 4 (alert/attention) */
+:terminal::on-bell {
+    --duration: 800ms;
+    --sprite-path: "robco/walk_head_4.png";
+    --sprite-frame-width: 118;
+    --sprite-frame-height: 252;
+    --sprite-columns: 8;
+    --sprite-rows: 1;
+    --sprite-frame-count: 8;
+    --sprite-fps: 12;
+    --sprite-opacity: 0.6;
+    --sprite-scale: 1.5;
+}
+
+/* Command success - brief flash of approval */
+:terminal::on-command-success {
+    --duration: 800ms;
+    --sprite-opacity: 0.5;
+    text-shadow: 0 0 20px rgba(97, 254, 113, 0.8);
+}
+
+/* ANSI 16-color palette - Pip-Boy green monochrome */
+:terminal::palette {
+    /* Normal colors - all shades of Pip-Boy green */
+    --color-0: #0a1a0d;   /* black - dark green */
+    --color-1: #ff6b35;   /* red - amber/orange for errors */
+    --color-2: #61fe71;   /* green - pip-boy green */
+    --color-3: #61fe71;   /* yellow -> pip-boy green */
+    --color-4: #3a9a4d;   /* blue -> muted green */
+    --color-5: #8afe9a;   /* magenta -> light green */
+    --color-6: #4ade5a;   /* cyan -> green variant */
+    --color-7: #61fe71;   /* white -> pip-boy green */
+
+    /* Bright colors */
+    --color-8: #1a3a1d;   /* bright black - slightly lighter */
+    --color-9: #ff8c5a;   /* bright red - lighter amber */
+    --color-10: #8aff9a;  /* bright green */
+    --color-11: #8aff9a;  /* bright yellow -> bright green */
+    --color-12: #5aba6d;  /* bright blue -> green */
+    --color-13: #aaffba;  /* bright magenta -> pale green */
+    --color-14: #6afe7a;  /* bright cyan -> green */
+    --color-15: #aaffba;  /* bright white -> pale green */
+
+    /* Extended 256-color palette overrides for Pip-Boy green monochrome */
+    --color-17: #2a5a3d;
+    --color-18: #2a5a3d;
+    --color-19: #3a6a4d;
+    --color-20: #3a7a4d;
+    --color-21: #4a8a5d;
+    --color-24: #3a6a4d;
+    --color-25: #3a7a4d;
+    --color-26: #4a8a5d;
+    --color-27: #4a9a5d;
+    --color-28: #5aaa6d;
+    --color-29: #5aba6d;
+    --color-30: #5aca6d;
+    --color-31: #4a8a5d;
+    --color-32: #5a9a6d;
+    --color-33: #5aaa6d;
+    --color-34: #5aba6d;
+    --color-35: #6aca7d;
+    --color-36: #5aba6d;
+    --color-37: #5aca7d;
+    --color-38: #6ada8d;
+    --color-39: #7aea9d;
+
+    --color-40: #3a6a4d;
+    --color-41: #4a7a5d;
+    --color-42: #5a8a6d;
+    --color-43: #5a9a6d;
+    --color-44: #6aaa7d;
+    --color-45: #7aba8d;
+    --color-46: #61fe71;
+    --color-47: #71fe81;
+    --color-48: #81fe91;
+    --color-49: #91fea1;
+    --color-50: #a1feb1;
+    --color-51: #b1fec1;
+
+    --color-58: #4a8a5d;
+    --color-64: #5a9a6d;
+    --color-70: #61fe71;
+    --color-71: #71fe81;
+    --color-76: #5aba6d;
+    --color-77: #6aca7d;
+    --color-82: #7ada8d;
+    --color-83: #8aea9d;
+
+    --color-80: #5aba6d;
+    --color-81: #6aca7d;
+    --color-86: #5aca7d;
+    --color-87: #6ada8d;
+
+    --color-124: #ff6b35;
+    --color-125: #ff7b45;
+    --color-160: #ff6b35;
+    --color-161: #ff7b45;
+    --color-166: #ff8c5a;
+    --color-167: #ff9c6a;
+    --color-172: #ff8c5a;
+    --color-173: #ff9c6a;
+
+    --color-178: #71fe81;
+    --color-179: #81fe91;
+    --color-184: #61fe71;
+    --color-185: #71fe81;
+    --color-190: #81fe91;
+    --color-191: #91fea1;
+    --color-214: #81fe91;
+    --color-215: #91fea1;
+    --color-220: #91fea1;
+    --color-221: #a1feb1;
+    --color-226: #61fe71;
+    --color-227: #71fe81;
+    --color-228: #81fe91;
+    --color-229: #91fea1;
+
+    --color-232: #0a1a0d;
+    --color-233: #0f1f12;
+    --color-234: #142417;
+    --color-235: #19291c;
+    --color-236: #1e2e21;
+    --color-237: #233326;
+    --color-238: #28382b;
+    --color-239: #2d3d30;
+    --color-240: #324235;
+    --color-241: #37473a;
+    --color-242: #3c4c3f;
+    --color-243: #415144;
+    --color-244: #465649;
+    --color-245: #4b5b4e;
+    --color-246: #506053;
+    --color-247: #556558;
+    --color-248: #5a6a5d;
+    --color-249: #5f6f62;
+    --color-250: #647467;
+    --color-251: #69796c;
+    --color-252: #6e7e71;
+    --color-253: #738376;
+    --color-254: #78887b;
+    --color-255: #7d8d80;
+}
+
+/* Tab bar styling */
+:terminal::tab-bar {
+    background: #0a1a0d;
+    border-color: #1a3a1d;
+    height: 36px;
+    padding: 4px;
+}
+
+:tab {
+    background: #0d2a10;
+    color: #3a8a3d;
+    border-radius: 4px;
+    min-width: 80px;
+    max-width: 200px;
+}
+
+:tab.active {
+    background: #1a3a1d;
+    color: #61fe71;
+    accent-color: #61fe71;
+    text-shadow: 0 0 15px rgba(97, 254, 113, 0.9);
+}
+
+:terminal::tab-close {
+    color: #3a6a3d;
+    --hover-background: #ff5555;
+    --hover-color: #ffffff;
+}
+
+/* UI Focus & Accessibility */
+:terminal::ui-focus {
+    --ring-color: #61fe71;
+    --glow-color: rgba(97, 254, 113, 0.4);
+    --ring-thickness: 2px;
+    --glow-size: 4px;
+}
+
+:terminal::ui-hover {
+    background: rgba(97, 254, 113, 0.2);
+}
+
+:terminal::context-menu {
+    background: rgba(10, 26, 13, 0.98);
+    border-color: rgba(58, 138, 61, 0.8);
+    color: #61fe71;
+}
+
+:terminal::search-bar {
+    background: rgba(10, 26, 13, 0.95);
+    color: #61fe71;
+    --placeholder-color: rgba(58, 138, 61, 0.8);
+    --no-match-color: #ff6b35;
+}
+
+:terminal::rename-bar {
+    background: rgba(10, 26, 13, 0.98);
+    color: #61fe71;
+    --label-color: #3a8a3d;
+}
