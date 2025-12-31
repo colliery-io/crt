@@ -1635,6 +1635,16 @@ fn apply_event_properties(
         }
     }
 
+    // Parse flash overlay properties
+    if let Some(c) = custom.get("--flash-color") {
+        override_block.flash_color = Some(parse_color(c)?);
+    }
+    if let Some(v) = custom.get("--flash-intensity") {
+        if let Ok(intensity) = v.parse::<f32>() {
+            override_block.flash_intensity = Some(intensity.clamp(0.0, 1.0));
+        }
+    }
+
     // Parse starfield patch properties
     let mut starfield_patch = StarfieldPatch::default();
     let mut has_starfield_patch = false;

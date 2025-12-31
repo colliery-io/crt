@@ -1056,10 +1056,11 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         render_window_rename(state, shared, &mut encoder, render_target);
     }
 
-    // Pass 9: Render bell flash overlay (if bell was triggered)
-    let flash_intensity = state.ui.bell.flash_intensity();
-    if flash_intensity > 0.0 {
-        render_bell_flash(state, shared, &mut encoder, render_target, flash_intensity);
+    // Pass 9: Render bell flash overlay (if active via CSS theme)
+    if let Some((color, intensity)) = state.ui.overrides.get_effective_flash() {
+        if intensity > 0.0 {
+            render_bell_flash(state, shared, &mut encoder, render_target, color, intensity);
+        }
     }
 
     // Pass 10: Render context menu (if visible)
@@ -1551,15 +1552,16 @@ fn render_search_bar(
     );
 }
 
-/// Render bell flash overlay (semi-transparent white flash)
+/// Render bell flash overlay (theme-driven color and intensity)
 fn render_bell_flash(
     state: &mut WindowState,
     shared: &SharedGpuState,
     encoder: &mut wgpu::CommandEncoder,
     frame_view: &wgpu::TextureView,
+    color: crt_theme::Color,
     intensity: f32,
 ) {
-    // Use rect_renderer to draw a full-screen semi-transparent white rectangle
+    // Use rect_renderer to draw a full-screen semi-transparent colored rectangle
     state.gpu.rect_renderer.clear();
     state.gpu.rect_renderer.update_screen_size(
         &shared.queue,
@@ -1567,9 +1569,13 @@ fn render_bell_flash(
         state.gpu.config.height as f32,
     );
 
-    // Flash color: white with fading alpha based on intensity
-    // Intensity already includes the configured max value
-    let flash_color = [1.0, 1.0, 1.0, intensity];
+    // Flash color from theme with fading alpha based on intensity
+    let flash_color = [
+        color.r as f32 / 255.0,
+        color.g as f32 / 255.0,
+        color.b as f32 / 255.0,
+        intensity,
+    ];
 
     // Cover the entire screen
     state.gpu.rect_renderer.push_rect(

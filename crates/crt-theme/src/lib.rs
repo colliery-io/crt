@@ -1922,6 +1922,10 @@ pub struct EventOverride {
     pub cursor_shape: Option<CursorShape>,
     /// Override text shadow/glow
     pub text_shadow: Option<TextShadow>,
+    /// Flash overlay color (for bell flash effect)
+    pub flash_color: Option<Color>,
+    /// Flash overlay intensity (0.0-1.0)
+    pub flash_intensity: Option<f32>,
     /// Patches to starfield effect
     pub starfield_patch: Option<StarfieldPatch>,
     /// Patches to particle effect
@@ -1973,6 +1977,12 @@ impl EventOverride {
         }
         if other.text_shadow.is_some() {
             self.text_shadow = other.text_shadow;
+        }
+        if other.flash_color.is_some() {
+            self.flash_color = other.flash_color;
+        }
+        if other.flash_intensity.is_some() {
+            self.flash_intensity = other.flash_intensity;
         }
     }
 }

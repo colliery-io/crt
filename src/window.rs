@@ -427,6 +427,43 @@ impl OverrideState {
             .next_back()
     }
 
+    /// Get flash color from active overrides
+    pub fn get_flash_color(&self) -> Option<crt_theme::Color> {
+        self.active
+            .iter()
+            .filter(|o| o.is_active())
+            .filter_map(|o| o.properties.flash_color)
+            .next_back()
+    }
+
+    /// Get flash intensity from active overrides
+    pub fn get_flash_intensity(&self) -> Option<f32> {
+        self.active
+            .iter()
+            .filter(|o| o.is_active())
+            .filter_map(|o| o.properties.flash_intensity)
+            .next_back()
+    }
+
+    /// Get the effective flash for rendering (color and faded intensity)
+    ///
+    /// Returns (color, current_intensity) where current_intensity accounts for
+    /// both the configured intensity and the override's fade-out progress.
+    pub fn get_effective_flash(&self) -> Option<(crt_theme::Color, f32)> {
+        // Find the most recent active override with flash properties
+        self.active
+            .iter()
+            .filter(|o| o.is_active())
+            .filter(|o| o.properties.flash_color.is_some())
+            .last()
+            .map(|o| {
+                let color = o.properties.flash_color.unwrap();
+                let base_intensity = o.properties.flash_intensity.unwrap_or(0.5);
+                let fade = o.intensity(); // Uses ease-out curve
+                (color, base_intensity * fade)
+            })
+    }
+
     /// Get the most recent active starfield patch
     pub fn get_starfield_patch(&self) -> Option<&crt_theme::StarfieldPatch> {
         self.active
