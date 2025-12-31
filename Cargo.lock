@@ -860,7 +860,6 @@ version = "0.0.6"
 dependencies = [
  "anyhow",
  "arboard",
- "bytemuck",
  "clipboard-files",
  "criterion",
  "crt-core",
@@ -872,7 +871,6 @@ dependencies = [
  "image",
  "log",
  "muda",
- "naga",
  "notify",
  "objc2 0.5.2",
  "objc2-app-kit 0.2.2",
@@ -897,7 +895,6 @@ dependencies = [
  "anyhow",
  "log",
  "portable-pty",
- "vte",
 ]
 
 [[package]]
@@ -919,7 +916,6 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "lightningcss",
- "log",
  "thiserror 2.0.17",
 ]
 

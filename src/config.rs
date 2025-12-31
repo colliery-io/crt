@@ -49,11 +49,6 @@ impl ConfigPaths {
         self.config_dir.join("themes")
     }
 
-    /// Get a specific theme file path
-    pub fn theme_path(&self, theme_name: &str) -> PathBuf {
-        self.themes_dir().join(format!("{}.css", theme_name))
-    }
-
     /// Get the shell integration assets directory path
     pub fn shell_assets_dir(&self) -> PathBuf {
         self.config_dir.join("shell")
@@ -437,37 +432,9 @@ impl Config {
         Self::load_from(&config_path)
     }
 
-    /// Get theme CSS with paths from environment or default
-    pub fn theme_css_with_path(&self) -> Option<(String, PathBuf)> {
-        ConfigPaths::from_env_or_default().and_then(|paths| self.theme_css_with_paths(&paths))
-    }
-
     /// Get the shell integration assets directory
     pub fn shell_assets_dir() -> Option<PathBuf> {
         ConfigPaths::from_env_or_default().map(|paths| paths.shell_assets_dir())
-    }
-
-    /// Get theme CSS content and the theme file's directory using specified paths
-    /// Returns (css_content, theme_directory) for resolving relative paths
-    pub fn theme_css_with_paths(&self, paths: &ConfigPaths) -> Option<(String, PathBuf)> {
-        let themes_dir = paths.themes_dir();
-        let theme_path = paths.theme_path(&self.theme.name);
-
-        match std::fs::read_to_string(&theme_path) {
-            Ok(css) => {
-                log::info!("Loaded theme from {:?}", theme_path);
-                Some((css, themes_dir))
-            }
-            Err(_) => {
-                log::warn!(
-                    "Theme '{}' not found at {:?}. Install themes to {:?}",
-                    self.theme.name,
-                    theme_path,
-                    themes_dir
-                );
-                None
-            }
-        }
     }
 }
 
@@ -486,10 +453,6 @@ mod tests {
             PathBuf::from("/test/config/config.toml")
         );
         assert_eq!(paths.themes_dir(), PathBuf::from("/test/config/themes"));
-        assert_eq!(
-            paths.theme_path("synthwave"),
-            PathBuf::from("/test/config/themes/synthwave.css")
-        );
     }
 
     #[test]
@@ -570,39 +533,6 @@ columns = 100
         let config = Config::load_from(&config_path);
         // Should return defaults
         assert_eq!(config.window.columns, 80);
-    }
-
-    #[test]
-    fn test_theme_css_with_paths() {
-        let temp_dir = TempDir::new().unwrap();
-        let paths = ConfigPaths::new(temp_dir.path().to_path_buf());
-
-        // Create themes directory and theme file
-        fs::create_dir_all(paths.themes_dir()).unwrap();
-        fs::write(
-            paths.theme_path("test-theme"),
-            ":root { --background: #000; }",
-        )
-        .unwrap();
-
-        let mut config = Config::default();
-        config.theme.name = "test-theme".to_string();
-
-        let result = config.theme_css_with_paths(&paths);
-        assert!(result.is_some());
-        let (css, themes_dir) = result.unwrap();
-        assert!(css.contains("--background"));
-        assert_eq!(themes_dir, paths.themes_dir());
-    }
-
-    #[test]
-    fn test_theme_css_missing() {
-        let temp_dir = TempDir::new().unwrap();
-        let paths = ConfigPaths::new(temp_dir.path().to_path_buf());
-
-        let config = Config::default();
-        let result = config.theme_css_with_paths(&paths);
-        assert!(result.is_none());
     }
 
     #[test]
@@ -914,22 +844,6 @@ columns = 100
         assert_eq!(config.window.columns, 80);
         // No error for missing file (intentional)
         assert!(error.is_none());
-    }
-
-    // ========== ConfigPaths Tests ==========
-
-    #[test]
-    fn test_config_paths_theme_path() {
-        let paths = ConfigPaths::new(PathBuf::from("/config"));
-
-        assert_eq!(
-            paths.theme_path("dracula"),
-            PathBuf::from("/config/themes/dracula.css")
-        );
-        assert_eq!(
-            paths.theme_path("my-custom-theme"),
-            PathBuf::from("/config/themes/my-custom-theme.css")
-        );
     }
 
     // ========== Full Config Integration Tests ==========

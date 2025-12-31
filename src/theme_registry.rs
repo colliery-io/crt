@@ -109,26 +109,8 @@ impl ThemeRegistry {
         &self.default_theme
     }
 
-    /// Reload a specific theme from disk
-    pub fn reload_theme(&mut self, name: &str) -> Result<(), String> {
-        let path = self.themes_dir.join(format!("{}.css", name));
-        let theme = self.load_theme_from_path(&path)?;
-        self.themes.insert(name.to_string(), theme);
-        Ok(())
-    }
-
     /// Reload all themes from disk
     pub fn reload_all(&mut self) {
         self.scan_themes();
-    }
-
-    /// Check if a theme exists
-    pub fn has_theme(&self, name: &str) -> bool {
-        self.themes.contains_key(name)
-    }
-
-    /// Get the themes directory path
-    pub fn themes_dir(&self) -> &PathBuf {
-        &self.themes_dir
     }
 }

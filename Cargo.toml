@@ -65,10 +65,8 @@ wgpu = { workspace = true }
 winit = { workspace = true }
 vello = { workspace = true }
 pollster = { workspace = true }
-bytemuck = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
-naga = { workspace = true }
 crt-core = { path = "crates/crt-core" }
 crt-renderer = { path = "crates/crt-renderer" }
 crt-theme = { path = "crates/crt-theme" }

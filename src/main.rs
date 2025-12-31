@@ -492,35 +492,6 @@ impl App {
         window_id
     }
 
-    fn load_theme(&self) -> Theme {
-        self.load_theme_with_error().0
-    }
-
-    fn load_theme_with_error(&self) -> (Theme, Option<String>) {
-        log::debug!("Loading theme: {}", self.config.theme.name);
-        match self.config.theme_css_with_path() {
-            Some((css, base_dir)) => {
-                log::debug!("Theme CSS loaded from {:?} ({} bytes)", base_dir, css.len());
-                match Theme::from_css_with_base(&css, &base_dir) {
-                    Ok(theme) => (theme, None),
-                    Err(e) => {
-                        let error_msg = format!("Theme parse error: {}", e);
-                        log::warn!("{}", error_msg);
-                        (Theme::default(), Some(error_msg))
-                    }
-                }
-            }
-            None => {
-                let error_msg = format!(
-                    "Theme '{}' not found, using default",
-                    self.config.theme.name
-                );
-                log::warn!("{}", error_msg);
-                (Theme::default(), Some(error_msg))
-            }
-        }
-    }
-
     fn focused_window_mut(&mut self) -> Option<&mut WindowState> {
         self.focused_window.and_then(|id| self.windows.get_mut(&id))
     }
