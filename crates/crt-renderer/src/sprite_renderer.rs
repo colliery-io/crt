@@ -479,7 +479,6 @@ pub struct SpriteConfig {
     pub base_dir: PathBuf,
 }
 
-
 /// Stored original sprite values for restoration after patch expires
 #[derive(Debug, Clone)]
 pub struct OriginalSpriteValues {

@@ -326,7 +326,10 @@ impl App {
 
                     log::info!("Resolved sprite path: {:?}", resolved_path);
                     let base_dir = sprite.base_dir.clone().unwrap_or_else(|| {
-                        resolved_path.parent().map(|p| p.to_path_buf()).unwrap_or_default()
+                        resolved_path
+                            .parent()
+                            .map(|p| p.to_path_buf())
+                            .unwrap_or_default()
                     });
                     let config = SpriteConfig {
                         path: resolved_path.clone(),
@@ -467,7 +470,12 @@ impl App {
                 search: Default::default(),
                 bell: window::BellState::from_config(&self.config.bell),
                 context_menu: window::ContextMenu {
-                    themes: self.theme_registry.list_themes().iter().map(|s| s.to_string()).collect(),
+                    themes: self
+                        .theme_registry
+                        .list_themes()
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect(),
                     current_theme: theme_name.to_string(),
                     ..Default::default()
                 },
@@ -498,11 +506,7 @@ impl App {
     }
 
     /// Update CRT pipeline and textures for new theme
-    fn update_crt_pipeline(
-        state: &mut WindowState,
-        shared: &SharedGpuState,
-        theme: &Theme,
-    ) {
+    fn update_crt_pipeline(state: &mut WindowState, shared: &SharedGpuState, theme: &Theme) {
         // Update CRT effect settings
         state.gpu.crt_pipeline.set_effect(theme.crt);
 
@@ -517,11 +521,10 @@ impl App {
                     .texture_pool
                     .checkout(width, height, format)
                     .expect("Texture pool checkout failed");
-                let bind_group =
-                    state
-                        .gpu
-                        .crt_pipeline
-                        .create_bind_group(&shared.device, texture.view());
+                let bind_group = state
+                    .gpu
+                    .crt_pipeline
+                    .create_bind_group(&shared.device, texture.view());
                 state.gpu.crt_texture = Some(texture);
                 state.gpu.crt_bind_group = Some(bind_group);
             }
@@ -590,10 +593,12 @@ impl App {
         };
 
         log::info!("Creating sprite state from: {:?}", resolved_path);
-        let base_dir = sprite
-            .base_dir
-            .clone()
-            .unwrap_or_else(|| resolved_path.parent().map(|p| p.to_path_buf()).unwrap_or_default());
+        let base_dir = sprite.base_dir.clone().unwrap_or_else(|| {
+            resolved_path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_default()
+        });
 
         let config = SpriteConfig {
             path: resolved_path,
@@ -819,37 +824,37 @@ impl App {
             MenuAction::SetTheme(ref theme_name) => {
                 if let Some(theme) = self.theme_registry.get_theme(theme_name).cloned() {
                     // Get window ID first to avoid borrow issues
-                    if let Some(window_id) = self.focused_window {
-                        if let Some(state) = self.windows.get_mut(&window_id) {
-                            log::info!("Switching theme to: {}", theme_name);
-                            state.set_theme(theme_name, theme.clone());
-                            // Update backdrop effects
-                            configure_effects_from_theme(&mut state.gpu.effects_renderer, &theme);
-                            // Update GPU resources for new theme
-                            if let Some(shared) = self.shared_gpu.as_ref() {
-                                // Update sprite state
-                                state.gpu.sprite_state = Self::create_sprite_state(
-                                    &shared.device,
-                                    &shared.queue,
-                                    &theme,
-                                    state.gpu.config.format,
-                                );
-                                // Update CRT pipeline (scanlines)
-                                Self::update_crt_pipeline(state, shared, &theme);
-                                // Update background image
-                                Self::update_background_image(
-                                    state,
-                                    &shared.device,
-                                    &shared.queue,
-                                    &theme,
-                                );
-                            }
-                            // Update context menu current theme
-                            state.ui.context_menu.current_theme = theme_name.clone();
-                            // Force full redraw
-                            for hash in state.content_hashes.values_mut() {
-                                *hash = 0;
-                            }
+                    if let Some(window_id) = self.focused_window
+                        && let Some(state) = self.windows.get_mut(&window_id)
+                    {
+                        log::info!("Switching theme to: {}", theme_name);
+                        state.set_theme(theme_name, theme.clone());
+                        // Update backdrop effects
+                        configure_effects_from_theme(&mut state.gpu.effects_renderer, &theme);
+                        // Update GPU resources for new theme
+                        if let Some(shared) = self.shared_gpu.as_ref() {
+                            // Update sprite state
+                            state.gpu.sprite_state = Self::create_sprite_state(
+                                &shared.device,
+                                &shared.queue,
+                                &theme,
+                                state.gpu.config.format,
+                            );
+                            // Update CRT pipeline (scanlines)
+                            Self::update_crt_pipeline(state, shared, &theme);
+                            // Update background image
+                            Self::update_background_image(
+                                state,
+                                &shared.device,
+                                &shared.queue,
+                                &theme,
+                            );
+                        }
+                        // Update context menu current theme
+                        state.ui.context_menu.current_theme = theme_name.clone();
+                        // Force full redraw
+                        for hash in state.content_hashes.values_mut() {
+                            *hash = 0;
                         }
                     }
                 } else {
@@ -1044,11 +1049,7 @@ impl App {
                     *hash = 0;
                 }
 
-                log::debug!(
-                    "Theme '{}' reloaded for window {:?}",
-                    theme_name,
-                    window_id
-                );
+                log::debug!("Theme '{}' reloaded for window {:?}", theme_name, window_id);
             }
         }
 

@@ -453,9 +453,7 @@ impl OverrideState {
         // Find the most recent active override with flash properties
         self.active
             .iter()
-            .filter(|o| o.is_active())
-            .filter(|o| o.properties.flash_color.is_some())
-            .last()
+            .rfind(|o| o.is_active() && o.properties.flash_color.is_some())
             .map(|o| {
                 let color = o.properties.flash_color.unwrap();
                 let base_intensity = o.properties.flash_intensity.unwrap_or(0.5);
@@ -1066,7 +1064,7 @@ impl WindowState {
         self.gpu.effect_pipeline.set_theme(theme.clone());
 
         // Update tab bar theme
-        self.gpu.tab_bar.set_theme(theme.tabs.clone());
+        self.gpu.tab_bar.set_theme(theme.tabs);
 
         // Update cursor colors
         self.gpu.terminal_vello.set_cursor_color([
@@ -1075,13 +1073,15 @@ impl WindowState {
             theme.cursor_color.b,
             theme.cursor_color.a,
         ]);
-        self.gpu.terminal_vello.set_cursor_glow(theme.cursor_glow.map(|g| {
-            (
-                [g.color.r, g.color.g, g.color.b, g.color.a],
-                g.radius,
-                g.intensity,
-            )
-        }));
+        self.gpu
+            .terminal_vello
+            .set_cursor_glow(theme.cursor_glow.map(|g| {
+                (
+                    [g.color.r, g.color.g, g.color.b, g.color.a],
+                    g.radius,
+                    g.intensity,
+                )
+            }));
 
         // Mark window as needing redraw
         self.render.dirty = true;

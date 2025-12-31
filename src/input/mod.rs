@@ -890,7 +890,10 @@ pub fn paste_to_terminal(state: &mut WindowState, content: &str) {
 
     log::info!("=== PASTE START ===");
     log::info!("Paste content length: {} bytes", content.len());
-    log::info!("Paste content preview: {:?}", &content[..content.len().min(50)]);
+    log::info!(
+        "Paste content preview: {:?}",
+        &content[..content.len().min(50)]
+    );
 
     // Check if bracketed paste mode is enabled
     let bracketed = shell.bracketed_paste_enabled();

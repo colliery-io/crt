@@ -46,17 +46,17 @@ impl ThemeRegistry {
 
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "css") {
-                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                    let name = stem.to_string();
-                    match self.load_theme_from_path(&path) {
-                        Ok(theme) => {
-                            log::info!("Loaded theme: {}", name);
-                            self.themes.insert(name, theme);
-                        }
-                        Err(e) => {
-                            log::warn!("Failed to load theme {:?}: {}", path, e);
-                        }
+            if path.extension().is_some_and(|ext| ext == "css")
+                && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+            {
+                let name = stem.to_string();
+                match self.load_theme_from_path(&path) {
+                    Ok(theme) => {
+                        log::info!("Loaded theme: {}", name);
+                        self.themes.insert(name, theme);
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to load theme {:?}: {}", path, e);
                     }
                 }
             }

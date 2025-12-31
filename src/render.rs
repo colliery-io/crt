@@ -130,7 +130,7 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
                     properties.duration_ms,
                     properties.cursor_color
                 );
-                let event_type = OverrideEventType::from(event.clone());
+                let event_type = OverrideEventType::from(*event);
                 state.ui.overrides.add(event_type, properties);
             } else {
                 log::debug!("No theme override defined for {:?}", event);
@@ -773,24 +773,24 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
             // Only render if terminal hasn't hidden the cursor (e.g., TUI apps hide it)
             if cursor.visible {
                 // Check for active theme override cursor color first
-                let cursor_color = if let Some(override_color) = state.ui.overrides.get_cursor_color()
-                {
-                    log::debug!(
-                        "Using override cursor color: rgba({}, {}, {}, {})",
-                        override_color.r,
-                        override_color.g,
-                        override_color.b,
-                        override_color.a
-                    );
-                    [
-                        override_color.r,
-                        override_color.g,
-                        override_color.b,
-                        override_color.a,
-                    ]
-                } else {
-                    state.gpu.terminal_vello.cursor_color()
-                };
+                let cursor_color =
+                    if let Some(override_color) = state.ui.overrides.get_cursor_color() {
+                        log::debug!(
+                            "Using override cursor color: rgba({}, {}, {}, {})",
+                            override_color.r,
+                            override_color.g,
+                            override_color.b,
+                            override_color.a
+                        );
+                        [
+                            override_color.r,
+                            override_color.g,
+                            override_color.b,
+                            override_color.a,
+                        ]
+                    } else {
+                        state.gpu.terminal_vello.cursor_color()
+                    };
 
                 // Use configured cursor shape as default, but allow terminal/apps to override
                 // via escape sequences (DECSCUSR). If the terminal explicitly requests a
@@ -1057,10 +1057,10 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     }
 
     // Pass 9: Render bell flash overlay (if active via CSS theme)
-    if let Some((color, intensity)) = state.ui.overrides.get_effective_flash() {
-        if intensity > 0.0 {
-            render_bell_flash(state, shared, &mut encoder, render_target, color, intensity);
-        }
+    if let Some((color, intensity)) = state.ui.overrides.get_effective_flash()
+        && intensity > 0.0
+    {
+        render_bell_flash(state, shared, &mut encoder, render_target, color, intensity);
     }
 
     // Pass 10: Render context menu (if visible)
@@ -1570,12 +1570,7 @@ fn render_bell_flash(
     );
 
     // Flash color from theme with fading alpha based on intensity
-    let flash_color = [
-        color.r as f32 / 255.0,
-        color.g as f32 / 255.0,
-        color.b as f32 / 255.0,
-        intensity,
-    ];
+    let flash_color = [color.r / 255.0, color.g / 255.0, color.b / 255.0, intensity];
 
     // Cover the entire screen
     state.gpu.rect_renderer.push_rect(
