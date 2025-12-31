@@ -657,6 +657,8 @@ pub struct RenderState {
     pub focused: bool,
     /// Cached decorations from last content update
     pub cached: CachedRenderState,
+    /// Paste operation just occurred - normalize INVERSE flags on next render
+    pub paste_pending: bool,
 }
 
 /// UI overlay state (search, bell, context menu, zoom indicator, toast)
@@ -1123,6 +1125,12 @@ impl WindowState {
         // Check if content changed
         let tab_id = active_tab_id.unwrap();
         let prev_hash = self.content_hashes.get(&tab_id).copied().unwrap_or(0);
+        log::debug!(
+            "update_text_buffer: prev_hash={}, content_hash={}, will_render={}",
+            prev_hash,
+            content_hash,
+            prev_hash == 0 || content_hash != prev_hash
+        );
         if content_hash == prev_hash && prev_hash != 0 {
             return None; // No changes
         }
@@ -1163,6 +1171,9 @@ impl WindowState {
         }
         self.render.cached.collected_cells.clear();
 
+        let mut inverse_count = 0;
+        let mut total_cells = 0;
+        let mut line1_cells = 0;
         for cell in content.display_iter {
             let viewport_line = cell.point.line.0 + display_offset;
             self.render
@@ -1171,6 +1182,37 @@ impl WindowState {
                 .entry(viewport_line)
                 .or_default()
                 .push(cell.c);
+
+            // Track cells on line 1 for debugging paste issue
+            if cell.point.line.0 == 1 {
+                line1_cells += 1;
+                if line1_cells <= 20 {
+                    log::debug!(
+                        "Line1 cell: col={}, char='{}', inverse={}, fg={:?}, bg={:?}",
+                        cell.point.column.0,
+                        cell.c,
+                        cell.flags.contains(CellFlags::INVERSE),
+                        cell.fg,
+                        cell.bg
+                    );
+                }
+            }
+
+            // Track INVERSE cells for debugging
+            if cell.flags.contains(CellFlags::INVERSE) {
+                inverse_count += 1;
+                if inverse_count <= 5 {
+                    log::debug!(
+                        "INVERSE cell: line={}, col={}, char='{}', fg={:?}, bg={:?}",
+                        cell.point.line.0,
+                        cell.point.column.0,
+                        cell.c,
+                        cell.fg,
+                        cell.bg
+                    );
+                }
+            }
+            total_cells += 1;
 
             // Collect cell data for rendering pass
             self.render.cached.collected_cells.push(CollectedCell {
@@ -1181,6 +1223,63 @@ impl WindowState {
                 fg: cell.fg,
                 bg: cell.bg,
             });
+        }
+        if inverse_count > 0 {
+            log::info!(
+                "Collected {} cells, {} with INVERSE flag",
+                total_cells,
+                inverse_count
+            );
+        }
+
+        // Normalize INVERSE flag on paste to fix visual boundary issue
+        // zsh enables INVERSE mid-line for paste highlighting, creating an ugly
+        // discontinuity at the cursor position. Clear INVERSE from all cells on
+        // lines with mixed INVERSE states during paste operations only.
+        if self.render.paste_pending {
+            // Count INVERSE vs non-INVERSE cells per line (skip whitespace)
+            let mut line_stats: HashMap<i32, (usize, usize)> = HashMap::new();
+            let mut total_inverse = 0usize;
+            for cell in &self.render.cached.collected_cells {
+                if cell.c == ' ' || cell.c == '\0' {
+                    continue;
+                }
+                let entry = line_stats.entry(cell.grid_line).or_insert((0, 0));
+                if cell.flags.contains(CellFlags::INVERSE) {
+                    entry.0 += 1;
+                    total_inverse += 1;
+                } else {
+                    entry.1 += 1;
+                }
+            }
+
+            // Find lines with mixed INVERSE states
+            let mixed_lines: HashSet<i32> = line_stats
+                .iter()
+                .filter(|(_, (inv, non_inv))| *inv > 0 && *non_inv > 0)
+                .map(|(line, _)| *line)
+                .collect();
+
+            if !mixed_lines.is_empty() {
+                // Found mixed lines - normalize by adding INVERSE to all cells
+                // This keeps the reverse highlight look that zsh paste provides
+                log::info!(
+                    "Paste: adding INVERSE to all cells on {} lines with mixed states",
+                    mixed_lines.len()
+                );
+                for cell in &mut self.render.cached.collected_cells {
+                    if mixed_lines.contains(&cell.grid_line) {
+                        cell.flags.insert(CellFlags::INVERSE);
+                    }
+                }
+                self.render.paste_pending = false;
+            } else if total_inverse == 0 {
+                // No INVERSE cells yet - PTY hasn't responded, keep waiting
+                log::debug!("Paste: waiting for PTY response (no INVERSE cells yet)");
+            } else {
+                // INVERSE exists but no mixed lines - nothing to normalize, clear flag
+                self.render.paste_pending = false;
+            }
         }
 
         // Detect URLs before rendering so we can underline them with text color

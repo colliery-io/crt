@@ -1236,8 +1236,8 @@ fn render_selection_rects(
             let grid_line = viewport_line - display_offset;
 
             let (line_start_col, line_end_col) = if start_grid_line == end_grid_line {
-                // Single line selection
-                (start_col, end_col)
+                // Single line selection - normalize columns for right-to-left selection
+                (start_col.min(end_col), start_col.max(end_col))
             } else if grid_line == start_grid_line {
                 // First line: from start column to end of line
                 (start_col, 999)

@@ -559,6 +559,31 @@ impl ShellTerminal {
     pub fn process_pty_output(&mut self) -> bool {
         let output = self.pty.read_available();
         if !output.is_empty() {
+            // Log escape sequences for debugging
+            if output.len() < 2000 {
+                let escaped: String = output
+                    .iter()
+                    .map(|&b| {
+                        if b == 0x1b {
+                            "ESC".to_string()
+                        } else if b == 0x07 {
+                            "BEL".to_string()
+                        } else if b < 32 {
+                            format!("^{}", (b + 64) as char)
+                        } else if b < 127 {
+                            (b as char).to_string()
+                        } else {
+                            format!("\\x{:02x}", b)
+                        }
+                    })
+                    .collect();
+                log::debug!("PTY output ({} bytes): {}", output.len(), escaped);
+                // Check for black color sequences
+                let output_str = String::from_utf8_lossy(&output);
+                if output_str.contains("[30m") || output_str.contains("[30;") {
+                    log::warn!("PTY output contains BLACK foreground sequence!");
+                }
+            }
             self.terminal.process_input(&output);
             true
         } else {

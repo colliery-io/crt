@@ -460,6 +460,7 @@ impl App {
                 occluded: false,
                 focused: true,
                 cached: Default::default(),
+                paste_pending: false,
             },
             interaction: Default::default(),
             ui: window::UiState {

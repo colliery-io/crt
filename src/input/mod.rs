@@ -888,8 +888,21 @@ pub fn paste_to_terminal(state: &mut WindowState, content: &str) {
         return;
     };
 
+    log::info!("=== PASTE START ===");
+    log::info!("Paste content length: {} bytes", content.len());
+    log::info!("Paste content preview: {:?}", &content[..content.len().min(50)]);
+
     // Check if bracketed paste mode is enabled
     let bracketed = shell.bracketed_paste_enabled();
+    log::info!("Bracketed paste mode: {}", bracketed);
+
+    // Log cursor position before paste
+    let cursor_before = shell.terminal().cursor();
+    log::info!(
+        "Cursor before paste: line={}, col={}",
+        cursor_before.point.line.0,
+        cursor_before.point.column.0
+    );
 
     if bracketed {
         // Bracketed paste mode: wrap with escape sequences
@@ -903,12 +916,20 @@ pub fn paste_to_terminal(state: &mut WindowState, content: &str) {
     // Scroll to bottom and clear selection
     if shell.is_scrolled_back() {
         shell.scroll_to_bottom();
-        state.content_hashes.insert(tab_id, 0);
+        log::info!("Scrolled to bottom");
     }
     clear_terminal_selection(state);
+    log::info!("Selection cleared");
 
+    // Always invalidate content hash when pasting to ensure re-render
+    // even if PTY output hasn't arrived yet (fixes paste rendering artifacts)
+    state.content_hashes.insert(tab_id, 0);
     state.render.dirty = true;
+    // Mark paste pending so renderer can normalize INVERSE flags
+    // (zsh enables INVERSE mid-line for paste highlighting, creating visual discontinuity)
+    state.render.paste_pending = true;
     state.window.request_redraw();
+    log::info!("=== PASTE END (hash invalidated, paste_pending=true, redraw requested) ===");
 }
 
 /// Scroll terminal to make current search match visible
