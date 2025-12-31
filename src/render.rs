@@ -93,22 +93,30 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
 
         // Process shell events for theme overrides
         let theme = state.gpu.effect_pipeline.theme();
-        for event in shell_events {
+        for event in &shell_events {
+            log::debug!("Processing shell event: {:?}", event);
+
             // Trigger bell flash for bell events
             if matches!(event, ShellEvent::Bell) {
+                log::info!("Bell triggered - activating flash");
                 state.ui.bell.trigger();
             }
 
             // Command success clears any active fail override (put out the fire!)
             if matches!(event, ShellEvent::CommandSuccess) {
+                log::info!("Command success - clearing fail override");
                 state
                     .ui
                     .overrides
                     .clear_event(OverrideEventType::CommandFail);
             }
 
+            if matches!(event, ShellEvent::CommandFail(_)) {
+                log::info!("Command failed - checking for theme override");
+            }
+
             // Get the corresponding theme override for this event
-            let override_opt = match &event {
+            let override_opt = match event {
                 ShellEvent::Bell => theme.on_bell.clone(),
                 ShellEvent::CommandSuccess => theme.on_command_success.clone(),
                 ShellEvent::CommandFail(_) => theme.on_command_fail.clone(),
@@ -116,8 +124,16 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
 
             // Add to active overrides if theme defines this event
             if let Some(properties) = override_opt {
-                let event_type = OverrideEventType::from(event);
+                log::info!(
+                    "Applying theme override for {:?} (duration: {}ms, cursor_color: {:?})",
+                    event,
+                    properties.duration_ms,
+                    properties.cursor_color
+                );
+                let event_type = OverrideEventType::from(event.clone());
                 state.ui.overrides.add(event_type, properties);
+            } else {
+                log::debug!("No theme override defined for {:?}", event);
             }
         }
     }
@@ -756,20 +772,57 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         {
             // Only render if terminal hasn't hidden the cursor (e.g., TUI apps hide it)
             if cursor.visible {
-                let cursor_color = state.gpu.terminal_vello.cursor_color();
+                // Check for active theme override cursor color first
+                let cursor_color = if let Some(override_color) = state.ui.overrides.get_cursor_color()
+                {
+                    log::debug!(
+                        "Using override cursor color: rgba({}, {}, {}, {})",
+                        override_color.r,
+                        override_color.g,
+                        override_color.b,
+                        override_color.a
+                    );
+                    [
+                        override_color.r,
+                        override_color.g,
+                        override_color.b,
+                        override_color.a,
+                    ]
+                } else {
+                    state.gpu.terminal_vello.cursor_color()
+                };
 
                 // Use configured cursor shape as default, but allow terminal/apps to override
                 // via escape sequences (DECSCUSR). If the terminal explicitly requests a
                 // non-Block shape, use that; otherwise use the user's configured preference.
+                // Theme overrides take highest priority.
                 let configured_shape = state.gpu.terminal_vello.cursor_shape();
                 let terminal_shape = cursor.shape;
+                let override_shape = state.ui.overrides.get_cursor_shape();
 
                 // Determine effective cursor shape:
+                // - Theme override takes priority (for event effects)
                 // - If terminal explicitly set non-Block shape, use it
                 // - If terminal shape is Hidden, honor that
                 // - Otherwise use user's configured shape
                 let cursor_rect = if terminal_shape == crt_core::CursorShape::Hidden {
                     None
+                } else if let Some(override_shape) = override_shape {
+                    // Theme override takes priority
+                    match override_shape {
+                        crt_theme::CursorShape::Block => {
+                            Some((cursor.x, cursor.y, cursor.cell_width, cursor.cell_height))
+                        }
+                        crt_theme::CursorShape::Bar => {
+                            Some((cursor.x, cursor.y, 2.0, cursor.cell_height))
+                        }
+                        crt_theme::CursorShape::Underline => Some((
+                            cursor.x,
+                            cursor.y + cursor.cell_height - 2.0,
+                            cursor.cell_width,
+                            2.0,
+                        )),
+                    }
                 } else if terminal_shape != crt_core::CursorShape::Block {
                     // Terminal explicitly requested a non-default shape
                     match terminal_shape {
@@ -807,6 +860,14 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
                 };
 
                 if let Some((rect_x, rect_y, rect_w, rect_h)) = cursor_rect {
+                    log::debug!(
+                        "Cursor rect: x={}, y={}, w={}, h={}, color={:?}",
+                        rect_x,
+                        rect_y,
+                        rect_w,
+                        rect_h,
+                        cursor_color
+                    );
                     // Render cursor glow effect (layered rectangles with decreasing opacity)
                     if let Some((glow_color, radius, intensity)) =
                         state.gpu.terminal_vello.cursor_glow()
@@ -1550,15 +1611,25 @@ fn render_context_menu(
     frame_view: &wgpu::TextureView,
 ) {
     let scale = state.scale_factor;
-    let items = ContextMenuItem::all();
+    let items = state.ui.context_menu.items();
     let item_count = items.len();
+    let separator_height = 12.0 * scale;
 
     // Menu dimensions
     let padding_x = 12.0 * scale;
     let padding_y = 6.0 * scale;
-    let item_height = 28.0 * scale;
-    let menu_width = 180.0 * scale;
-    let menu_height = (item_count as f32 * item_height) + (padding_y * 2.0);
+    let item_height = 24.0 * scale; // Slightly smaller to fit more items
+    let menu_width = 220.0 * scale; // Wider to accommodate theme names
+
+    // Calculate total height accounting for separators
+    let mut menu_height = padding_y * 2.0;
+    for item in &items {
+        if item.is_separator() {
+            menu_height += separator_height;
+        } else {
+            menu_height += item_height;
+        }
+    }
 
     // Get menu position and adjust if near screen edges
     let screen_width = state.gpu.config.width as f32;
@@ -1571,11 +1642,18 @@ fn render_context_menu(
     if menu_x + menu_width > screen_width {
         menu_x = screen_width - menu_width - 4.0;
     }
-    if menu_y + menu_height > screen_height {
-        menu_y = screen_height - menu_height - 4.0;
-    }
     if menu_x < 4.0 {
         menu_x = 4.0;
+    }
+
+    // For vertical positioning: if menu is taller than screen, start at top
+    // Otherwise, try to fit it by moving up if needed
+    if menu_height > screen_height - 8.0 {
+        // Menu is taller than screen - start at top, it will be clipped at bottom
+        menu_y = 4.0;
+    } else if menu_y + menu_height > screen_height - 4.0 {
+        // Menu would go off bottom - move it up
+        menu_y = screen_height - menu_height - 4.0;
     }
     if menu_y < 4.0 {
         menu_y = 4.0;
@@ -1639,11 +1717,24 @@ fn render_context_menu(
         border_color,
     );
 
-    // Hover highlight (mouse hover)
+    // Pre-compute item positions (accounting for variable heights)
+    let mut item_y_positions = Vec::with_capacity(item_count);
+    let mut current_y = menu_y + padding_y;
+    for item in &items {
+        item_y_positions.push(current_y);
+        if item.is_separator() {
+            current_y += separator_height;
+        } else {
+            current_y += item_height;
+        }
+    }
+
+    // Hover highlight (mouse hover) - only for selectable items
     if let Some(hover_idx) = state.ui.context_menu.hovered_item
         && hover_idx < item_count
+        && items[hover_idx].is_selectable()
     {
-        let hover_y = menu_y + padding_y + (hover_idx as f32 * item_height);
+        let hover_y = item_y_positions[hover_idx];
         state.gpu.rect_renderer.push_rect(
             menu_x + border_thickness,
             hover_y,
@@ -1656,8 +1747,9 @@ fn render_context_menu(
     // Focus indicator (keyboard focus) - rendered as a border/ring
     if let Some(focus_idx) = state.ui.context_menu.focused_item
         && focus_idx < item_count
+        && items[focus_idx].is_selectable()
     {
-        let focus_y = menu_y + padding_y + (focus_idx as f32 * item_height);
+        let focus_y = item_y_positions[focus_idx];
         let focus_border = 2.0 * scale;
         let inset = border_thickness + 2.0 * scale;
 
@@ -1696,6 +1788,21 @@ fn render_context_menu(
         );
     }
 
+    // Render separators as horizontal lines
+    for (idx, item) in items.iter().enumerate() {
+        if item.is_separator() {
+            let sep_y = item_y_positions[idx] + separator_height / 2.0;
+            let sep_inset = padding_x / 2.0;
+            state.gpu.rect_renderer.push_rect(
+                menu_x + sep_inset,
+                sep_y,
+                menu_width - (sep_inset * 2.0),
+                1.0 * scale,
+                border_color,
+            );
+        }
+    }
+
     // Render background pass
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1727,12 +1834,46 @@ fn render_context_menu(
     let text_offset_y = (item_height - font_height) / 2.0;
 
     for (idx, item) in items.iter().enumerate() {
-        let item_y = menu_y + padding_y + (idx as f32 * item_height) + text_offset_y;
+        if item.is_separator() {
+            continue; // Don't render text for separators
+        }
+
+        let item_y = item_y_positions[idx] + text_offset_y;
+
+        // Check if this is a theme item with checkmark
+        let (label, show_checkmark) = match item {
+            ContextMenuItem::Theme(name) => {
+                let is_current = state.ui.context_menu.is_current_theme(name);
+                (item.label(), is_current)
+            }
+            _ => (item.label(), false),
+        };
+
+        // Render checkmark for current theme
+        let label_start_x = if show_checkmark {
+            let checkmark = "\u{2713}"; // Unicode checkmark
+            let mut char_x = menu_x + padding_x;
+            for c in checkmark.chars() {
+                if let Some(glyph) = state.gpu.tab_glyph_cache.position_char(c, char_x, item_y) {
+                    state
+                        .gpu
+                        .tab_title_renderer
+                        .push_glyphs(&[glyph], text_color);
+                }
+                char_x += state.gpu.tab_glyph_cache.cell_width();
+            }
+            menu_x + padding_x + (2.0 * state.gpu.tab_glyph_cache.cell_width())
+        } else if matches!(item, ContextMenuItem::Theme(_)) {
+            // Indent theme items that don't have checkmark to align with those that do
+            menu_x + padding_x + (2.0 * state.gpu.tab_glyph_cache.cell_width())
+        } else {
+            menu_x + padding_x
+        };
 
         // Render label
         let mut glyphs = Vec::new();
-        let mut char_x = menu_x + padding_x;
-        for c in item.label().chars() {
+        let mut char_x = label_start_x;
+        for c in label.chars() {
             if let Some(glyph) = state.gpu.tab_glyph_cache.position_char(c, char_x, item_y) {
                 glyphs.push(glyph);
             }
@@ -1743,23 +1884,25 @@ fn render_context_menu(
             .tab_title_renderer
             .push_glyphs(&glyphs, text_color);
 
-        // Render shortcut (right-aligned)
+        // Render shortcut (right-aligned) - only for non-theme items
         let shortcut = item.shortcut();
-        let shortcut_width = shortcut.len() as f32 * state.gpu.tab_glyph_cache.cell_width();
-        let shortcut_x = menu_x + menu_width - padding_x - shortcut_width;
+        if !shortcut.is_empty() {
+            let shortcut_width = shortcut.len() as f32 * state.gpu.tab_glyph_cache.cell_width();
+            let shortcut_x = menu_x + menu_width - padding_x - shortcut_width;
 
-        let mut shortcut_glyphs = Vec::new();
-        let mut char_x = shortcut_x;
-        for c in shortcut.chars() {
-            if let Some(glyph) = state.gpu.tab_glyph_cache.position_char(c, char_x, item_y) {
-                shortcut_glyphs.push(glyph);
+            let mut shortcut_glyphs = Vec::new();
+            let mut char_x = shortcut_x;
+            for c in shortcut.chars() {
+                if let Some(glyph) = state.gpu.tab_glyph_cache.position_char(c, char_x, item_y) {
+                    shortcut_glyphs.push(glyph);
+                }
+                char_x += state.gpu.tab_glyph_cache.cell_width();
             }
-            char_x += state.gpu.tab_glyph_cache.cell_width();
+            state
+                .gpu
+                .tab_title_renderer
+                .push_glyphs(&shortcut_glyphs, shortcut_color);
         }
-        state
-            .gpu
-            .tab_title_renderer
-            .push_glyphs(&shortcut_glyphs, shortcut_color);
     }
 
     state.gpu.tab_glyph_cache.flush(&shared.queue);

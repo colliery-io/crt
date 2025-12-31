@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use crt_core::{AnsiColor, CellFlags, SemanticZone, ShellEvent, ShellTerminal, Size, SpawnOptions};
 use crt_renderer::GlyphStyle;
-use crt_theme::{AnsiPalette, EventOverride};
+use crt_theme::{AnsiPalette, EventOverride, Theme};
 use winit::window::Window;
 
 use crate::gpu::{SharedGpuState, WindowGpuState};
@@ -116,6 +116,9 @@ pub struct WindowState {
     pub ui: UiState,
     // Custom window title (None = use default "CRT Terminal")
     pub custom_title: Option<String>,
+    // Per-window theme
+    pub theme: Theme,
+    pub theme_name: String,
 }
 
 /// Window rename input state
@@ -406,6 +409,15 @@ impl OverrideState {
             .next_back()
     }
 
+    /// Get cursor shape from active overrides
+    pub fn get_cursor_shape(&self) -> Option<crt_theme::CursorShape> {
+        self.active
+            .iter()
+            .filter(|o| o.is_active())
+            .filter_map(|o| o.properties.cursor_shape)
+            .next_back()
+    }
+
     /// Get text shadow from active overrides
     pub fn get_text_shadow(&self) -> Option<crt_theme::TextShadow> {
         self.active
@@ -509,20 +521,24 @@ pub struct SearchState {
 }
 
 /// Context menu item
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContextMenuItem {
     Copy,
     Paste,
     SelectAll,
+    Separator,
+    Theme(String),
 }
 
 impl ContextMenuItem {
     /// Get the display label for this menu item
-    pub fn label(&self) -> &'static str {
+    pub fn label(&self) -> String {
         match self {
-            ContextMenuItem::Copy => "Copy",
-            ContextMenuItem::Paste => "Paste",
-            ContextMenuItem::SelectAll => "Select All",
+            ContextMenuItem::Copy => "Copy".to_string(),
+            ContextMenuItem::Paste => "Paste".to_string(),
+            ContextMenuItem::SelectAll => "Select All".to_string(),
+            ContextMenuItem::Separator => String::new(),
+            ContextMenuItem::Theme(name) => name.clone(),
         }
     }
 
@@ -533,18 +549,30 @@ impl ContextMenuItem {
             ContextMenuItem::Copy => "Cmd+C",
             ContextMenuItem::Paste => "Cmd+V",
             ContextMenuItem::SelectAll => "Cmd+A",
+            ContextMenuItem::Separator | ContextMenuItem::Theme(_) => "",
         }
         #[cfg(not(target_os = "macos"))]
         match self {
             ContextMenuItem::Copy => "Ctrl+C",
             ContextMenuItem::Paste => "Ctrl+V",
             ContextMenuItem::SelectAll => "Ctrl+A",
+            ContextMenuItem::Separator | ContextMenuItem::Theme(_) => "",
         }
     }
 
-    /// Get all menu items in order
-    pub fn all() -> &'static [ContextMenuItem] {
-        &[
+    /// Returns true if this is a separator item
+    pub fn is_separator(&self) -> bool {
+        matches!(self, ContextMenuItem::Separator)
+    }
+
+    /// Returns true if this is a selectable (non-separator) item
+    pub fn is_selectable(&self) -> bool {
+        !self.is_separator()
+    }
+
+    /// Get the base edit menu items
+    pub fn edit_items() -> Vec<ContextMenuItem> {
+        vec![
             ContextMenuItem::Copy,
             ContextMenuItem::Paste,
             ContextMenuItem::SelectAll,
@@ -615,6 +643,8 @@ pub struct UiState {
     pub window_rename: WindowRenameState,
     /// Active theme overrides from events (bell, command success/fail, focus)
     pub overrides: OverrideState,
+    /// Pending theme change from context menu (processed by main loop)
+    pub pending_theme: Option<String>,
 }
 
 /// Toast notification for errors and status messages
@@ -785,9 +815,25 @@ pub struct ContextMenu {
     pub width: f32,
     pub height: f32,
     pub item_height: f32,
+    /// Available themes for theme picker section
+    pub themes: Vec<String>,
+    /// Currently active theme name
+    pub current_theme: String,
 }
 
 impl ContextMenu {
+    /// Build the full list of menu items including themes
+    pub fn items(&self) -> Vec<ContextMenuItem> {
+        let mut items = ContextMenuItem::edit_items();
+        if !self.themes.is_empty() {
+            items.push(ContextMenuItem::Separator);
+            for theme in &self.themes {
+                items.push(ContextMenuItem::Theme(theme.clone()));
+            }
+        }
+        items
+    }
+
     /// Show the context menu at the given position
     pub fn show(&mut self, x: f32, y: f32) {
         self.visible = true;
@@ -804,44 +850,56 @@ impl ContextMenu {
         self.focused_item = None;
     }
 
-    /// Move focus to the next item (wraps around)
+    /// Move focus to the next selectable item (wraps around, skips separators)
     pub fn focus_next(&mut self) {
         if !self.visible {
             return;
         }
-        let item_count = ContextMenuItem::all().len();
-        self.focused_item = Some(match self.focused_item {
-            Some(idx) => (idx + 1) % item_count,
-            None => 0,
-        });
+        let items = self.items();
+        let item_count = items.len();
+        if item_count == 0 {
+            return;
+        }
+
+        let start = self.focused_item.unwrap_or(0);
+        for i in 1..=item_count {
+            let idx = (start + i) % item_count;
+            if items[idx].is_selectable() {
+                self.focused_item = Some(idx);
+                break;
+            }
+        }
         // Clear hover when using keyboard
         self.hovered_item = None;
     }
 
-    /// Move focus to the previous item (wraps around)
+    /// Move focus to the previous selectable item (wraps around, skips separators)
     pub fn focus_prev(&mut self) {
         if !self.visible {
             return;
         }
-        let item_count = ContextMenuItem::all().len();
-        self.focused_item = Some(match self.focused_item {
-            Some(idx) => {
-                if idx == 0 {
-                    item_count - 1
-                } else {
-                    idx - 1
-                }
+        let items = self.items();
+        let item_count = items.len();
+        if item_count == 0 {
+            return;
+        }
+
+        let start = self.focused_item.unwrap_or(0);
+        for i in 1..=item_count {
+            let idx = (start + item_count - i) % item_count;
+            if items[idx].is_selectable() {
+                self.focused_item = Some(idx);
+                break;
             }
-            None => item_count - 1,
-        });
+        }
         // Clear hover when using keyboard
         self.hovered_item = None;
     }
 
     /// Get the currently focused item
     pub fn get_focused_item(&self) -> Option<ContextMenuItem> {
-        self.focused_item
-            .and_then(|idx| ContextMenuItem::all().get(idx).copied())
+        let items = self.items();
+        self.focused_item.and_then(|idx| items.get(idx).cloned())
     }
 
     /// Check if a point is inside the menu
@@ -857,9 +915,15 @@ impl ContextMenu {
         if !self.contains(x, y) {
             return None;
         }
+        let items = self.items();
         let rel_y = y - self.y;
         let index = (rel_y / self.item_height) as usize;
-        ContextMenuItem::all().get(index).copied()
+        items.get(index).cloned()
+    }
+
+    /// Check if a theme name is the currently active theme
+    pub fn is_current_theme(&self, name: &str) -> bool {
+        self.current_theme == name
     }
 
     /// Update hover state based on mouse position
@@ -954,6 +1018,36 @@ pub struct CachedRenderState {
 }
 
 impl WindowState {
+    /// Set the theme for this window, updating all GPU resources
+    pub fn set_theme(&mut self, name: &str, theme: Theme) {
+        self.theme_name = name.to_string();
+        self.theme = theme.clone();
+
+        // Update effect pipeline with new theme
+        self.gpu.effect_pipeline.set_theme(theme.clone());
+
+        // Update tab bar theme
+        self.gpu.tab_bar.set_theme(theme.tabs.clone());
+
+        // Update cursor colors
+        self.gpu.terminal_vello.set_cursor_color([
+            theme.cursor_color.r,
+            theme.cursor_color.g,
+            theme.cursor_color.b,
+            theme.cursor_color.a,
+        ]);
+        self.gpu.terminal_vello.set_cursor_glow(theme.cursor_glow.map(|g| {
+            (
+                [g.color.r, g.color.g, g.color.b, g.color.a],
+                g.radius,
+                g.intensity,
+            )
+        }));
+
+        // Mark window as needing redraw
+        self.render.dirty = true;
+    }
+
     /// Update text buffer for this window's active shell
     ///
     /// Returns cursor position and decorations if content changed, None otherwise

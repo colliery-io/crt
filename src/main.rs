@@ -11,6 +11,7 @@ mod input;
 mod menu;
 pub mod profiling;
 mod render;
+mod theme_registry;
 mod watcher;
 mod window;
 
@@ -18,7 +19,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
-use config::Config;
+use config::{Config, ConfigPaths};
 use crt_core::{ShellTerminal, Size, SpawnOptions};
 use crt_renderer::{
     BackgroundImagePipeline, BackgroundImageState, CrtPipeline, EffectConfig, EffectPipeline,
@@ -35,6 +36,7 @@ use input::{
 };
 use menu::MenuAction;
 use render::render_frame;
+use theme_registry::ThemeRegistry;
 use window::WindowState;
 
 use winit::{
@@ -65,6 +67,8 @@ struct App {
     config: Config,
     /// Current theme (stored for event override access)
     theme: Theme,
+    /// Registry of available themes for runtime switching
+    theme_registry: ThemeRegistry,
     modifiers: Modifiers,
     pending_new_window: bool,
     config_watcher: Option<watcher::ConfigWatcher>,
@@ -83,12 +87,21 @@ impl App {
         let config = Config::load();
         let config_watcher = watcher::ConfigWatcher::new();
 
+        // Initialize theme registry from themes directory
+        let theme_registry = ConfigPaths::from_env_or_default()
+            .map(|paths| ThemeRegistry::new(paths.themes_dir(), config.theme.name.clone()))
+            .unwrap_or_else(|| {
+                log::warn!("Could not determine config paths, using empty theme registry");
+                ThemeRegistry::new(std::path::PathBuf::new(), config.theme.name.clone())
+            });
+
         Self {
             windows: HashMap::new(),
             shared_gpu: None,
             focused_window: None,
             config,
             theme: Theme::default(), // Will be loaded properly in resumed()
+            theme_registry,
             modifiers: Modifiers::default(),
             pending_new_window: false,
             config_watcher,
@@ -206,8 +219,8 @@ impl App {
         tab_title_renderer.set_glyph_cache(&shared.device, &tab_glyph_cache);
         tab_title_renderer.update_screen_size(&shared.queue, size.width as f32, size.height as f32);
 
-        // Effect pipeline for background rendering
-        let theme = self.load_theme();
+        // Effect pipeline for background rendering - get theme from registry
+        let (theme_name, theme) = self.theme_registry.get_default_theme();
         let mut effect_pipeline = EffectPipeline::new(&shared.device, format);
         effect_pipeline.set_theme(theme.clone());
 
@@ -409,9 +422,17 @@ impl App {
         // Create initial shell with semantic prompts if enabled
         let mut shells = HashMap::new();
         let mut content_hashes = HashMap::new();
+
+        // Inherit CWD from focused window if available, otherwise use config default
+        let cwd = self
+            .focused_window
+            .and_then(|id| self.windows.get(&id))
+            .and_then(|state| state.active_shell_cwd())
+            .or_else(|| self.config.shell.working_directory.clone());
+
         let spawn_options = SpawnOptions {
             shell: self.config.shell.program.clone(),
-            cwd: self.config.shell.working_directory.clone(),
+            cwd,
             semantic_prompts: self.config.shell.semantic_prompts,
             shell_assets_dir: Config::shell_assets_dir(),
         };
@@ -444,14 +465,21 @@ impl App {
             ui: window::UiState {
                 search: Default::default(),
                 bell: window::BellState::from_config(&self.config.bell),
-                context_menu: window::ContextMenu::default(),
+                context_menu: window::ContextMenu {
+                    themes: self.theme_registry.list_themes().iter().map(|s| s.to_string()).collect(),
+                    current_theme: theme_name.to_string(),
+                    ..Default::default()
+                },
                 zoom_indicator: Default::default(),
                 copy_indicator: Default::default(),
                 toast: Default::default(),
                 window_rename: Default::default(),
                 overrides: Default::default(),
+                pending_theme: None,
             },
             custom_title: None,
+            theme: theme.clone(),
+            theme_name: theme_name.to_string(),
         };
 
         self.windows.insert(window_id, window_state);
@@ -495,6 +523,132 @@ impl App {
 
     fn focused_window_mut(&mut self) -> Option<&mut WindowState> {
         self.focused_window.and_then(|id| self.windows.get_mut(&id))
+    }
+
+    /// Update CRT pipeline and textures for new theme
+    fn update_crt_pipeline(
+        state: &mut WindowState,
+        shared: &SharedGpuState,
+        theme: &Theme,
+    ) {
+        // Update CRT effect settings
+        state.gpu.crt_pipeline.set_effect(theme.crt);
+
+        // Create or destroy CRT texture based on whether effect is enabled
+        if state.gpu.crt_pipeline.is_enabled() {
+            if state.gpu.crt_texture.is_none() {
+                log::info!("CRT effect enabled - creating intermediate texture");
+                let width = state.gpu.config.width;
+                let height = state.gpu.config.height;
+                let format = state.gpu.config.format;
+                let texture = shared
+                    .texture_pool
+                    .checkout(width, height, format)
+                    .expect("Texture pool checkout failed");
+                let bind_group =
+                    state
+                        .gpu
+                        .crt_pipeline
+                        .create_bind_group(&shared.device, texture.view());
+                state.gpu.crt_texture = Some(texture);
+                state.gpu.crt_bind_group = Some(bind_group);
+            }
+        } else {
+            // Disable CRT - release texture back to pool (dropped automatically)
+            if state.gpu.crt_texture.take().is_some() {
+                log::info!("CRT effect disabled - releasing texture");
+            }
+            state.gpu.crt_bind_group = None;
+        }
+    }
+
+    /// Update background image state for new theme
+    fn update_background_image(
+        state: &mut WindowState,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        theme: &Theme,
+    ) {
+        // Clear existing background image
+        state.gpu.background_image_state = None;
+        state.gpu.background_image_bind_group = None;
+
+        // Create new background image if theme has one
+        if let Some(ref bg_image) = theme.background_image {
+            match BackgroundImageState::new(device, queue, bg_image) {
+                Ok(bg_state) => {
+                    let bind_group = state
+                        .gpu
+                        .background_image_pipeline
+                        .create_bind_group(device, &bg_state.texture.view);
+                    log::info!("Loaded background image: {:?}", bg_image.path);
+                    state.gpu.background_image_state = Some(bg_state);
+                    state.gpu.background_image_bind_group = Some(bind_group);
+                }
+                Err(e) => {
+                    log::warn!("Failed to load background image: {}", e);
+                }
+            }
+        }
+    }
+
+    /// Create sprite animation state from theme configuration
+    fn create_sprite_state(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        theme: &Theme,
+        format: wgpu::TextureFormat,
+    ) -> Option<SpriteAnimationState> {
+        let sprite = theme.sprite.as_ref()?;
+        if !sprite.enabled {
+            return None;
+        }
+        let path_str = sprite.path.as_ref()?;
+
+        // Resolve path relative to theme base directory
+        let path = std::path::PathBuf::from(path_str);
+        let resolved_path = if let Some(ref base_dir) = sprite.base_dir {
+            if path.is_relative() {
+                base_dir.join(&path)
+            } else {
+                path.clone()
+            }
+        } else {
+            path.clone()
+        };
+
+        log::info!("Creating sprite state from: {:?}", resolved_path);
+        let base_dir = sprite
+            .base_dir
+            .clone()
+            .unwrap_or_else(|| resolved_path.parent().map(|p| p.to_path_buf()).unwrap_or_default());
+
+        let config = SpriteConfig {
+            path: resolved_path,
+            frame_width: sprite.frame_width,
+            frame_height: sprite.frame_height,
+            columns: sprite.columns,
+            rows: sprite.rows,
+            frame_count: sprite.frame_count,
+            fps: sprite.fps,
+            scale: sprite.scale,
+            opacity: sprite.opacity,
+            position: SpritePosition::from_str(sprite.position.as_str()),
+            motion: SpriteMotion::from_str(sprite.motion.as_str()),
+            motion_speed: sprite.motion_speed,
+            base_dir,
+        };
+
+        match SpriteAnimationState::new(device, queue, config, format) {
+            Ok(state) => {
+                log::info!("Loaded sprite animation");
+                Some(state)
+            }
+            Err(e) => {
+                log::warn!("Failed to load sprite animation: {}", e);
+                None
+            }
+        }
     }
 
     fn close_window(&mut self, window_id: WindowId) {
@@ -690,6 +844,46 @@ impl App {
                     log::info!("Profiling stopped. Log: {}", p.display());
                 }
             }
+            MenuAction::SetTheme(ref theme_name) => {
+                if let Some(theme) = self.theme_registry.get_theme(theme_name).cloned() {
+                    // Get window ID first to avoid borrow issues
+                    if let Some(window_id) = self.focused_window {
+                        if let Some(state) = self.windows.get_mut(&window_id) {
+                            log::info!("Switching theme to: {}", theme_name);
+                            state.set_theme(theme_name, theme.clone());
+                            // Update backdrop effects
+                            configure_effects_from_theme(&mut state.gpu.effects_renderer, &theme);
+                            // Update GPU resources for new theme
+                            if let Some(shared) = self.shared_gpu.as_ref() {
+                                // Update sprite state
+                                state.gpu.sprite_state = Self::create_sprite_state(
+                                    &shared.device,
+                                    &shared.queue,
+                                    &theme,
+                                    state.gpu.config.format,
+                                );
+                                // Update CRT pipeline (scanlines)
+                                Self::update_crt_pipeline(state, shared, &theme);
+                                // Update background image
+                                Self::update_background_image(
+                                    state,
+                                    &shared.device,
+                                    &shared.queue,
+                                    &theme,
+                                );
+                            }
+                            // Update context menu current theme
+                            state.ui.context_menu.current_theme = theme_name.clone();
+                            // Force full redraw
+                            for hash in state.content_hashes.values_mut() {
+                                *hash = 0;
+                            }
+                        }
+                    }
+                } else {
+                    log::warn!("Theme '{}' not found in registry", theme_name);
+                }
+            }
             _ => log::info!("{:?} not yet implemented", action),
         }
     }
@@ -838,82 +1032,59 @@ impl App {
         }
     }
 
-    /// Reload theme CSS and apply to all windows
+    /// Reload themes from disk and apply to all windows
     fn reload_theme(&mut self) {
-        log::info!("Reloading theme...");
-        let (theme, theme_error) = self.load_theme_with_error();
+        log::info!("Reloading themes from disk...");
 
-        // Show toast if there was a theme error
-        if let Some(error) = theme_error
-            && let Some(state) = self.focused_window_mut()
-        {
-            state.ui.toast.show(error, window::ToastType::Error);
-        }
+        // Reload all themes in the registry
+        self.theme_registry.reload_all();
 
-        log::debug!(
-            "Theme loaded: fg=#{:02x}{:02x}{:02x}, cursor=#{:02x}{:02x}{:02x}, cursor_glow={}",
-            (theme.foreground.r * 255.0) as u8,
-            (theme.foreground.g * 255.0) as u8,
-            (theme.foreground.b * 255.0) as u8,
-            (theme.cursor_color.r * 255.0) as u8,
-            (theme.cursor_color.g * 255.0) as u8,
-            (theme.cursor_color.b * 255.0) as u8,
-            theme.cursor_glow.is_some()
-        );
-        log::debug!(
-            "Theme effects: grid={}, starfield={}, particles={}, matrix={}",
-            theme.grid.as_ref().is_some_and(|g| g.enabled),
-            theme.starfield.as_ref().is_some_and(|s| s.enabled),
-            theme.particles.as_ref().is_some_and(|p| p.enabled),
-            theme.matrix.as_ref().is_some_and(|m| m.enabled)
-        );
-        log::debug!(
-            "Theme events: on_bell={}, on_focus={}, on_blur={}, on_cmd_success={}, on_cmd_fail={}",
-            theme.on_bell.is_some(),
-            theme.on_focus.is_some(),
-            theme.on_blur.is_some(),
-            theme.on_command_success.is_some(),
-            theme.on_command_fail.is_some()
-        );
+        // Collect window updates to avoid borrow issues
+        let window_themes: Vec<_> = self
+            .windows
+            .iter()
+            .map(|(id, state)| (*id, state.theme_name.clone()))
+            .collect();
 
-        // Store theme for event override access
-        self.theme = theme.clone();
+        // Update each window with its reloaded theme
+        for (window_id, theme_name) in window_themes {
+            let theme = self
+                .theme_registry
+                .get_theme(&theme_name)
+                .cloned()
+                .unwrap_or_else(|| {
+                    log::warn!(
+                        "Theme '{}' not found after reload, using default",
+                        theme_name
+                    );
+                    self.theme_registry.get_default_theme().1
+                });
 
-        for state in self.windows.values_mut() {
-            // Update effect pipeline with new theme
-            state.gpu.effect_pipeline.set_theme(theme.clone());
+            if let Some(state) = self.windows.get_mut(&window_id) {
+                // Update window theme
+                state.set_theme(&theme_name, theme.clone());
 
-            // Update backdrop effects from theme
-            configure_effects_from_theme(&mut state.gpu.effects_renderer, &theme);
+                // Update backdrop effects from theme
+                configure_effects_from_theme(&mut state.gpu.effects_renderer, &theme);
 
-            // Update tab bar theme
-            state.gpu.tab_bar.set_theme(theme.tabs);
+                // Force full redraw
+                for hash in state.content_hashes.values_mut() {
+                    *hash = 0;
+                }
 
-            // Update cursor color and glow
-            state.gpu.terminal_vello.set_cursor_color([
-                theme.cursor_color.r,
-                theme.cursor_color.g,
-                theme.cursor_color.b,
-                theme.cursor_color.a,
-            ]);
-            state
-                .gpu
-                .terminal_vello
-                .set_cursor_glow(theme.cursor_glow.map(|g| {
-                    (
-                        [g.color.r, g.color.g, g.color.b, g.color.a],
-                        g.radius,
-                        g.intensity,
-                    )
-                }));
-
-            // Force full redraw
-            state.render.dirty = true;
-            for hash in state.content_hashes.values_mut() {
-                *hash = 0;
+                log::debug!(
+                    "Theme '{}' reloaded for window {:?}",
+                    theme_name,
+                    window_id
+                );
             }
         }
-        log::debug!("Theme applied to {} windows", self.windows.len());
+
+        // Update App.theme for backward compatibility (event overrides)
+        let (_, default_theme) = self.theme_registry.get_default_theme();
+        self.theme = default_theme;
+
+        log::debug!("Themes reloaded for {} windows", self.windows.len());
     }
 }
 
@@ -1150,7 +1321,9 @@ impl ApplicationHandler for App {
 
             #[cfg(target_os = "macos")]
             if self.menu.is_none() {
-                let (menu, ids, window_submenu) = build_menu_bar();
+                let theme_names = self.theme_registry.list_themes();
+                let current_theme = self.theme_registry.default_theme_name();
+                let (menu, ids, window_submenu) = build_menu_bar(&theme_names, current_theme);
                 menu.init_for_nsapp();
                 // Register the Window menu with macOS so it automatically lists windows
                 set_windows_menu(&window_submenu);
@@ -1306,7 +1479,46 @@ impl ApplicationHandler for App {
                 state: button_state,
                 button,
                 ..
-            } => if handle_mouse_input(state, button, button_state, &self.modifiers) {},
+            } => {
+                handle_mouse_input(state, button, button_state, &self.modifiers);
+                // Check for pending theme change from context menu
+                if let Some(theme_name) = state.ui.pending_theme.take() {
+                    if let Some(theme) = self.theme_registry.get_theme(&theme_name).cloned() {
+                        log::info!("Switching theme via context menu to: {}", theme_name);
+                        state.set_theme(&theme_name, theme.clone());
+                        // Update effect pipeline theme (needed for event overrides like on_bell)
+                        state.gpu.effect_pipeline.set_theme(theme.clone());
+                        configure_effects_from_theme(&mut state.gpu.effects_renderer, &theme);
+                        // Update GPU resources for new theme
+                        if let Some(shared) = self.shared_gpu.as_ref() {
+                            // Update sprite state
+                            state.gpu.sprite_state = Self::create_sprite_state(
+                                &shared.device,
+                                &shared.queue,
+                                &theme,
+                                state.gpu.config.format,
+                            );
+                            // Update CRT pipeline (scanlines)
+                            Self::update_crt_pipeline(state, shared, &theme);
+                            // Update background image
+                            Self::update_background_image(
+                                state,
+                                &shared.device,
+                                &shared.queue,
+                                &theme,
+                            );
+                        }
+                        // Update context menu current theme
+                        state.ui.context_menu.current_theme = theme_name;
+                        // Force full redraw
+                        for hash in state.content_hashes.values_mut() {
+                            *hash = 0;
+                        }
+                    } else {
+                        log::warn!("Theme '{}' not found in registry", theme_name);
+                    }
+                }
+            }
 
             WindowEvent::MouseWheel { delta, .. } => {
                 handle_mouse_wheel(state, delta);

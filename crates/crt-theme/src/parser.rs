@@ -15,7 +15,7 @@ use lightningcss::values::color::CssColor;
 
 use crate::{
     BackgroundImage, BackgroundPosition, BackgroundRepeat, BackgroundSize, Color, CrtEffect,
-    EventOverride, GridEffect, GridPatch, LinearGradient, MatrixEffect, MatrixPatch,
+    CursorShape, EventOverride, GridEffect, GridPatch, LinearGradient, MatrixEffect, MatrixPatch,
     ParticleBehavior, ParticleEffect, ParticlePatch, ParticleShape, RainEffect, RainPatch,
     ShapeEffect, ShapeMotion, ShapePatch, ShapeRotation, ShapeType, SpriteEffect, SpriteMotion,
     SpriteOverlay, SpriteOverlayPosition, SpritePatch, SpritePosition, StarDirection,
@@ -422,6 +422,17 @@ pub fn parse_background_repeat(value: &str) -> BackgroundRepeat {
         "repeat-x" | "repeat no-repeat" => BackgroundRepeat::RepeatX,
         "repeat-y" | "no-repeat repeat" => BackgroundRepeat::RepeatY,
         _ => BackgroundRepeat::NoRepeat,
+    }
+}
+
+/// Parse cursor shape from string
+pub fn parse_cursor_shape(value: &str) -> Option<CursorShape> {
+    let value = value.trim().to_lowercase();
+    match value.as_str() {
+        "block" => Some(CursorShape::Block),
+        "bar" | "beam" => Some(CursorShape::Bar),
+        "underline" => Some(CursorShape::Underline),
+        _ => None,
     }
 }
 
@@ -1614,6 +1625,9 @@ fn apply_event_properties(
     }
     if let Some(c) = custom.get("--cursor-color") {
         override_block.cursor_color = Some(parse_color(c)?);
+    }
+    if let Some(s) = custom.get("--cursor-shape") {
+        override_block.cursor_shape = parse_cursor_shape(s);
     }
     if let Some(ts) = standard.get("text-shadow") {
         if let Ok(shadow) = parse_text_shadow(ts) {

@@ -9,7 +9,7 @@ use muda::{
 };
 
 /// Menu action identifiers
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuAction {
     // Shell menu
     NewTab,
@@ -43,6 +43,7 @@ pub enum MenuAction {
     SelectTab7,
     SelectTab8,
     SelectTab9,
+    SetTheme(String),
 }
 
 /// Menu item IDs stored for event handling
@@ -71,7 +72,7 @@ pub struct MenuIds {
 }
 
 #[cfg(target_os = "macos")]
-pub fn build_menu_bar() -> (Menu, MenuIds, Submenu) {
+pub fn build_menu_bar(_theme_names: &[&str], _current_theme: &str) -> (Menu, MenuIds, Submenu) {
     let menu = Menu::new();
 
     // App menu (CRT)
@@ -518,5 +519,12 @@ pub fn menu_id_to_action(id: &MenuId, ids: &MenuIds) -> Option<MenuAction> {
     if *id == ids.select_tab[8] {
         return Some(MenuAction::SelectTab9);
     }
+
+    // Check for theme menu items (dynamic IDs with "theme:" prefix)
+    let id_str = id.as_ref();
+    if let Some(theme_name) = id_str.strip_prefix("theme:") {
+        return Some(MenuAction::SetTheme(theme_name.to_string()));
+    }
+
     None
 }

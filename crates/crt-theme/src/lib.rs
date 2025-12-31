@@ -344,6 +344,18 @@ pub enum BackgroundRepeat {
     RepeatY,
 }
 
+/// Cursor shape for theme overrides
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CursorShape {
+    /// Solid block cursor
+    #[default]
+    Block,
+    /// Vertical bar cursor
+    Bar,
+    /// Horizontal underline cursor
+    Underline,
+}
+
 /// Background image configuration
 #[derive(Debug, Clone, Default)]
 pub struct BackgroundImage {
@@ -1906,6 +1918,8 @@ pub struct EventOverride {
     pub background: Option<LinearGradient>,
     /// Override cursor color
     pub cursor_color: Option<Color>,
+    /// Override cursor shape
+    pub cursor_shape: Option<CursorShape>,
     /// Override text shadow/glow
     pub text_shadow: Option<TextShadow>,
     /// Patches to starfield effect
@@ -1953,6 +1967,9 @@ impl EventOverride {
         }
         if other.cursor_color.is_some() {
             self.cursor_color = other.cursor_color;
+        }
+        if other.cursor_shape.is_some() {
+            self.cursor_shape = other.cursor_shape;
         }
         if other.text_shadow.is_some() {
             self.text_shadow = other.text_shadow;

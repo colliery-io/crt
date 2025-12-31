@@ -236,5 +236,12 @@ pub(super) fn handle_context_menu_action(state: &mut WindowState, item: ContextM
                 state.render.dirty = true;
             }
         }
+        ContextMenuItem::Separator => {
+            // Separator items are not clickable
+        }
+        ContextMenuItem::Theme(name) => {
+            // Store pending theme change for main loop to process
+            state.ui.pending_theme = Some(name);
+        }
     }
 }
