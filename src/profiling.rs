@@ -540,8 +540,9 @@ impl Profiler {
         // Write visible content (truncate lines for readability)
         self.write("Content:");
         for (i, line) in snapshot.visible_content.iter().enumerate() {
-            let display_line = if line.len() > 120 {
-                format!("{}...", &line[..117])
+            // Use chars().take() to safely handle multi-byte UTF-8 characters
+            let display_line = if line.chars().count() > 120 {
+                format!("{}...", line.chars().take(117).collect::<String>())
             } else {
                 line.clone()
             };
@@ -732,5 +733,56 @@ mod tests {
         // Should be false by default (no env var set in test)
         // Note: This might fail if CRT_PROFILE is set in the environment
         // assert!(!is_enabled());
+    }
+
+    /// Test that line truncation for profiling snapshot handles multi-byte UTF-8 safely.
+    /// Previously used unsafe byte slicing: &line[..117]
+    /// which panics when byte 117 falls mid-character.
+    #[test]
+    fn test_safe_line_truncation() {
+        // Helper function matching the fixed pattern
+        fn truncate_line(line: &str) -> String {
+            if line.chars().count() > 120 {
+                format!("{}...", line.chars().take(117).collect::<String>())
+            } else {
+                line.to_string()
+            }
+        }
+
+        // Short line - no truncation
+        let short = "Hello, World!";
+        assert_eq!(truncate_line(short), "Hello, World!");
+
+        // Exactly 120 chars - no truncation
+        let exact: String = "x".repeat(120);
+        assert_eq!(truncate_line(&exact), exact);
+
+        // 121 chars - should truncate to 117 + "..."
+        let over: String = "x".repeat(121);
+        let result = truncate_line(&over);
+        assert!(result.ends_with("..."));
+        assert_eq!(result.chars().count(), 120); // 117 + 3 for "..."
+
+        // Line with emoji where byte 117 would fall mid-character
+        // 35 emojis = 140 bytes but only 35 chars (< 120 char threshold)
+        let emoji_line: String = "🎉".repeat(35); // 35 emojis = 140 bytes, 35 chars
+        assert_eq!(emoji_line.len(), 140);
+        assert_eq!(emoji_line.chars().count(), 35);
+        // Old code: &emoji_line[..117] would PANIC on byte boundary!
+        // New code safely counts chars, and since 35 < 120, no truncation needed
+        let result = truncate_line(&emoji_line);
+        assert_eq!(result, emoji_line); // No truncation, under char limit
+
+        // Line with enough emoji chars to trigger truncation
+        let long_emoji: String = "🎉".repeat(125); // 125 chars
+        let result = truncate_line(&long_emoji);
+        assert!(result.ends_with("..."));
+        assert_eq!(result.chars().count(), 120); // 117 emoji + "..."
+
+        // Mixed content
+        let mixed = format!("{}{}", "A".repeat(100), "🌍".repeat(30)); // 130 chars
+        let result = truncate_line(&mixed);
+        assert!(result.ends_with("..."));
+        assert_eq!(result.chars().count(), 120);
     }
 }

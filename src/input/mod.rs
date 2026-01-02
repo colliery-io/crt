@@ -890,10 +890,9 @@ pub fn paste_to_terminal(state: &mut WindowState, content: &str) {
 
     log::info!("=== PASTE START ===");
     log::info!("Paste content length: {} bytes", content.len());
-    log::info!(
-        "Paste content preview: {:?}",
-        &content[..content.len().min(50)]
-    );
+    // Use chars().take() to safely handle multi-byte UTF-8 characters
+    let preview: String = content.chars().take(50).collect();
+    log::info!("Paste content preview: {:?}", preview);
 
     // Check if bracketed paste mode is enabled
     let bracketed = shell.bracketed_paste_enabled();
@@ -1021,5 +1020,59 @@ pub fn update_search_matches(state: &mut WindowState) {
     // Scroll to first match if any found
     if !state.ui.search.matches.is_empty() {
         scroll_to_current_match(state);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Test that UTF-8 string truncation handles multi-byte characters safely.
+    /// This pattern is used in paste_to_terminal for logging preview.
+    /// Previously used unsafe byte slicing: &content[..content.len().min(50)]
+    /// which panics when byte 50 falls mid-character.
+    #[test]
+    fn test_safe_utf8_truncation() {
+        // ASCII-only string - should work with both methods
+        let ascii = "Hello, World!";
+        let preview: String = ascii.chars().take(50).collect();
+        assert_eq!(preview, "Hello, World!");
+
+        // String with emoji at the boundary
+        // Each emoji is 4 bytes. 12 emojis = 48 bytes, then "ab" = 50 bytes total
+        // Byte slicing at 50 would work here, but let's test with 49
+        let emoji_boundary = "🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉ab";
+        assert_eq!(emoji_boundary.len(), 50); // 12*4 + 2 = 50 bytes
+        let preview: String = emoji_boundary.chars().take(50).collect();
+        assert_eq!(preview, emoji_boundary); // Should get all 14 chars
+
+        // String where byte 50 falls in middle of emoji
+        // 12 emojis = 48 bytes, then one more emoji starts at byte 48
+        // Byte 50 would be in the middle of the 13th emoji
+        let mid_emoji = "🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉"; // 13 emojis = 52 bytes
+        assert_eq!(mid_emoji.len(), 52);
+        // Byte slice &mid_emoji[..50] would PANIC here!
+        // But chars().take(50) safely returns all 13 emojis
+        let preview: String = mid_emoji.chars().take(50).collect();
+        assert_eq!(preview, mid_emoji);
+        assert_eq!(preview.chars().count(), 13);
+
+        // Mixed ASCII and multi-byte
+        let mixed = "Hello 🌍 World 🚀 Test 🎯 Done";
+        let preview: String = mixed.chars().take(10).collect();
+        assert_eq!(preview, "Hello 🌍 Wo");
+
+        // Very short string
+        let short = "Hi";
+        let preview: String = short.chars().take(50).collect();
+        assert_eq!(preview, "Hi");
+
+        // Empty string
+        let empty = "";
+        let preview: String = empty.chars().take(50).collect();
+        assert_eq!(preview, "");
+
+        // Japanese text (3 bytes per char)
+        let japanese = "こんにちは世界"; // 7 chars, 21 bytes
+        let preview: String = japanese.chars().take(5).collect();
+        assert_eq!(preview, "こんにちは");
     }
 }
