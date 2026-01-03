@@ -105,12 +105,25 @@ pub fn handle_mouse_input(
     if state.ui.context_menu.visible {
         match (button, button_state) {
             (MouseButton::Left, ElementState::Pressed) => {
-                // Check if clicking on a menu item
-                if let Some(item) = state.ui.context_menu.item_at(x, y) {
+                // Check submenu first
+                if let Some(item) = state.ui.context_menu.submenu_item_at(x, y) {
                     handle_context_menu_action(state, item);
                     state.ui.context_menu.hide();
                     state.render.dirty = true;
                     state.window.request_redraw();
+                    return true;
+                }
+                // Check main menu
+                if let Some(item) = state.ui.context_menu.item_at(x, y) {
+                    // Themes item doesn't do anything on click (submenu shows on hover)
+                    if !item.has_submenu() {
+                        handle_context_menu_action(state, item);
+                        state.ui.context_menu.hide();
+                        state.render.dirty = true;
+                        state.window.request_redraw();
+                        return true;
+                    }
+                    // Clicking on Themes just keeps it highlighted
                     return true;
                 }
                 // Clicking outside the menu dismisses it
@@ -236,8 +249,8 @@ pub(super) fn handle_context_menu_action(state: &mut WindowState, item: ContextM
                 state.render.dirty = true;
             }
         }
-        ContextMenuItem::Separator => {
-            // Separator items are not clickable
+        ContextMenuItem::Separator | ContextMenuItem::Themes => {
+            // Separator and Themes parent items are not clickable
         }
         ContextMenuItem::Theme(name) => {
             // Store pending theme change for main loop to process

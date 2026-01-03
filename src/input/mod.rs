@@ -10,6 +10,7 @@ pub use key_encoder::encode_key;
 pub use keyboard::{KeyboardAction, handle_keyboard_input};
 pub use mouse::{handle_cursor_moved, handle_mouse_input, handle_mouse_wheel};
 
+use std::collections::BTreeMap;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -19,17 +20,19 @@ use winit::keyboard::{Key, NamedKey};
 
 use crate::window::WindowState;
 
-/// Detected URL with its position in the terminal
+/// Detected URL with its position in the terminal (supports multi-line spans)
 #[derive(Debug, Clone)]
 pub struct DetectedUrl {
     /// The URL string
     pub url: String,
-    /// Starting column (0-indexed)
+    /// Starting column on start line (0-indexed)
     pub start_col: usize,
-    /// Ending column (exclusive, 0-indexed)
+    /// Ending column on end line (exclusive, 0-indexed)
     pub end_col: usize,
-    /// Line number (0-indexed viewport line)
+    /// Start line number (0-indexed viewport line)
     pub line: usize,
+    /// End line number (same as line for single-line URLs)
+    pub end_line: usize,
 }
 
 /// Get the URL regex (compiled once)
@@ -56,25 +59,104 @@ pub fn detect_urls_in_line(line_text: &str, line_num: usize) -> Vec<DetectedUrl>
     let regex = url_regex();
     regex
         .find_iter(line_text)
-        .map(|m| DetectedUrl {
-            url: m.as_str().to_string(),
-            start_col: m.start(),
-            end_col: m.end(),
-            line: line_num,
+        .map(|m| {
+            // Convert byte offsets to character indices for grid column comparison
+            let start_col = line_text[..m.start()].chars().count();
+            let end_col = line_text[..m.end()].chars().count();
+            DetectedUrl {
+                url: m.as_str().to_string(),
+                start_col,
+                end_col,
+                line: line_num,
+                end_line: line_num, // Same line initially, may be extended by merge_wrapped_urls
+            }
         })
         .collect()
 }
 
-/// Check if a position (col, line) is within a detected URL
+/// Check if a position (col, line) is within a detected URL (supports multi-line URLs)
 pub fn find_url_at_position(urls: &[DetectedUrl], col: usize, line: usize) -> Option<&DetectedUrl> {
-    urls.iter()
-        .find(|url| url.line == line && col >= url.start_col && col < url.end_col)
+    urls.iter().find(|url| is_position_in_url(url, col, line))
 }
 
-/// Find the index of a URL at a given position
+/// Find the index of a URL at a given position (supports multi-line URLs)
 pub fn find_url_index_at_position(urls: &[DetectedUrl], col: usize, line: usize) -> Option<usize> {
-    urls.iter()
-        .position(|url| url.line == line && col >= url.start_col && col < url.end_col)
+    urls.iter().position(|url| is_position_in_url(url, col, line))
+}
+
+/// Check if a (col, line) position falls within a URL's span
+fn is_position_in_url(url: &DetectedUrl, col: usize, line: usize) -> bool {
+    if line < url.line || line > url.end_line {
+        return false;
+    }
+    if url.line == url.end_line {
+        // Single-line URL
+        col >= url.start_col && col < url.end_col
+    } else if line == url.line {
+        // First line of multi-line URL
+        col >= url.start_col
+    } else if line == url.end_line {
+        // Last line of multi-line URL
+        col < url.end_col
+    } else {
+        // Middle line of multi-line URL - entire line is part of URL
+        true
+    }
+}
+
+/// Merge URLs that wrap across multiple lines
+///
+/// When a URL ends at the last column of a line and the next line continues
+/// with URL-like content (no protocol, no leading whitespace), merge them
+/// into a single multi-line URL.
+pub fn merge_wrapped_urls(urls: &mut Vec<DetectedUrl>, line_texts: &BTreeMap<i32, String>, cols: usize) {
+    let mut i = 0;
+    while i < urls.len() {
+        // Check if URL ends at or near the last column (allowing for slight variance)
+        if urls[i].end_col >= cols.saturating_sub(1) {
+            let next_line = urls[i].end_line as i32 + 1;
+            if let Some(next_text) = line_texts.get(&next_line) {
+                // Check if next line could be a URL continuation:
+                // - Not empty
+                // - Doesn't start with a new protocol (would be a separate URL)
+                // - No leading whitespace (hard line break would have content at col 0)
+                if !next_text.is_empty()
+                    && !next_text.starts_with("http://")
+                    && !next_text.starts_with("https://")
+                    && !next_text.starts_with("file://")
+                    && !next_text.starts_with("www.")
+                    && !next_text.starts_with(' ')
+                    && !next_text.starts_with('\t')
+                {
+                    // Find where URL-like characters end on next line
+                    let continuation_end = find_url_continuation_end(next_text);
+                    if continuation_end > 0 {
+                        // Merge: extend URL string and update end position
+                        urls[i].url.push_str(&next_text[..continuation_end]);
+                        urls[i].end_line = next_line as usize;
+                        urls[i].end_col = next_text[..continuation_end].chars().count();
+                        // Continue checking - this merged URL might also wrap
+                        continue;
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+}
+
+/// Find where URL-like characters end in a continuation line
+fn find_url_continuation_end(text: &str) -> usize {
+    // URL characters: anything except whitespace and certain special chars
+    // Match the same pattern as the URL regex
+    let mut end = 0;
+    for (i, c) in text.char_indices() {
+        if c.is_whitespace() || "<>[]{}|\\^`".contains(c) || c < ' ' {
+            break;
+        }
+        end = i + c.len_utf8();
+    }
+    end
 }
 
 /// Open a URL in the default browser

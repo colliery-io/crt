@@ -14,7 +14,7 @@ use crt_theme::{AnsiPalette, EventOverride, Theme};
 use winit::window::Window;
 
 use crate::gpu::{SharedGpuState, WindowGpuState};
-use crate::input::detect_urls_in_line;
+use crate::input::{detect_urls_in_line, merge_wrapped_urls};
 
 /// Unique identifier for a terminal tab
 pub type TabId = u64;
@@ -562,6 +562,9 @@ pub enum ContextMenuItem {
     Paste,
     SelectAll,
     Separator,
+    /// Parent item that shows submenu on hover
+    Themes,
+    /// Individual theme (shown in submenu)
     Theme(String),
 }
 
@@ -573,17 +576,19 @@ impl ContextMenuItem {
             ContextMenuItem::Paste => "Paste".to_string(),
             ContextMenuItem::SelectAll => "Select All".to_string(),
             ContextMenuItem::Separator => String::new(),
+            ContextMenuItem::Themes => "Theme".to_string(),
             ContextMenuItem::Theme(name) => name.clone(),
         }
     }
 
-    /// Get the keyboard shortcut hint
+    /// Get the keyboard shortcut hint (or arrow indicator for submenu)
     pub fn shortcut(&self) -> &'static str {
         #[cfg(target_os = "macos")]
         match self {
             ContextMenuItem::Copy => "Cmd+C",
             ContextMenuItem::Paste => "Cmd+V",
             ContextMenuItem::SelectAll => "Cmd+A",
+            ContextMenuItem::Themes => "\u{25B6}", // Right-pointing triangle for submenu
             ContextMenuItem::Separator | ContextMenuItem::Theme(_) => "",
         }
         #[cfg(not(target_os = "macos"))]
@@ -591,8 +596,14 @@ impl ContextMenuItem {
             ContextMenuItem::Copy => "Ctrl+C",
             ContextMenuItem::Paste => "Ctrl+V",
             ContextMenuItem::SelectAll => "Ctrl+A",
+            ContextMenuItem::Themes => "\u{25B6}", // Right-pointing triangle for submenu
             ContextMenuItem::Separator | ContextMenuItem::Theme(_) => "",
         }
+    }
+
+    /// Returns true if this is a submenu parent
+    pub fn has_submenu(&self) -> bool {
+        matches!(self, ContextMenuItem::Themes)
     }
 
     /// Returns true if this is a separator item
@@ -856,19 +867,35 @@ pub struct ContextMenu {
     pub themes: Vec<String>,
     /// Currently active theme name
     pub current_theme: String,
+    /// Whether the theme submenu is visible
+    pub submenu_visible: bool,
+    /// Submenu position (top-left corner)
+    pub submenu_x: f32,
+    pub submenu_y: f32,
+    /// Submenu dimensions
+    pub submenu_width: f32,
+    pub submenu_height: f32,
+    /// Hovered item in submenu
+    pub submenu_hovered_item: Option<usize>,
 }
 
 impl ContextMenu {
-    /// Build the full list of menu items including themes
+    /// Build the main menu items (Themes shown as a parent item, not expanded)
     pub fn items(&self) -> Vec<ContextMenuItem> {
         let mut items = ContextMenuItem::edit_items();
         if !self.themes.is_empty() {
             items.push(ContextMenuItem::Separator);
-            for theme in &self.themes {
-                items.push(ContextMenuItem::Theme(theme.clone()));
-            }
+            items.push(ContextMenuItem::Themes);
         }
         items
+    }
+
+    /// Build the theme submenu items
+    pub fn theme_items(&self) -> Vec<ContextMenuItem> {
+        self.themes
+            .iter()
+            .map(|name| ContextMenuItem::Theme(name.clone()))
+            .collect()
     }
 
     /// Show the context menu at the given position
@@ -878,6 +905,8 @@ impl ContextMenu {
         self.y = y;
         self.hovered_item = None;
         self.focused_item = Some(0); // Focus first item for keyboard accessibility
+        self.submenu_visible = false;
+        self.submenu_hovered_item = None;
     }
 
     /// Hide the context menu
@@ -885,6 +914,8 @@ impl ContextMenu {
         self.visible = false;
         self.hovered_item = None;
         self.focused_item = None;
+        self.submenu_visible = false;
+        self.submenu_hovered_item = None;
     }
 
     /// Move focus to the next selectable item (wraps around, skips separators)
@@ -939,7 +970,7 @@ impl ContextMenu {
         self.focused_item.and_then(|idx| items.get(idx).cloned())
     }
 
-    /// Check if a point is inside the menu
+    /// Check if a point is inside the main menu
     pub fn contains(&self, x: f32, y: f32) -> bool {
         if !self.visible {
             return false;
@@ -947,13 +978,35 @@ impl ContextMenu {
         x >= self.x && x <= self.x + self.width && y >= self.y && y <= self.y + self.height
     }
 
-    /// Get the menu item at the given position, if any
+    /// Check if a point is inside the submenu
+    pub fn contains_submenu(&self, x: f32, y: f32) -> bool {
+        if !self.submenu_visible {
+            return false;
+        }
+        x >= self.submenu_x
+            && x <= self.submenu_x + self.submenu_width
+            && y >= self.submenu_y
+            && y <= self.submenu_y + self.submenu_height
+    }
+
+    /// Get the menu item at the given position (main menu only)
     pub fn item_at(&self, x: f32, y: f32) -> Option<ContextMenuItem> {
         if !self.contains(x, y) {
             return None;
         }
         let items = self.items();
         let rel_y = y - self.y;
+        let index = (rel_y / self.item_height) as usize;
+        items.get(index).cloned()
+    }
+
+    /// Get the submenu item at the given position
+    pub fn submenu_item_at(&self, x: f32, y: f32) -> Option<ContextMenuItem> {
+        if !self.contains_submenu(x, y) {
+            return None;
+        }
+        let items = self.theme_items();
+        let rel_y = y - self.submenu_y;
         let index = (rel_y / self.item_height) as usize;
         items.get(index).cloned()
     }
@@ -967,14 +1020,38 @@ impl ContextMenu {
     pub fn update_hover(&mut self, x: f32, y: f32) {
         if !self.visible {
             self.hovered_item = None;
+            self.submenu_hovered_item = None;
             return;
         }
+
+        // Check submenu first
+        if self.submenu_visible && self.contains_submenu(x, y) {
+            let rel_y = y - self.submenu_y;
+            self.submenu_hovered_item = Some((rel_y / self.item_height) as usize);
+            // Keep main menu item hovered (the Themes item)
+            return;
+        } else {
+            self.submenu_hovered_item = None;
+        }
+
+        // Check main menu
         if self.contains(x, y) {
             let rel_y = y - self.y;
             self.hovered_item = Some((rel_y / self.item_height) as usize);
         } else {
             self.hovered_item = None;
+            // Hide submenu when mouse leaves both menus
+            if !self.contains_submenu(x, y) {
+                self.submenu_visible = false;
+            }
         }
+    }
+
+    /// Get the index of the Themes item in the main menu
+    pub fn themes_item_index(&self) -> Option<usize> {
+        self.items()
+            .iter()
+            .position(|item| matches!(item, ContextMenuItem::Themes))
     }
 }
 
@@ -1288,6 +1365,12 @@ impl WindowState {
             let urls = detect_urls_in_line(line_text, *viewport_line as usize);
             self.interaction.detected_urls.extend(urls);
         }
+        // Merge URLs that wrap across multiple lines
+        merge_wrapped_urls(
+            &mut self.interaction.detected_urls,
+            &self.render.cached.line_texts,
+            self.cols,
+        );
 
         // Check if shell supports OSC 133 semantic zones
         let has_semantic_zones = terminal.has_semantic_zones();
@@ -1379,13 +1462,30 @@ impl WindowState {
                 });
             }
 
-            // Check if this cell is part of the hovered URL and add underline
-            if let Some(hovered_idx) = self.interaction.hovered_url_index
-                && let Some(hovered_url) = self.interaction.detected_urls.get(hovered_idx)
-                && hovered_url.line == viewport_line as usize
-                && col >= hovered_url.start_col
-                && col < hovered_url.end_col
+            // Check if this cell is part of the hovered URL and add underline (supports multi-line URLs)
+            let in_hovered_url = if let Some(hovered_idx) = self.interaction.hovered_url_index
+                && let Some(url) = self.interaction.detected_urls.get(hovered_idx)
             {
+                let vp_line = viewport_line as usize;
+                vp_line >= url.line && vp_line <= url.end_line && {
+                    if url.line == url.end_line {
+                        // Single-line URL
+                        col >= url.start_col && col < url.end_col
+                    } else if vp_line == url.line {
+                        // First line of multi-line URL
+                        col >= url.start_col
+                    } else if vp_line == url.end_line {
+                        // Last line of multi-line URL
+                        col < url.end_col
+                    } else {
+                        // Middle line - entire line is part of URL
+                        true
+                    }
+                }
+            } else {
+                false
+            };
+            if in_hovered_url {
                 decorations.push(TextDecoration {
                     x,
                     y,
