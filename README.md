@@ -1,88 +1,59 @@
-## `CRT's a Ridiculous Terminal`
+# CRT's a Ridiculous Terminal
 
- <p align="center">
-    <img src="assets/icons/crt-256x256.png" alt="CRT" width="256">
-  </p>
+<p align="center">
+  <img src="assets/icons/crt-256x256.png" alt="CRT" width="256">
+</p>
 
+<p align="center">
+  <strong>A GPU-accelerated terminal that's actually fun to look at.</strong>
+</p>
 
-## Why 
+<div align="center">
 
-I really like [Hyper.js](https://github.com/vercel/hyper), being able to use CSS to style a terminal just made it fun, but it's not been maintained and has been regressing in performance recently. So like anyone 
-who hasn't tried to do the thing before I decided "How hard could it be ?". This is the result, it's not as performant as [rio](https://rioterm.com/) or [alacritty](https://alacritty.org/), but I'm **pretty** sure we're eating up less memory than Hyper and I'm not getting weird pinwheels of doom as I use it - and I'm doing way more rendering so I'm taking it as a win. 
+> ### *"This is cool!"*
+>
+> — Mat (6 years old)
 
-Also, my 6 year old thinks its cool so what other possible endorsements could you want ?
+</div>
 
- <div align="center">
+<p align="center">
+  <img src="assets/crt-demo.gif" alt="CRT Demo" width="600">
+</p>
 
-  > ### *"This is cool!"*
-  >
-  > — Mat (6 years old)
+## Why?
 
-  </div>
+I really like [Hyper.js](https://github.com/vercel/hyper) - being able to use CSS to style a terminal just made it *fun*. But it hasn't been maintained and has been regressing in performance. So like anyone who hasn't tried to do the thing before, I decided "How hard could it be?"
 
-## Features
+This is the result. It's not as fast as [rio](https://rioterm.com/) or [alacritty](https://alacritty.org/), but it's got CSS theming, visual effects, and my 6-year-old thinks it's cool. What more could you want?
 
-- **GPU Rendering** - Hardware-accelerated rendering via wgpu/vello for smooth 60fps performance
-- **CSS Theming** - Fully customizable themes using CSS syntax with hot-reload support
-- **Visual Effects** - CRT scanlines, matrix rain, particle systems, perspective grids, animated sprites
-- **256-Color Support** - Full ANSI color palette with per-theme overrides for tools like LS_COLORS
-- **Tabs** - Multi-tab support with customizable tab bar styling
-- **Font Ligatures** - Programming ligature support with configurable font variants
+## What makes it fun
 
-## Installation
+- **CSS Theming** - Style your terminal like a website. Hot-reload on save.
+- **Visual Effects** - CRT scanlines, matrix rain, particle systems, animated sprites
+- **16 Built-in Themes** - Synthwave, Matrix, Nyan Cat, Fallout Pip-Boy, and more
+- **GPU Rendering** - Smooth 60fps via wgpu/vello
 
-### macOS
-
-```sh
-curl -sSL https://raw.githubusercontent.com/colliery-io/crt/main/scripts/install.sh | sh
-```
-
-This installs `crt.app` to `/Applications` and sets up config at `~/.config/crt/`.
-
-### Linux (un tested ) 
+## Install
 
 ```sh
 curl -sSL https://raw.githubusercontent.com/colliery-io/crt/main/scripts/install.sh | sh
 ```
 
-Binary installs to `~/.local/bin/crt` with config at `~/.config/crt/`.
-
-### Windows Support
-
-[Soon™](https://wowpedia.fandom.com/wiki/Soon)
-
-### Building from Source
-
-Requires Rust 2024 edition:
-
-```sh
-git clone https://github.com/colliery-io/crt.git
-cd crt
-cargo build --release
-```
+> Windows support coming [Soon™](https://wowpedia.fandom.com/wiki/Soon)
 
 ## Quick Start
 
-After installation:
-
 1. Launch CRT from Applications (macOS) or run `crt` (Linux)
-2. Try different themes by editing `~/.config/crt/config.toml`:
+2. Edit `~/.config/crt/config.toml` to try different themes:
    ```toml
    [theme]
    name = "matrix"  # or "nyancat", "synthwave", "minimal", etc.
    ```
-3. Save the file and press `Cmd+N` to open a new window with the theme
-4. See all available themes: `ls ~/.config/crt/themes/`
-
-> **Note:** Colors and effects hot-reload on save, but background images and sprites require a new window (`Cmd+N`) to load.
-
-## Configuration
-
-Configuration lives at `~/.config/crt/config.toml`:
+3. Save and press `Cmd+N` for a new window with your theme
 
 ## Themes
 
-CRT includes 16 built-in themes. See the [Theme Gallery](docs/gallery/README.md) for screenshots of each.
+CRT includes 16 built-in themes. See the [Theme Gallery](docs/gallery/README.md) for screenshots.
 
 | Theme | Description |
 |-------|-------------|
@@ -105,15 +76,21 @@ CRT includes 16 built-in themes. See the [Theme Gallery](docs/gallery/README.md)
 
 ### Custom Themes
 
-Create custom themes at `~/.config/crt/themes/mytheme.css` and set `name = "mytheme"` in config.
+Create your own at `~/.config/crt/themes/mytheme.css` and set `name = "mytheme"` in config.
 
-See the [Theming Guide](docs/theming.md) for details, or jump to:
 - [How to Create a Custom Theme](docs/how-to/create-custom-theme.md)
 - [CSS Properties Reference](docs/reference/theme-css-properties.md)
+- [Full Theming Guide](docs/theming.md)
 
-## Keyboard Shortcuts
+---
 
-### Windows & Tabs
+## Reference
+
+### Keyboard Shortcuts
+
+<details>
+<summary>Windows & Tabs</summary>
+
 | Shortcut | Action |
 |----------|--------|
 | Cmd+N | New window |
@@ -126,7 +103,11 @@ See the [Theming Guide](docs/theming.md) for details, or jump to:
 | Cmd+Shift+] | Next tab |
 | Double-click tab | Rename tab |
 
-### Navigation
+</details>
+
+<details>
+<summary>Navigation</summary>
+
 | Shortcut | Action |
 |----------|--------|
 | Shift+Page Up | Scroll up through history |
@@ -135,29 +116,25 @@ See the [Theming Guide](docs/theming.md) for details, or jump to:
 | Shift+End | Jump to bottom |
 | Cmd+Click | Open URL under cursor |
 
-### Search
+</details>
+
+<details>
+<summary>Search & Font</summary>
+
 | Shortcut | Action |
 |----------|--------|
 | Cmd+F | Open search |
 | Enter | Find next match |
 | Escape | Close search |
-
-### Font Size
-| Shortcut | Action |
-|----------|--------|
 | Cmd+= | Increase font size |
 | Cmd+- | Decrease font size |
 | Cmd+0 | Reset font size |
 
-### Context Menu
-| Shortcut | Action |
-|----------|--------|
-| Right-click | Open context menu |
-| Arrow Up/Down | Navigate menu items |
-| Enter | Activate focused item |
-| Escape | Close menu |
+</details>
 
-### Other
+<details>
+<summary>Other</summary>
+
 | Shortcut | Action |
 |----------|--------|
 | Cmd+C | Copy selection |
@@ -167,45 +144,65 @@ See the [Theming Guide](docs/theming.md) for details, or jump to:
 | Cmd+Option+P | Toggle profiling |
 | Ctrl+Cmd+F | Toggle fullscreen |
 
-## Accessibility
+</details>
 
-CRT includes keyboard accessibility features for users who prefer or require keyboard navigation:
+### Building from Source
 
-- **Focus indicators**: Visual focus rings highlight the active element (tabs, context menu items, search bar)
-- **Context menu navigation**: Full keyboard control with arrow keys and Enter
-- **Tab navigation**: Switch tabs with Cmd+1-9 or Cmd+Shift+[/]
-- **Search**: Find text in terminal history with Cmd+F
+Requires Rust 2024 edition:
 
-### Known Limitations
+```sh
+git clone https://github.com/colliery-io/crt.git
+cd crt
+cargo build --release
+```
 
-- No screen reader support (planned for future release)
-- Some visual effects may be distracting; use `minimal` or `dracula` themes for a calmer experience
+### Configuration
 
-## Troubleshooting
+Config lives at `~/.config/crt/config.toml`. Themes at `~/.config/crt/themes/`.
 
-**Fonts look wrong or missing characters**
-- CRT bundles MesloLGS NF (a Nerd Font) which is installed to `~/.config/crt/fonts/`
-- If you see boxes or missing glyphs, the font may not be loading - check the config font family setting
+### Accessibility
 
-**Theme not loading**
-- Check that the theme file exists at `~/.config/crt/themes/{name}.css`
-- Check the terminal output for CSS parsing errors
-- Colors and effects hot-reload on save; background images and sprites need a new window (`Cmd+N`)
+- **Focus indicators**: Visual focus rings on active elements
+- **Keyboard navigation**: Full keyboard control for tabs, menus, search
+- **Calm themes**: Use `minimal` or `dracula` if effects are distracting
 
-**Performance issues**
-- Themes with multiple backdrop effects (particles + matrix + sprites) use more resources than simpler themes
-- Try `minimal` or `dracula` if you want a lightweight option
+Known limitation: No screen reader support yet.
 
-**Reactive themes not working (Powerlevel10k / Oh-My-Zsh users)**
-- See the [Troubleshooting Guide](docs/troubleshooting.md) for shell integration setup
+### Troubleshooting
 
-For more issues and solutions, see the full [Troubleshooting Guide](docs/troubleshooting.md).
+<details>
+<summary>Fonts look wrong or missing characters</summary>
 
-## Reporting Issues
+CRT bundles MesloLGS NF (a Nerd Font) at `~/.config/crt/fonts/`. If you see boxes, check the font family setting in config.
 
-Found a bug? Enable profiling with `Cmd+Option+P`, reproduce the issue, then submit a bug report with the profile log from `~/.config/crt/`.
+</details>
 
-[Open an issue](https://github.com/colliery-io/crt/issues)
+<details>
+<summary>Theme not loading</summary>
+
+- Check the theme file exists at `~/.config/crt/themes/{name}.css`
+- Check terminal output for CSS parsing errors
+- Background images and sprites need `Cmd+N` to reload
+
+</details>
+
+<details>
+<summary>Performance issues</summary>
+
+Themes with multiple effects use more resources. Try `minimal` or `dracula` for lightweight options.
+
+</details>
+
+<details>
+<summary>Reactive themes not working</summary>
+
+See the [Troubleshooting Guide](docs/troubleshooting.md) for shell integration setup.
+
+</details>
+
+### Reporting Issues
+
+Enable profiling with `Cmd+Option+P`, reproduce the issue, then [open an issue](https://github.com/colliery-io/crt/issues) with the profile log from `~/.config/crt/`.
 
 ## Contributing
 
@@ -213,4 +210,4 @@ Found a bug? Enable profiling with `Cmd+Option+P`, reproduce the issue, then sub
 
 ## License
 
-MIT
+MIT OR Apache-2.0
