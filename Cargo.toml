@@ -52,7 +52,7 @@ name = "crt"
 version = "0.0.9"
 edition = "2024"
 description = "GPU-accelerated terminal emulator with synthwave aesthetics"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 keywords = ["terminal", "emulator", "gpu", "wgpu"]
 categories = ["command-line-utilities"]
 
