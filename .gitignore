@@ -21,3 +21,6 @@ debug.entitlements
 # Metis (regenerated)
 .metis/metis.db
 .metis/*.log
+
+# AUR package repo (cloned separately)
+/crt-bin/

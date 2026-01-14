@@ -16,6 +16,8 @@ jobs:
             arch: x86_64
           - os: ubuntu-latest
             arch: x86_64
+          - os: ubuntu-24.04-arm
+            arch: aarch64
 
     runs-on: ${{ matrix.os }}
 
@@ -57,3 +59,20 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: artifacts/*.tar.gz
+
+  publish-aur:
+    needs: release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Publish to AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: ./scripts/publish-aur.sh ${{ steps.version.outputs.version }}
