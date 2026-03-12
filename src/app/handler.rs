@@ -20,8 +20,6 @@ use winit::{
 
 use super::initialization::handle_scale_factor_change;
 use super::App;
-
-#[cfg(target_os = "macos")]
 use crate::config::Config;
 
 #[cfg(target_os = "macos")]
