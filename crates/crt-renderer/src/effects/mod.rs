@@ -191,3 +191,110 @@ impl From<Position> for Vec2 {
         Vec2::new(p.x, p.y)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn effect_config_new_is_empty() {
+        let config = EffectConfig::new();
+        assert!(config.properties.is_empty());
+    }
+
+    #[test]
+    fn effect_config_insert_and_get() {
+        let mut config = EffectConfig::new();
+        config.insert("color", "#ff0000");
+        assert_eq!(config.get("color"), Some("#ff0000"));
+        assert_eq!(config.get("missing"), None);
+    }
+
+    #[test]
+    fn effect_config_get_bool() {
+        let mut config = EffectConfig::new();
+        config.insert("a", "true");
+        config.insert("b", "false");
+        config.insert("c", "yes");
+        config.insert("d", "no");
+        config.insert("e", "1");
+        config.insert("f", "0");
+        config.insert("g", "invalid");
+
+        assert_eq!(config.get_bool("a"), Some(true));
+        assert_eq!(config.get_bool("b"), Some(false));
+        assert_eq!(config.get_bool("c"), Some(true));
+        assert_eq!(config.get_bool("d"), Some(false));
+        assert_eq!(config.get_bool("e"), Some(true));
+        assert_eq!(config.get_bool("f"), Some(false));
+        assert_eq!(config.get_bool("g"), None);
+        assert_eq!(config.get_bool("missing"), None);
+    }
+
+    #[test]
+    fn effect_config_get_f64() {
+        let mut config = EffectConfig::new();
+        config.insert("speed", "1.5");
+        config.insert("bad", "not_a_number");
+        assert_eq!(config.get_f64("speed"), Some(1.5));
+        assert_eq!(config.get_f64("bad"), None);
+        assert_eq!(config.get_f64("missing"), None);
+    }
+
+    #[test]
+    fn effect_config_get_f32() {
+        let mut config = EffectConfig::new();
+        config.insert("val", "3.14");
+        assert!((config.get_f32("val").unwrap() - 3.14).abs() < 0.001);
+    }
+
+    #[test]
+    fn effect_config_get_u32() {
+        let mut config = EffectConfig::new();
+        config.insert("count", "42");
+        config.insert("negative", "-1");
+        assert_eq!(config.get_u32("count"), Some(42));
+        assert_eq!(config.get_u32("negative"), None);
+    }
+
+    #[test]
+    fn effect_config_get_usize() {
+        let mut config = EffectConfig::new();
+        config.insert("size", "1024");
+        assert_eq!(config.get_usize("size"), Some(1024));
+    }
+
+    #[test]
+    fn effect_config_overwrite_key() {
+        let mut config = EffectConfig::new();
+        config.insert("key", "old");
+        config.insert("key", "new");
+        assert_eq!(config.get("key"), Some("new"));
+    }
+
+    #[test]
+    fn position_new_and_to_vec2() {
+        let p = Position::new(1.5, 2.5);
+        assert_eq!(p.x, 1.5);
+        assert_eq!(p.y, 2.5);
+        let v = p.to_vec2();
+        assert_eq!(v.x, 1.5);
+        assert_eq!(v.y, 2.5);
+    }
+
+    #[test]
+    fn position_from_vec2() {
+        let v = Vec2::new(3.0, 4.0);
+        let p = Position::from(v);
+        assert_eq!(p.x, 3.0);
+        assert_eq!(p.y, 4.0);
+    }
+
+    #[test]
+    fn vec2_from_position() {
+        let p = Position::new(5.0, 6.0);
+        let v: Vec2 = p.into();
+        assert_eq!(v.x, 5.0);
+        assert_eq!(v.y, 6.0);
+    }
+}

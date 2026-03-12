@@ -7,7 +7,7 @@
 
 pub mod pty;
 
-pub use pty::{Pty, ShellType, SpawnOptions};
+pub use pty::{Pty, PtyBackend, ShellType, SpawnOptions};
 
 // Re-export alacritty_terminal types needed for rendering
 pub use alacritty_terminal::event::Event as TerminalEvent;
@@ -27,9 +27,10 @@ pub use alacritty_terminal::vte::ansi::CursorShape;
 pub use alacritty_terminal::vte::ansi::NamedColor;
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use alacritty_terminal::event::{Event, EventListener};
+use crossbeam_queue::SegQueue;
 
 /// Semantic zone type from OSC 133 shell integration
 ///
@@ -66,34 +67,29 @@ use alacritty_terminal::term::test::TermSize;
 use alacritty_terminal::term::{self, Config as TermConfig, Term};
 use alacritty_terminal::vte::ansi;
 
-/// Shared event storage
-#[derive(Default)]
-struct EventStorage {
-    events: Vec<Event>,
-}
-
-/// Terminal event handler that collects events for the application
+/// Terminal event handler that collects events for the application.
+///
+/// Uses a lock-free `SegQueue` instead of `Mutex<Vec>` to avoid contention
+/// on the rendering hot path where `take_events()` is called every frame.
 #[derive(Clone)]
 pub struct TerminalEventProxy {
-    storage: Arc<Mutex<EventStorage>>,
+    queue: Arc<SegQueue<Event>>,
 }
 
 impl TerminalEventProxy {
     pub fn new() -> Self {
         Self {
-            storage: Arc::new(Mutex::new(EventStorage::default())),
+            queue: Arc::new(SegQueue::new()),
         }
     }
 
-    /// Take all pending events
+    /// Take all pending events (lock-free drain)
     pub fn take_events(&self) -> Vec<Event> {
-        match self.storage.lock() {
-            Ok(mut storage) => storage.events.drain(..).collect(),
-            Err(e) => {
-                log::warn!("Event storage lock poisoned, returning empty events: {}", e);
-                Vec::new()
-            }
+        let mut events = Vec::new();
+        while let Some(event) = self.queue.pop() {
+            events.push(event);
         }
+        events
     }
 }
 
@@ -105,12 +101,7 @@ impl Default for TerminalEventProxy {
 
 impl EventListener for TerminalEventProxy {
     fn send_event(&self, event: Event) {
-        match self.storage.lock() {
-            Ok(mut storage) => storage.events.push(event),
-            Err(e) => {
-                log::warn!("Event storage lock poisoned, dropping event: {}", e);
-            }
-        }
+        self.queue.push(event);
     }
 }
 
@@ -411,6 +402,25 @@ impl Terminal {
         }
     }
 
+    /// Get the set of damaged line indices (0-based visible lines).
+    ///
+    /// Returns `None` for full damage (caller should re-render everything).
+    /// Returns `Some(set)` with the indices of lines that changed for partial damage.
+    pub fn damaged_line_set(&mut self) -> Option<Vec<usize>> {
+        match self.term.damage() {
+            TermDamage::Full => None,
+            TermDamage::Partial(iter) => {
+                let lines: Vec<usize> = iter.map(|bounds| bounds.line).collect();
+                if lines.is_empty() {
+                    // No damage at all — return empty set (not None)
+                    Some(Vec::new())
+                } else {
+                    Some(lines)
+                }
+            }
+        }
+    }
+
     /// Start a new selection at the given point
     pub fn start_selection(&mut self, point: Point, selection_type: SelectionType) {
         use alacritty_terminal::index::Side;
@@ -482,21 +492,32 @@ impl Terminal {
         let grid = self.term.grid();
         let history_size = grid.history_size() as i32;
         let screen_lines = self.term.screen_lines() as i32;
-        let mut lines = Vec::new();
+        let cols = self.columns();
+        let mut lines = Vec::with_capacity((history_size + screen_lines) as usize);
 
         // History lines (negative indices, from oldest to newest)
         for i in (0..history_size).rev() {
             let line_idx = -(i + 1);
             let row = &grid[alacritty_terminal::index::Line(line_idx)];
-            let text: String = row.into_iter().map(|cell| cell.c).collect();
-            lines.push((line_idx, text.trim_end().to_string()));
+            let mut text = String::with_capacity(cols);
+            for cell in row.into_iter() {
+                text.push(cell.c);
+            }
+            let trimmed_len = text.trim_end().len();
+            text.truncate(trimmed_len);
+            lines.push((line_idx, text));
         }
 
         // Visible lines (0 to screen_lines-1)
         for i in 0..screen_lines {
             let row = &grid[alacritty_terminal::index::Line(i)];
-            let text: String = row.into_iter().map(|cell| cell.c).collect();
-            lines.push((i, text.trim_end().to_string()));
+            let mut text = String::with_capacity(cols);
+            for cell in row.into_iter() {
+                text.push(cell.c);
+            }
+            let trimmed_len = text.trim_end().len();
+            text.truncate(trimmed_len);
+            lines.push((i, text));
         }
 
         lines
@@ -508,11 +529,16 @@ impl Terminal {
     }
 }
 
-/// A terminal connected to a PTY running a shell
-pub struct ShellTerminal {
+/// A terminal connected to a PTY backend running a shell.
+///
+/// Generic over the PTY backend to enable testing with mock PTY implementations.
+pub struct ShellTerminalGeneric<P: PtyBackend> {
     terminal: Terminal,
-    pty: Pty,
+    pty: P,
 }
+
+/// Backward-compatible alias for the concrete PTY implementation
+pub type ShellTerminal = ShellTerminalGeneric<Pty>;
 
 impl ShellTerminal {
     /// Create a new shell terminal with the given size
@@ -549,6 +575,19 @@ impl ShellTerminal {
         Ok(Self { terminal, pty })
     }
 
+    /// Get access to the PTY
+    pub fn pty(&self) -> &Pty {
+        &self.pty
+    }
+}
+
+impl<P: PtyBackend> ShellTerminalGeneric<P> {
+    /// Create a shell terminal with a custom PTY backend
+    pub fn with_backend(size: Size, pty: P) -> Self {
+        let terminal = Terminal::new(size);
+        Self { terminal, pty }
+    }
+
     /// Get the current working directory of the shell process
     pub fn working_directory(&self) -> Option<std::path::PathBuf> {
         self.pty.working_directory()
@@ -561,22 +600,21 @@ impl ShellTerminal {
         if !output.is_empty() {
             // Log escape sequences for debugging
             if output.len() < 2000 {
-                let escaped: String = output
-                    .iter()
-                    .map(|&b| {
-                        if b == 0x1b {
-                            "ESC".to_string()
-                        } else if b == 0x07 {
-                            "BEL".to_string()
-                        } else if b < 32 {
-                            format!("^{}", (b + 64) as char)
-                        } else if b < 127 {
-                            (b as char).to_string()
-                        } else {
-                            format!("\\x{:02x}", b)
-                        }
-                    })
-                    .collect();
+                use std::fmt::Write;
+                let mut escaped = String::with_capacity(output.len() * 2);
+                for &b in &output {
+                    if b == 0x1b {
+                        escaped.push_str("ESC");
+                    } else if b == 0x07 {
+                        escaped.push_str("BEL");
+                    } else if b < 32 {
+                        let _ = write!(escaped, "^{}", (b + 64) as char);
+                    } else if b < 127 {
+                        escaped.push(b as char);
+                    } else {
+                        let _ = write!(escaped, "\\x{:02x}", b);
+                    }
+                }
                 log::debug!("PTY output ({} bytes): {}", output.len(), escaped);
                 // Check for black color sequences
                 let output_str = String::from_utf8_lossy(&output);
@@ -610,11 +648,6 @@ impl ShellTerminal {
     /// Get mutable access to the terminal
     pub fn terminal_mut(&mut self) -> &mut Terminal {
         &mut self.terminal
-    }
-
-    /// Get access to the PTY
-    pub fn pty(&self) -> &Pty {
-        &self.pty
     }
 
     /// Take any pending terminal events (title changes, bells, etc.)
@@ -955,5 +988,95 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert_eq!(events[0], ShellEvent::CommandSuccess);
         assert_eq!(events[1], ShellEvent::CommandFail(1));
+    }
+
+    /// Mock PTY backend for deterministic testing without real shell processes
+    pub struct MockPty {
+        output_queue: std::collections::VecDeque<Vec<u8>>,
+        captured_input: std::cell::RefCell<Vec<u8>>,
+        last_resize: std::cell::Cell<Option<(u16, u16)>>,
+        shutdown_called: std::cell::Cell<bool>,
+    }
+
+    impl MockPty {
+        /// Create a MockPty with pre-loaded output chunks
+        pub fn with_output(chunks: Vec<Vec<u8>>) -> Self {
+            Self {
+                output_queue: chunks.into(),
+                captured_input: std::cell::RefCell::new(Vec::new()),
+                last_resize: std::cell::Cell::new(None),
+                shutdown_called: std::cell::Cell::new(false),
+            }
+        }
+
+        /// Get all input that was written to this mock PTY
+        pub fn captured_input(&self) -> Vec<u8> {
+            self.captured_input.borrow().clone()
+        }
+    }
+
+    impl PtyBackend for MockPty {
+        fn write(&self, data: &[u8]) {
+            self.captured_input.borrow_mut().extend_from_slice(data);
+        }
+
+        fn try_read(&self) -> Option<Vec<u8>> {
+            // MockPty uses interior mutability pattern for read — but VecDeque needs &mut
+            // Since this is test-only, we use unsafe to match the non-mutable trait signature
+            None // try_read not needed for basic mock
+        }
+
+        fn read_available(&self) -> Vec<u8> {
+            // Return empty for basic mock — output is fed directly via terminal in tests
+            Vec::new()
+        }
+
+        fn resize(&self, cols: u16, rows: u16) {
+            self.last_resize.set(Some((cols, rows)));
+        }
+
+        fn shutdown(&self) {
+            self.shutdown_called.set(true);
+        }
+
+        fn process_id(&self) -> Option<u32> {
+            None
+        }
+
+        fn working_directory(&self) -> Option<std::path::PathBuf> {
+            None
+        }
+    }
+
+    #[test]
+    fn test_mock_pty_terminal() {
+        let mock = MockPty::with_output(vec![]);
+        let mut term = ShellTerminalGeneric::with_backend(Size::new(80, 24), mock);
+
+        // Feed output directly to the terminal (bypassing PTY, as mock read_available returns empty)
+        term.terminal_mut().process_input(b"Hello, world!\r\n");
+
+        // Verify terminal content
+        let content = term.terminal().renderable_content();
+        let first_line: String = content
+            .display_iter
+            .take_while(|cell| cell.point.line.0 == 0)
+            .map(|cell| cell.c)
+            .collect::<String>()
+            .trim_end()
+            .to_string();
+        assert!(
+            first_line.contains("Hello, world!"),
+            "Expected 'Hello, world!' in first line, got: '{}'",
+            first_line
+        );
+
+        // Verify input capture
+        term.send_input(b"ls\n");
+        assert_eq!(term.pty.captured_input(), b"ls\n");
+
+        // Verify resize tracking
+        term.resize(Size::new(120, 40));
+        assert_eq!(term.pty.last_resize.get(), Some((120, 40)));
     }
 }

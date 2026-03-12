@@ -46,6 +46,24 @@ pub enum MenuAction {
     SetTheme(String),
 }
 
+impl MenuAction {
+    /// Returns the 0-based tab index for SelectTab variants, or None for other actions.
+    pub fn tab_index(&self) -> Option<usize> {
+        match self {
+            MenuAction::SelectTab1 => Some(0),
+            MenuAction::SelectTab2 => Some(1),
+            MenuAction::SelectTab3 => Some(2),
+            MenuAction::SelectTab4 => Some(3),
+            MenuAction::SelectTab5 => Some(4),
+            MenuAction::SelectTab6 => Some(5),
+            MenuAction::SelectTab7 => Some(6),
+            MenuAction::SelectTab8 => Some(7),
+            MenuAction::SelectTab9 => Some(8),
+            _ => None,
+        }
+    }
+}
+
 /// Menu item IDs stored for event handling
 #[cfg(target_os = "macos")]
 pub struct MenuIds {

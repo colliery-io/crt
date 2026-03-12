@@ -37,3 +37,72 @@ jobs:
 
       - name: Run tests
         run: cargo test --all-targets
+
+  visual-tests:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libglib2.0-dev libgtk-3-dev libxkbcommon-dev \
+            mesa-utils libegl1-mesa-dev libgl1-mesa-dri
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run visual tests
+        env:
+          WGPU_BACKEND: ${{ runner.os == 'Linux' && 'vulkan' || '' }}
+        run: cargo test --test visual_tests
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-test-failures-${{ matrix.os }}
+          path: tests/visual/failures/
+          if-no-files-found: ignore
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libglib2.0-dev libgtk-3-dev libxkbcommon-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Generate coverage report
+        run: cargo llvm-cov --all-targets --lcov --output-path lcov.info
+
+      - name: Print coverage summary
+        run: cargo llvm-cov --all-targets --no-run
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: lcov.info

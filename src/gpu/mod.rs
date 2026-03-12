@@ -189,11 +189,11 @@ pub struct WindowGpuState {
     // commands are batched, so they need separate instance buffers)
     pub tab_title_renderer: GridRenderer,
 
-    // Instance buffers for grid renderers (external for pooling)
-    pub grid_instance_buffer: wgpu::Buffer,
-    pub output_grid_instance_buffer: wgpu::Buffer,
-    pub tab_title_instance_buffer: wgpu::Buffer,
-    pub overlay_text_instance_buffer: wgpu::Buffer,
+    // Instance buffers for grid renderers (pooled for reuse across window lifecycles)
+    pub grid_instance_buffer: PooledBuffer,
+    pub output_grid_instance_buffer: PooledBuffer,
+    pub tab_title_instance_buffer: PooledBuffer,
+    pub overlay_text_instance_buffer: PooledBuffer,
 
     // Effect pipeline
     pub effect_pipeline: EffectPipeline,
@@ -214,9 +214,9 @@ pub struct WindowGpuState {
     // to avoid buffer conflicts with tab bar rendering
     pub overlay_rect_renderer: RectRenderer,
 
-    // Instance buffers for rect renderers (external for pooling)
-    pub rect_instance_buffer: wgpu::Buffer,
-    pub overlay_rect_instance_buffer: wgpu::Buffer,
+    // Instance buffers for rect renderers (pooled for reuse across window lifecycles)
+    pub rect_instance_buffer: PooledBuffer,
+    pub overlay_rect_instance_buffer: PooledBuffer,
 
     // Background image rendering (optional)
     pub background_image_pipeline: BackgroundImagePipeline,

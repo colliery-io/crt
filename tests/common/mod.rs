@@ -197,7 +197,7 @@ impl ShellTestHarness {
         let shell = ShellTerminal::new(Size::new(cols, lines))?;
         Ok(Self {
             shell,
-            timeout: Duration::from_secs(5),
+            timeout: Duration::from_secs(2),
         })
     }
 
@@ -206,7 +206,7 @@ impl ShellTestHarness {
         let shell = ShellTerminal::with_shell(Size::new(cols, lines), shell_path)?;
         Ok(Self {
             shell,
-            timeout: Duration::from_secs(5),
+            timeout: Duration::from_secs(2),
         })
     }
 
@@ -223,6 +223,32 @@ impl ShellTestHarness {
     /// Get mutable shell terminal access
     pub fn shell_mut(&mut self) -> &mut ShellTerminal {
         &mut self.shell
+    }
+
+    /// Wait for the shell to be ready (prompt displayed).
+    /// Replaces the `sleep(100ms) + process_output()` pattern with event-driven waiting.
+    /// Polls PTY output with short intervals until output stabilizes (no new data for 50ms).
+    pub fn wait_for_ready(&mut self) {
+        let start = Instant::now();
+        let mut last_change = Instant::now();
+
+        loop {
+            if self.process_output() {
+                last_change = Instant::now();
+            }
+
+            // Stable for 50ms = prompt likely rendered
+            if last_change.elapsed() >= Duration::from_millis(50) {
+                break;
+            }
+
+            // Safety timeout
+            if start.elapsed() > self.timeout {
+                break;
+            }
+
+            std::thread::sleep(Duration::from_millis(5));
+        }
     }
 
     /// Send input to the shell

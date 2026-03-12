@@ -11,10 +11,154 @@ use std::time::Instant;
 
 use crate::gpu::SharedGpuState;
 use crate::profiling::{self, FrameTiming, GridSnapshot};
-use crate::window::{DecorationKind, OverrideEventType, WindowState};
-use crt_core::ShellEvent;
+use crate::window::{DecorationKind, EffectId, OverrideEventType, WindowState};
+use crt_core::{ShellEvent, ShellTerminal};
 use crt_renderer::EffectConfig;
-use crt_theme::ToEffectConfig;
+use crt_theme::{EventOverride, Theme, ToEffectConfig};
+
+/// Result of processing PTY updates from the active shell
+pub struct PtyUpdateResult {
+    /// Whether terminal content changed (needs re-render)
+    pub content_changed: bool,
+    /// Shell events collected (bell, command success/fail)
+    pub shell_events: Vec<ShellEvent>,
+    /// Title change from the shell, if any
+    pub title_change: Option<String>,
+}
+
+/// Process PTY output and collect shell events from a shell terminal.
+///
+/// This is a pure extraction — no state mutation beyond the shell itself.
+/// The caller is responsible for applying the result to window state.
+pub fn process_pty_updates(shell: &mut ShellTerminal) -> PtyUpdateResult {
+    let content_changed = shell.process_pty_output();
+    let (shell_events, title_change) = shell.take_shell_events();
+    PtyUpdateResult {
+        content_changed,
+        shell_events,
+        title_change,
+    }
+}
+
+/// An effect patch action computed by `compute_effect_patches`.
+pub enum EffectPatchAction {
+    /// Apply an override patch to the named effect and mark it as patched
+    Apply {
+        effect_id: EffectId,
+        config: EffectConfig,
+    },
+    /// Restore the named effect to its base theme config and clear the patched flag
+    Restore {
+        effect_id: EffectId,
+        config: EffectConfig,
+    },
+}
+
+/// Compute which effect patches need to be applied or restored.
+///
+/// Pure function — reads override state and theme, returns a list of actions.
+/// The caller applies each action to the effects renderer and updates patched tracking.
+pub fn compute_effect_patches(
+    overrides: &crate::window::OverrideState,
+    theme: &Theme,
+) -> Vec<EffectPatchAction> {
+    let mut actions = Vec::new();
+
+    // Helper macro to reduce repetition across the 6 effect types
+    macro_rules! check_effect {
+        ($get_patch:ident, $id:expr, $theme_field:ident) => {
+            if let Some(patch) = overrides.$get_patch() {
+                if !overrides.is_patched($id) {
+                    actions.push(EffectPatchAction::Apply {
+                        effect_id: $id,
+                        config: to_effect_config(patch),
+                    });
+                }
+            } else if overrides.is_patched($id) {
+                if let Some(ref base) = theme.$theme_field {
+                    actions.push(EffectPatchAction::Restore {
+                        effect_id: $id,
+                        config: to_effect_config(base),
+                    });
+                }
+            }
+        };
+    }
+
+    check_effect!(get_starfield_patch, EffectId::Starfield, starfield);
+    check_effect!(get_particle_patch, EffectId::Particles, particles);
+    check_effect!(get_grid_patch, EffectId::Grid, grid);
+    check_effect!(get_rain_patch, EffectId::Rain, rain);
+    check_effect!(get_matrix_patch, EffectId::Matrix, matrix);
+    check_effect!(get_shape_patch, EffectId::Shape, shape);
+
+    actions
+}
+
+/// Result of computing shell event overrides from theme configuration
+pub struct ShellEventOverrides {
+    /// Override activations to apply (event_type, properties)
+    pub activations: Vec<(OverrideEventType, EventOverride)>,
+    /// Whether a bell event was present (triggers bell flash)
+    pub bell_triggered: bool,
+    /// Whether to clear the command fail override (command success clears it)
+    pub clear_command_fail: bool,
+}
+
+/// Compute theme override activations from shell events.
+///
+/// Pure function — maps shell events to theme overrides without mutating any state.
+pub fn compute_shell_event_overrides(
+    shell_events: &[ShellEvent],
+    theme: &Theme,
+) -> ShellEventOverrides {
+    let mut activations = Vec::new();
+    let mut bell_triggered = false;
+    let mut clear_command_fail = false;
+
+    for event in shell_events {
+        log::debug!("Processing shell event: {:?}", event);
+
+        if matches!(event, ShellEvent::Bell) {
+            log::info!("Bell triggered - activating flash");
+            bell_triggered = true;
+        }
+
+        if matches!(event, ShellEvent::CommandSuccess) {
+            log::info!("Command success - clearing fail override");
+            clear_command_fail = true;
+        }
+
+        if matches!(event, ShellEvent::CommandFail(_)) {
+            log::info!("Command failed - checking for theme override");
+        }
+
+        let override_opt = match event {
+            ShellEvent::Bell => theme.on_bell.clone(),
+            ShellEvent::CommandSuccess => theme.on_command_success.clone(),
+            ShellEvent::CommandFail(_) => theme.on_command_fail.clone(),
+        };
+
+        if let Some(properties) = override_opt {
+            log::info!(
+                "Applying theme override for {:?} (duration: {}ms, cursor_color: {:?})",
+                event,
+                properties.duration_ms,
+                properties.cursor_color
+            );
+            let event_type = OverrideEventType::from(*event);
+            activations.push((event_type, properties));
+        } else {
+            log::debug!("No theme override defined for {:?}", event);
+        }
+    }
+
+    ShellEventOverrides {
+        activations,
+        bell_triggered,
+        clear_command_fail,
+    }
+}
 
 /// Convert a ToEffectConfig implementor to an EffectConfig
 fn to_effect_config<T: ToEffectConfig>(source: &T) -> EffectConfig {
@@ -63,9 +207,10 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         shared.reset_vello_renderer();
     }
 
-    // Update backdrop effects animation (assume ~60fps for dt)
+    // Update backdrop effects animation
+    const ASSUMED_DT: f32 = 1.0 / 60.0; // ~60fps assumption for animation timestep
     let update_start = Instant::now();
-    let dt = 1.0 / 60.0;
+    let dt = ASSUMED_DT;
     state.gpu.effects_renderer.update(dt);
     timing.effects_us = update_start.elapsed().as_micros() as u64;
 
@@ -84,62 +229,29 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
     if let Some(tab_id) = active_tab_id
         && let Some(shell) = state.shells.get_mut(&tab_id)
     {
-        if shell.process_pty_output() {
+        let pty_result = process_pty_updates(shell);
+        if pty_result.content_changed {
             state.render.dirty = true;
             // Invalidate content hash to ensure re-render captures all changes
             state.content_hashes.insert(tab_id, 0);
         }
-
-        // Check for shell events (bell, command success/fail) and title changes
-        let (shell_events, title) = shell.take_shell_events();
-        if let Some(title) = title {
+        if let Some(title) = pty_result.title_change {
             state.gpu.tab_bar.set_tab_title(tab_id, title);
         }
-
-        // Process shell events for theme overrides
+        // Compute and apply shell event overrides
         let theme = state.gpu.effect_pipeline.theme();
-        for event in &shell_events {
-            log::debug!("Processing shell event: {:?}", event);
-
-            // Trigger bell flash for bell events
-            if matches!(event, ShellEvent::Bell) {
-                log::info!("Bell triggered - activating flash");
-                state.ui.bell.trigger();
-            }
-
-            // Command success clears any active fail override (put out the fire!)
-            if matches!(event, ShellEvent::CommandSuccess) {
-                log::info!("Command success - clearing fail override");
-                state
-                    .ui
-                    .overrides
-                    .clear_event(OverrideEventType::CommandFail);
-            }
-
-            if matches!(event, ShellEvent::CommandFail(_)) {
-                log::info!("Command failed - checking for theme override");
-            }
-
-            // Get the corresponding theme override for this event
-            let override_opt = match event {
-                ShellEvent::Bell => theme.on_bell.clone(),
-                ShellEvent::CommandSuccess => theme.on_command_success.clone(),
-                ShellEvent::CommandFail(_) => theme.on_command_fail.clone(),
-            };
-
-            // Add to active overrides if theme defines this event
-            if let Some(properties) = override_opt {
-                log::info!(
-                    "Applying theme override for {:?} (duration: {}ms, cursor_color: {:?})",
-                    event,
-                    properties.duration_ms,
-                    properties.cursor_color
-                );
-                let event_type = OverrideEventType::from(*event);
-                state.ui.overrides.add(event_type, properties);
-            } else {
-                log::debug!("No theme override defined for {:?}", event);
-            }
+        let overrides = compute_shell_event_overrides(&pty_result.shell_events, theme);
+        if overrides.bell_triggered {
+            state.ui.bell.trigger();
+        }
+        if overrides.clear_command_fail {
+            state
+                .ui
+                .overrides
+                .clear_event(OverrideEventType::CommandFail);
+        }
+        for (event_type, properties) in overrides.activations {
+            state.ui.overrides.add(event_type, properties);
         }
     }
 
@@ -153,154 +265,28 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
         state.render.dirty = true;
     }
 
-    // Apply starfield patch from active overrides (if any)
-    if let Some(patch) = state.ui.overrides.get_starfield_patch() {
-        if !state.ui.overrides.is_patched("starfield") {
-            let config = to_effect_config(patch);
-            state
-                .gpu
-                .effects_renderer
-                .apply_effect_patch("starfield", &config);
-            state.ui.overrides.set_patched("starfield");
-            state.render.dirty = true;
+    // Compute and apply effect patches from override state
+    let theme = state.gpu.effect_pipeline.theme();
+    let patch_actions = compute_effect_patches(&state.ui.overrides, theme);
+    for action in patch_actions {
+        match action {
+            EffectPatchAction::Apply { effect_id, config } => {
+                state
+                    .gpu
+                    .effects_renderer
+                    .apply_effect_patch(effect_id.as_str(), &config);
+                state.ui.overrides.set_patched(effect_id);
+                state.render.dirty = true;
+            }
+            EffectPatchAction::Restore { effect_id, config } => {
+                state
+                    .gpu
+                    .effects_renderer
+                    .apply_effect_patch(effect_id.as_str(), &config);
+                state.ui.overrides.clear_patched(effect_id);
+                log::debug!("Restored {} to base theme", effect_id.as_str());
+            }
         }
-    } else if state.ui.overrides.is_patched("starfield") {
-        // Restore starfield from base theme
-        let theme = state.gpu.effect_pipeline.theme();
-        if let Some(ref starfield) = theme.starfield {
-            let config = to_effect_config(starfield);
-            state
-                .gpu
-                .effects_renderer
-                .apply_effect_patch("starfield", &config);
-        }
-        state.ui.overrides.clear_patched("starfield");
-        log::debug!("Restored starfield to base theme");
-    }
-
-    // Apply particle patch from active overrides (if any)
-    if let Some(patch) = state.ui.overrides.get_particle_patch() {
-        if !state.ui.overrides.is_patched("particles") {
-            let config = to_effect_config(patch);
-            state
-                .gpu
-                .effects_renderer
-                .apply_effect_patch("particles", &config);
-            state.ui.overrides.set_patched("particles");
-            state.render.dirty = true;
-        }
-    } else if state.ui.overrides.is_patched("particles") {
-        // Restore particles from base theme
-        let theme = state.gpu.effect_pipeline.theme();
-        if let Some(ref particles) = theme.particles {
-            let config = to_effect_config(particles);
-            state
-                .gpu
-                .effects_renderer
-                .apply_effect_patch("particles", &config);
-        }
-        state.ui.overrides.clear_patched("particles");
-        log::debug!("Restored particles to base theme");
-    }
-
-    // Apply grid patch from active overrides (if any)
-    if let Some(patch) = state.ui.overrides.get_grid_patch() {
-        if !state.ui.overrides.is_patched("grid") {
-            let config = to_effect_config(patch);
-            state
-                .gpu
-                .effects_renderer
-                .apply_effect_patch("grid", &config);
-            state.ui.overrides.set_patched("grid");
-            state.render.dirty = true;
-        }
-    } else if state.ui.overrides.is_patched("grid") {
-        // Restore grid from base theme
-        let theme = state.gpu.effect_pipeline.theme();
-        if let Some(ref grid) = theme.grid {
-            let config = to_effect_config(grid);
-            state
-                .gpu
-                .effects_renderer
-                .apply_effect_patch("grid", &config);
-        }
-        state.ui.overrides.clear_patched("grid");
-        log::debug!("Restored grid to base theme");
-    }
-
-    // Apply rain patch from active overrides (if any)
-    if let Some(patch) = state.ui.overrides.get_rain_patch() {
-        if !state.ui.overrides.is_patched("rain") {
-            let config = to_effect_config(patch);
-            state
-                .gpu
-                .effects_renderer
-                .apply_effect_patch("rain", &config);
-            state.ui.overrides.set_patched("rain");
-            state.render.dirty = true;
-        }
-    } else if state.ui.overrides.is_patched("rain") {
-        // Restore rain from base theme
-        let theme = state.gpu.effect_pipeline.theme();
-        if let Some(ref rain) = theme.rain {
-            let config = to_effect_config(rain);
-            state
-                .gpu
-                .effects_renderer
-                .apply_effect_patch("rain", &config);
-        }
-        state.ui.overrides.clear_patched("rain");
-        log::debug!("Restored rain to base theme");
-    }
-
-    // Apply matrix patch from active overrides (if any)
-    if let Some(patch) = state.ui.overrides.get_matrix_patch() {
-        if !state.ui.overrides.is_patched("matrix") {
-            let config = to_effect_config(patch);
-            state
-                .gpu
-                .effects_renderer
-                .apply_effect_patch("matrix", &config);
-            state.ui.overrides.set_patched("matrix");
-            state.render.dirty = true;
-        }
-    } else if state.ui.overrides.is_patched("matrix") {
-        // Restore matrix from base theme
-        let theme = state.gpu.effect_pipeline.theme();
-        if let Some(ref matrix) = theme.matrix {
-            let config = to_effect_config(matrix);
-            state
-                .gpu
-                .effects_renderer
-                .apply_effect_patch("matrix", &config);
-        }
-        state.ui.overrides.clear_patched("matrix");
-        log::debug!("Restored matrix to base theme");
-    }
-
-    // Apply shape patch from active overrides (if any)
-    if let Some(patch) = state.ui.overrides.get_shape_patch() {
-        if !state.ui.overrides.is_patched("shape") {
-            let config = to_effect_config(patch);
-            state
-                .gpu
-                .effects_renderer
-                .apply_effect_patch("shape", &config);
-            state.ui.overrides.set_patched("shape");
-            state.render.dirty = true;
-        }
-    } else if state.ui.overrides.is_patched("shape") {
-        // Restore shape from base theme
-        let theme = state.gpu.effect_pipeline.theme();
-        if let Some(ref shape) = theme.shape {
-            let config = to_effect_config(shape);
-            state
-                .gpu
-                .effects_renderer
-                .apply_effect_patch("shape", &config);
-        }
-        state.ui.overrides.clear_patched("shape");
-        log::debug!("Restored shape to base theme");
     }
 
     // Keep redrawing while overlay indicators are visible (for fade animation)
@@ -447,19 +433,19 @@ pub fn render_frame(state: &mut WindowState, shared: &mut SharedGpuState) {
 
         // Apply sprite patch from active overrides (if any)
         if let Some(patch) = state.ui.overrides.get_sprite_patch() {
-            if !state.ui.overrides.is_patched("sprite") {
+            if !state.ui.overrides.is_patched(EffectId::Sprite) {
                 // Use apply_patch_with_device if path change is needed
                 if crt_renderer::SpriteAnimationState::needs_device_for_patch(patch) {
                     sprite_state.apply_patch_with_device(patch, &shared.device, &shared.queue);
                 } else {
                     sprite_state.apply_patch(patch);
                 }
-                state.ui.overrides.set_patched("sprite");
+                state.ui.overrides.set_patched(EffectId::Sprite);
             }
-        } else if state.ui.overrides.is_patched("sprite") {
+        } else if state.ui.overrides.is_patched(EffectId::Sprite) {
             // No active override, restore original values (with device for texture restore)
             sprite_state.restore_with_device(&shared.device, &shared.queue);
-            state.ui.overrides.clear_patched("sprite");
+            state.ui.overrides.clear_patched(EffectId::Sprite);
         }
 
         // Update animation state
@@ -1308,4 +1294,514 @@ fn render_tab_titles(
         &mut pass,
         &state.gpu.tab_title_instance_buffer,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::window::OverrideState;
+    use crt_core::ShellEvent;
+    use crt_theme::{EventOverride, StarfieldPatch, Theme};
+
+    // ── compute_shell_event_overrides tests ──────────────────────
+
+    #[test]
+    fn shell_overrides_no_events_produces_empty() {
+        let theme = Theme::default();
+        let result = compute_shell_event_overrides(&[], &theme);
+        assert!(result.activations.is_empty());
+        assert!(!result.bell_triggered);
+        assert!(!result.clear_command_fail);
+    }
+
+    #[test]
+    fn shell_overrides_bell_sets_bell_triggered() {
+        let theme = Theme::default();
+        let events = vec![ShellEvent::Bell];
+        let result = compute_shell_event_overrides(&events, &theme);
+        assert!(result.bell_triggered);
+        assert!(!result.clear_command_fail);
+    }
+
+    #[test]
+    fn shell_overrides_command_success_sets_clear_fail() {
+        let theme = Theme::default();
+        let events = vec![ShellEvent::CommandSuccess];
+        let result = compute_shell_event_overrides(&events, &theme);
+        assert!(!result.bell_triggered);
+        assert!(result.clear_command_fail);
+    }
+
+    #[test]
+    fn shell_overrides_command_fail_no_flags() {
+        let theme = Theme::default();
+        let events = vec![ShellEvent::CommandFail(1)];
+        let result = compute_shell_event_overrides(&events, &theme);
+        assert!(!result.bell_triggered);
+        assert!(!result.clear_command_fail);
+    }
+
+    #[test]
+    fn shell_overrides_no_activations_when_theme_has_no_overrides() {
+        // Default theme has on_bell = None, on_command_fail = None, etc.
+        let theme = Theme::default();
+        let events = vec![
+            ShellEvent::Bell,
+            ShellEvent::CommandSuccess,
+            ShellEvent::CommandFail(127),
+        ];
+        let result = compute_shell_event_overrides(&events, &theme);
+        assert!(result.activations.is_empty());
+    }
+
+    #[test]
+    fn shell_overrides_bell_activation_when_theme_has_on_bell() {
+        let mut theme = Theme::default();
+        theme.on_bell = Some(EventOverride {
+            duration_ms: 500,
+            ..Default::default()
+        });
+        let events = vec![ShellEvent::Bell];
+        let result = compute_shell_event_overrides(&events, &theme);
+        assert_eq!(result.activations.len(), 1);
+        assert_eq!(result.activations[0].0, OverrideEventType::Bell);
+        assert_eq!(result.activations[0].1.duration_ms, 500);
+    }
+
+    #[test]
+    fn shell_overrides_command_fail_activation_when_theme_configured() {
+        let mut theme = Theme::default();
+        theme.on_command_fail = Some(EventOverride {
+            duration_ms: 1000,
+            cursor_color: Some(crt_theme::Color::rgb(1.0, 0.0, 0.0)),
+            ..Default::default()
+        });
+        let events = vec![ShellEvent::CommandFail(1)];
+        let result = compute_shell_event_overrides(&events, &theme);
+        assert_eq!(result.activations.len(), 1);
+        assert_eq!(result.activations[0].0, OverrideEventType::CommandFail);
+        assert!(result.activations[0].1.cursor_color.is_some());
+    }
+
+    #[test]
+    fn shell_overrides_command_success_activation() {
+        let mut theme = Theme::default();
+        theme.on_command_success = Some(EventOverride {
+            duration_ms: 300,
+            ..Default::default()
+        });
+        let events = vec![ShellEvent::CommandSuccess];
+        let result = compute_shell_event_overrides(&events, &theme);
+        assert_eq!(result.activations.len(), 1);
+        assert_eq!(result.activations[0].0, OverrideEventType::CommandSuccess);
+        assert!(result.clear_command_fail);
+    }
+
+    #[test]
+    fn shell_overrides_multiple_events_produce_multiple_activations() {
+        let mut theme = Theme::default();
+        theme.on_bell = Some(EventOverride {
+            duration_ms: 200,
+            ..Default::default()
+        });
+        theme.on_command_fail = Some(EventOverride {
+            duration_ms: 1000,
+            ..Default::default()
+        });
+        let events = vec![ShellEvent::Bell, ShellEvent::CommandFail(2)];
+        let result = compute_shell_event_overrides(&events, &theme);
+        assert_eq!(result.activations.len(), 2);
+        assert!(result.bell_triggered);
+        assert!(!result.clear_command_fail);
+    }
+
+    #[test]
+    fn shell_overrides_mixed_configured_and_unconfigured() {
+        let mut theme = Theme::default();
+        // Only bell has an override, success does not
+        theme.on_bell = Some(EventOverride {
+            duration_ms: 100,
+            ..Default::default()
+        });
+        let events = vec![ShellEvent::Bell, ShellEvent::CommandSuccess];
+        let result = compute_shell_event_overrides(&events, &theme);
+        assert_eq!(result.activations.len(), 1); // only bell
+        assert!(result.bell_triggered);
+        assert!(result.clear_command_fail);
+    }
+
+    #[test]
+    fn shell_overrides_event_type_from_shell_event() {
+        assert_eq!(
+            OverrideEventType::from(ShellEvent::Bell),
+            OverrideEventType::Bell
+        );
+        assert_eq!(
+            OverrideEventType::from(ShellEvent::CommandSuccess),
+            OverrideEventType::CommandSuccess
+        );
+        assert_eq!(
+            OverrideEventType::from(ShellEvent::CommandFail(42)),
+            OverrideEventType::CommandFail
+        );
+    }
+
+    // ── OverrideState tests ──────────────────────────────────────
+
+    #[test]
+    fn override_state_default_empty() {
+        let state = OverrideState::default();
+        assert!(state.active.is_empty());
+        assert!(!state.is_patched(EffectId::Starfield));
+    }
+
+    #[test]
+    fn override_state_add_and_has_active() {
+        let mut state = OverrideState::default();
+        state.add(
+            OverrideEventType::Bell,
+            EventOverride {
+                duration_ms: 5000, // long duration so it's still active
+                ..Default::default()
+            },
+        );
+        assert!(state.has_active());
+        assert_eq!(state.active.len(), 1);
+    }
+
+    #[test]
+    fn override_state_add_replaces_same_type() {
+        let mut state = OverrideState::default();
+        state.add(
+            OverrideEventType::Bell,
+            EventOverride {
+                duration_ms: 5000,
+                ..Default::default()
+            },
+        );
+        state.add(
+            OverrideEventType::Bell,
+            EventOverride {
+                duration_ms: 3000,
+                ..Default::default()
+            },
+        );
+        // Should still be 1 — replaced the first
+        assert_eq!(state.active.len(), 1);
+        assert_eq!(state.active[0].properties.duration_ms, 3000);
+    }
+
+    #[test]
+    fn override_state_different_types_coexist() {
+        let mut state = OverrideState::default();
+        state.add(
+            OverrideEventType::Bell,
+            EventOverride {
+                duration_ms: 5000,
+                ..Default::default()
+            },
+        );
+        state.add(
+            OverrideEventType::CommandFail,
+            EventOverride {
+                duration_ms: 5000,
+                ..Default::default()
+            },
+        );
+        assert_eq!(state.active.len(), 2);
+    }
+
+    #[test]
+    fn override_state_patched_tracking() {
+        let mut state = OverrideState::default();
+        assert!(!state.is_patched(EffectId::Starfield));
+        state.set_patched(EffectId::Starfield);
+        assert!(state.is_patched(EffectId::Starfield));
+        assert!(!state.is_patched(EffectId::Particles));
+        state.clear_patched(EffectId::Starfield);
+        assert!(!state.is_patched(EffectId::Starfield));
+    }
+
+    #[test]
+    fn override_state_clear_event() {
+        let mut state = OverrideState::default();
+        state.add(
+            OverrideEventType::Bell,
+            EventOverride {
+                duration_ms: 5000,
+                ..Default::default()
+            },
+        );
+        state.add(
+            OverrideEventType::CommandFail,
+            EventOverride {
+                duration_ms: 5000,
+                ..Default::default()
+            },
+        );
+        state.clear_event(OverrideEventType::Bell);
+        assert_eq!(state.active.len(), 1);
+        assert_eq!(state.active[0].event_type, OverrideEventType::CommandFail);
+    }
+
+    #[test]
+    fn override_state_clear_all() {
+        let mut state = OverrideState::default();
+        state.add(
+            OverrideEventType::Bell,
+            EventOverride {
+                duration_ms: 5000,
+                ..Default::default()
+            },
+        );
+        state.add(
+            OverrideEventType::CommandFail,
+            EventOverride {
+                duration_ms: 5000,
+                ..Default::default()
+            },
+        );
+        state.clear();
+        assert!(state.active.is_empty());
+    }
+
+    #[test]
+    fn override_state_update_removes_expired() {
+        let mut state = OverrideState::default();
+        // Add override with 0ms duration — immediately expired
+        state.add(
+            OverrideEventType::Bell,
+            EventOverride {
+                duration_ms: 0,
+                ..Default::default()
+            },
+        );
+        // 0ms duration means "persist", but is_active checks elapsed < duration
+        // For 0ms, elapsed will always be >= 0ms, so it expires immediately
+        let removed = state.update();
+        assert!(removed);
+        assert!(state.active.is_empty());
+    }
+
+    #[test]
+    fn override_state_update_keeps_active() {
+        let mut state = OverrideState::default();
+        state.add(
+            OverrideEventType::Bell,
+            EventOverride {
+                duration_ms: 60000, // 60 seconds — won't expire during test
+                ..Default::default()
+            },
+        );
+        let removed = state.update();
+        assert!(!removed);
+        assert_eq!(state.active.len(), 1);
+    }
+
+    // ── compute_effect_patches tests ─────────────────────────────
+
+    #[test]
+    fn effect_patches_empty_when_no_overrides() {
+        let state = OverrideState::default();
+        let theme = Theme::default();
+        let patches = compute_effect_patches(&state, &theme);
+        assert!(patches.is_empty());
+    }
+
+    #[test]
+    fn effect_patches_apply_when_starfield_patch_present() {
+        let mut state = OverrideState::default();
+        state.add(
+            OverrideEventType::Bell,
+            EventOverride {
+                duration_ms: 5000,
+                starfield_patch: Some(StarfieldPatch {
+                    density: Some(200),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        );
+        let theme = Theme::default();
+        let patches = compute_effect_patches(&state, &theme);
+        // Should have an Apply action for starfield
+        assert!(!patches.is_empty());
+        let has_starfield_apply = patches.iter().any(|p| matches!(p, EffectPatchAction::Apply { effect_id: EffectId::Starfield, .. }));
+        assert!(has_starfield_apply, "Expected Apply for starfield");
+    }
+
+    #[test]
+    fn effect_patches_no_double_apply_when_already_patched() {
+        let mut state = OverrideState::default();
+        state.add(
+            OverrideEventType::Bell,
+            EventOverride {
+                duration_ms: 5000,
+                starfield_patch: Some(StarfieldPatch {
+                    density: Some(200),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        );
+        // Mark it as already patched
+        state.set_patched(EffectId::Starfield);
+        let theme = Theme::default();
+        let patches = compute_effect_patches(&state, &theme);
+        // Should NOT re-apply starfield since it's already patched
+        let has_starfield_apply = patches.iter().any(|p| matches!(p, EffectPatchAction::Apply { effect_id: EffectId::Starfield, .. }));
+        assert!(!has_starfield_apply, "Should not re-apply already-patched effect");
+    }
+
+    #[test]
+    fn effect_patches_restore_when_patch_removed_and_theme_has_base() {
+        let mut state = OverrideState::default();
+        // No active overrides with starfield patch, but starfield IS marked as patched
+        state.set_patched(EffectId::Starfield);
+        // Theme needs a base starfield config for restore to happen
+        let mut theme = Theme::default();
+        theme.starfield = Some(crt_theme::StarfieldEffect::default());
+        let patches = compute_effect_patches(&state, &theme);
+        let has_starfield_restore = patches.iter().any(|p| matches!(p, EffectPatchAction::Restore { effect_id: EffectId::Starfield, .. }));
+        assert!(has_starfield_restore, "Expected Restore for starfield");
+    }
+
+    #[test]
+    fn effect_patches_no_restore_when_no_base_theme_config() {
+        let mut state = OverrideState::default();
+        // Patched but no base config in theme
+        state.set_patched(EffectId::Starfield);
+        let theme = Theme::default(); // starfield is None in default theme
+        let patches = compute_effect_patches(&state, &theme);
+        let has_starfield_restore = patches.iter().any(|p| matches!(p, EffectPatchAction::Restore { effect_id: EffectId::Starfield, .. }));
+        assert!(!has_starfield_restore, "No restore without base theme config");
+    }
+
+    #[test]
+    fn effect_patches_multiple_effects() {
+        let mut state = OverrideState::default();
+        state.add(
+            OverrideEventType::CommandFail,
+            EventOverride {
+                duration_ms: 5000,
+                starfield_patch: Some(StarfieldPatch {
+                    density: Some(100),
+                    ..Default::default()
+                }),
+                matrix_patch: Some(crt_theme::MatrixPatch {
+                    speed: Some(2.0),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        );
+        let theme = Theme::default();
+        let patches = compute_effect_patches(&state, &theme);
+        let effect_ids: Vec<EffectId> = patches
+            .iter()
+            .filter_map(|p| match p {
+                EffectPatchAction::Apply { effect_id, .. } => Some(*effect_id),
+                _ => None,
+            })
+            .collect();
+        assert!(effect_ids.contains(&EffectId::Starfield));
+        assert!(effect_ids.contains(&EffectId::Matrix));
+    }
+
+    // ── ActiveOverride tests ─────────────────────────────────────
+
+    #[test]
+    fn active_override_long_duration_is_active() {
+        use crate::window::ActiveOverride;
+        let ov = ActiveOverride::new(
+            OverrideEventType::Bell,
+            EventOverride {
+                duration_ms: 60000,
+                ..Default::default()
+            },
+        );
+        assert!(ov.is_active());
+        assert!(ov.intensity() > 0.9); // should be near 1.0 right after creation
+    }
+
+    #[test]
+    fn active_override_zero_duration_expired() {
+        use crate::window::ActiveOverride;
+        let ov = ActiveOverride::new(
+            OverrideEventType::Bell,
+            EventOverride {
+                duration_ms: 0,
+                ..Default::default()
+            },
+        );
+        // 0ms means expired immediately
+        assert!(!ov.is_active());
+        assert_eq!(ov.intensity(), 0.0);
+    }
+
+    // ── PtyUpdateResult tests ────────────────────────────────────
+
+    #[test]
+    fn pty_update_result_fields() {
+        let result = PtyUpdateResult {
+            content_changed: true,
+            shell_events: vec![ShellEvent::Bell, ShellEvent::CommandFail(1)],
+            title_change: Some("test".to_string()),
+        };
+        assert!(result.content_changed);
+        assert_eq!(result.shell_events.len(), 2);
+        assert_eq!(result.title_change.as_deref(), Some("test"));
+    }
+
+    #[test]
+    fn pty_update_result_no_changes() {
+        let result = PtyUpdateResult {
+            content_changed: false,
+            shell_events: vec![],
+            title_change: None,
+        };
+        assert!(!result.content_changed);
+        assert!(result.shell_events.is_empty());
+        assert!(result.title_change.is_none());
+    }
+
+    // ── EffectPatchAction variant tests ──────────────────────────
+
+    #[test]
+    fn effect_patch_action_apply_variant() {
+        let mut config = EffectConfig::new();
+        config.insert("density".to_string(), "100".to_string());
+        let action = EffectPatchAction::Apply {
+            effect_id: EffectId::Starfield,
+            config,
+        };
+        match action {
+            EffectPatchAction::Apply {
+                effect_id,
+                config,
+            } => {
+                assert_eq!(effect_id, EffectId::Starfield);
+                assert_eq!(config.get("density").unwrap(), "100");
+            }
+            _ => panic!("Expected Apply variant"),
+        }
+    }
+
+    #[test]
+    fn effect_patch_action_restore_variant() {
+        let config = EffectConfig::new();
+        let action = EffectPatchAction::Restore {
+            effect_id: EffectId::Particles,
+            config,
+        };
+        match action {
+            EffectPatchAction::Restore {
+                effect_id,
+                config: _,
+            } => {
+                assert_eq!(effect_id, EffectId::Particles);
+            }
+            _ => panic!("Expected Restore variant"),
+        }
+    }
 }

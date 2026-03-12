@@ -93,6 +93,13 @@ objc2-app-kit = "0.2"
 criterion = { version = "0.7.0", features = ["html_reports"] }
 tempfile = "3.23.0"
 
+[features]
+dhat-heap = ["dep:dhat"]
+
+[dependencies.dhat]
+version = "0.3"
+optional = true
+
 # Benchmark binaries (run with: cargo run --release --bin benchmark)
 [[bin]]
 name = "benchmark"
@@ -101,3 +108,11 @@ path = "src/bin/benchmark.rs"
 [[bin]]
 name = "benchmark_gpu"
 path = "src/bin/benchmark_gpu.rs"
+
+[[bin]]
+name = "profile_memory"
+path = "src/bin/profile_memory.rs"
+
+[[bin]]
+name = "profile_gpu_memory"
+path = "src/bin/profile_gpu_memory.rs"

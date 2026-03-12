@@ -16,7 +16,9 @@
 pub mod background_image;
 pub mod effects;
 pub mod glyph_cache;
+pub mod golden;
 pub mod grid_renderer;
+pub mod headless;
 pub mod mock;
 pub mod rect_renderer;
 pub mod shaders;
@@ -30,6 +32,8 @@ pub use effects::{
     BackdropEffect, EffectConfig, EffectsRenderer, GridEffect, MatrixEffect, MotionBehavior,
     ParticleEffect, Position, RainEffect, ShapeEffect, SpriteEffect, StarfieldEffect,
 };
+pub use golden::{ComparisonResult, assert_visual_match, compare_images, compare_with_golden, golden_path};
+pub use headless::{HeadlessError, HeadlessRenderer};
 pub use glyph_cache::{
     CachedGlyph, FontVariants, GlyphCache, GlyphKey, GlyphStyle, PositionedGlyph,
 };

@@ -8,3 +8,11 @@ log.workspace = true
 alacritty_terminal.workspace = true
 portable-pty.workspace = true
 anyhow.workspace = true
+crossbeam-queue = "0.3"
+
+[dev-dependencies]
+criterion = { version = "0.7.0", features = ["html_reports"] }
+
+[[bench]]
+name = "terminal"
+harness = false

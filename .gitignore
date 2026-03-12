@@ -22,5 +22,8 @@ debug.entitlements
 .metis/metis.db
 .metis/*.log
 
+# Visual regression test failures (generated, not checked in)
+tests/visual/failures/
+
 # AUR package repo (cloned separately)
 /crt-bin/

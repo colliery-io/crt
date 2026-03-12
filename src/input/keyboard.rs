@@ -34,6 +34,128 @@ pub enum KeyboardAction {
     Quit,
     /// Scroll the terminal
     Scroll(Scroll),
+    /// Copy selection to clipboard
+    Copy,
+    /// Paste from clipboard
+    Paste,
+    /// Toggle search mode
+    ToggleSearch,
+    /// Navigate to next/previous search match (true = previous)
+    SearchNavigate { reverse: bool },
+    /// Switch to previous tab
+    PrevTab,
+    /// Switch to next tab
+    NextTab,
+    /// Select a specific tab by index (0-based)
+    SelectTab(usize),
+}
+
+/// Read-only context for keyboard action determination.
+///
+/// Captures the minimal state needed to decide which action a key combination
+/// should produce, without requiring access to the full `WindowState`.
+pub struct InputContext {
+    /// Whether the context menu is currently visible
+    pub context_menu_visible: bool,
+    /// Whether a tab is being renamed
+    pub tab_editing_active: bool,
+    /// Whether the window rename dialog is active
+    pub window_rename_active: bool,
+    /// Whether search mode is active
+    pub search_active: bool,
+    /// Number of search matches (for navigation decisions)
+    pub search_match_count: usize,
+    /// Number of open tabs
+    pub tab_count: usize,
+    /// Active tab ID (if any)
+    pub active_tab_id: Option<TabId>,
+}
+
+impl InputContext {
+    /// Extract input context from window state
+    pub fn from_state(state: &WindowState) -> Self {
+        Self {
+            context_menu_visible: state.ui.context_menu.visible,
+            tab_editing_active: state.gpu.tab_bar.is_editing(),
+            window_rename_active: state.ui.window_rename.active,
+            search_active: state.ui.search.active,
+            search_match_count: state.ui.search.matches.len(),
+            tab_count: state.gpu.tab_bar.tab_count(),
+            active_tab_id: state.gpu.tab_bar.active_tab_id(),
+        }
+    }
+}
+
+/// Determine the keyboard action for a command shortcut (Cmd/Ctrl + key).
+///
+/// Pure function — no side effects, no state mutation. Returns `None` if the
+/// key combination is not a recognized shortcut.
+pub fn determine_command_shortcut(
+    key: &Key,
+    shift_pressed: bool,
+    ctx: &InputContext,
+) -> Option<KeyboardAction> {
+    match key {
+        Key::Character(c) if c.as_str() == "c" => Some(KeyboardAction::Copy),
+        Key::Character(c) if c.as_str() == "v" => Some(KeyboardAction::Paste),
+        Key::Character(c) if c.as_str() == "q" => Some(KeyboardAction::Quit),
+        Key::Character(c) if c.as_str() == "w" => {
+            if ctx.tab_count > 1 {
+                if let Some(tab_id) = ctx.active_tab_id {
+                    return Some(KeyboardAction::CloseTab(tab_id));
+                }
+            }
+            Some(KeyboardAction::CloseWindow)
+        }
+        Key::Character(c) if c.as_str() == "n" => Some(KeyboardAction::NewWindow),
+        Key::Character(c) if c.as_str() == "t" => Some(KeyboardAction::NewTab),
+        Key::Character(c) if c.as_str() == "f" => Some(KeyboardAction::ToggleSearch),
+        Key::Character(c) if c.as_str() == "g" => {
+            if ctx.search_active && ctx.search_match_count > 0 {
+                Some(KeyboardAction::SearchNavigate {
+                    reverse: shift_pressed,
+                })
+            } else {
+                Some(KeyboardAction::Handled)
+            }
+        }
+        Key::Character(c) if c.as_str() == "[" && shift_pressed => Some(KeyboardAction::PrevTab),
+        Key::Character(c) if c.as_str() == "]" && shift_pressed => Some(KeyboardAction::NextTab),
+        Key::Character(c) if c.len() == 1 => {
+            if let Some(digit) = c.chars().next().and_then(|ch| ch.to_digit(10))
+                && (1..=9).contains(&digit)
+            {
+                return Some(KeyboardAction::SelectTab((digit - 1) as usize));
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// Determine the scroll action for a key combination.
+///
+/// Pure function — returns the scroll action if the key is a scroll shortcut.
+pub fn determine_scroll_action(
+    key: &Key,
+    mod_pressed: bool,
+    shift_pressed: bool,
+) -> Option<Scroll> {
+    if !shift_pressed {
+        return None;
+    }
+
+    match key {
+        Key::Named(NamedKey::PageUp) if !mod_pressed => Some(Scroll::PageUp),
+        Key::Named(NamedKey::PageDown) if !mod_pressed => Some(Scroll::PageDown),
+        Key::Named(NamedKey::Home) if !mod_pressed => Some(Scroll::Top),
+        Key::Named(NamedKey::End) if !mod_pressed => Some(Scroll::Bottom),
+        #[cfg(target_os = "macos")]
+        Key::Named(NamedKey::ArrowLeft) if mod_pressed => Some(Scroll::Top),
+        #[cfg(target_os = "macos")]
+        Key::Named(NamedKey::ArrowRight) if mod_pressed => Some(Scroll::Bottom),
+        _ => None,
+    }
 }
 
 /// Handle keyboard input event
@@ -179,37 +301,18 @@ fn handle_scroll_shortcuts(
     mod_pressed: bool,
     shift_pressed: bool,
 ) -> Option<KeyboardAction> {
-    if !shift_pressed {
-        return None;
+    let scroll = determine_scroll_action(key, mod_pressed, shift_pressed)?;
+
+    let tab_id = state.gpu.tab_bar.active_tab_id();
+    if let Some(tab_id) = tab_id
+        && let Some(shell) = state.shells.get_mut(&tab_id)
+    {
+        shell.scroll(scroll);
+        state.render.dirty = true;
+        state.content_hashes.insert(tab_id, 0);
+        state.window.request_redraw();
     }
-
-    let scroll_action = match key {
-        Key::Named(NamedKey::PageUp) if !mod_pressed => Some(Scroll::PageUp),
-        Key::Named(NamedKey::PageDown) if !mod_pressed => Some(Scroll::PageDown),
-        Key::Named(NamedKey::Home) if !mod_pressed => Some(Scroll::Top),
-        Key::Named(NamedKey::End) if !mod_pressed => Some(Scroll::Bottom),
-        // macOS: Shift+Cmd+Arrow = Shift+Home/End
-        #[cfg(target_os = "macos")]
-        Key::Named(NamedKey::ArrowLeft) if mod_pressed => Some(Scroll::Top),
-        #[cfg(target_os = "macos")]
-        Key::Named(NamedKey::ArrowRight) if mod_pressed => Some(Scroll::Bottom),
-        _ => None,
-    };
-
-    if let Some(scroll) = scroll_action {
-        let tab_id = state.gpu.tab_bar.active_tab_id();
-        if let Some(tab_id) = tab_id
-            && let Some(shell) = state.shells.get_mut(&tab_id)
-        {
-            shell.scroll(scroll);
-            state.render.dirty = true;
-            state.content_hashes.insert(tab_id, 0);
-            state.window.request_redraw();
-        }
-        return Some(KeyboardAction::Handled);
-    }
-
-    None
+    Some(KeyboardAction::Handled)
 }
 
 /// Handle search mode input
@@ -276,39 +379,33 @@ fn handle_command_shortcuts(
         state.render.dirty = true;
     }
 
-    match key {
-        Key::Character(c) if c.as_str() == "c" => {
-            // Copy selection to clipboard
+    let ctx = InputContext::from_state(state);
+    let action = determine_command_shortcut(key, shift_pressed, &ctx)?;
+
+    // Apply side effects for actions that need them
+    match &action {
+        KeyboardAction::Copy => {
             if let Some(text) = get_terminal_selection_text(state) {
                 set_clipboard_content(&text);
                 state.ui.copy_indicator.trigger();
             }
-            Some(KeyboardAction::Handled)
+            return Some(KeyboardAction::Handled);
         }
-        Key::Character(c) if c.as_str() == "v" => {
-            // Paste from clipboard
+        KeyboardAction::Paste => {
             if let Some(content) = get_clipboard_content() {
                 paste_to_terminal(state, &content);
             }
-            Some(KeyboardAction::Handled)
+            return Some(KeyboardAction::Handled);
         }
-        Key::Character(c) if c.as_str() == "q" => Some(KeyboardAction::Quit),
-        Key::Character(c) if c.as_str() == "w" => {
-            if state.gpu.tab_bar.tab_count() > 1
-                && let Some(tab_id) = state.gpu.tab_bar.active_tab_id()
-            {
-                state.gpu.tab_bar.close_tab(tab_id);
-                state.remove_shell_for_tab(tab_id);
-                state.force_active_tab_redraw();
-                state.window.request_redraw();
-                return Some(KeyboardAction::Handled);
-            }
-            Some(KeyboardAction::CloseWindow)
+        KeyboardAction::CloseTab(tab_id) => {
+            let tab_id = *tab_id;
+            state.gpu.tab_bar.close_tab(tab_id);
+            state.remove_shell_for_tab(tab_id);
+            state.force_active_tab_redraw();
+            state.window.request_redraw();
+            return Some(KeyboardAction::Handled);
         }
-        Key::Character(c) if c.as_str() == "n" => Some(KeyboardAction::NewWindow),
-        Key::Character(c) if c.as_str() == "t" => Some(KeyboardAction::NewTab),
-        Key::Character(c) if c.as_str() == "f" => {
-            // Toggle search mode
+        KeyboardAction::ToggleSearch => {
             state.ui.search.active = !state.ui.search.active;
             if !state.ui.search.active {
                 state.ui.search.query.clear();
@@ -317,20 +414,17 @@ fn handle_command_shortcuts(
             }
             state.force_active_tab_redraw();
             state.window.request_redraw();
-            Some(KeyboardAction::Handled)
+            return Some(KeyboardAction::Handled);
         }
-        Key::Character(c) if c.as_str() == "g" => {
-            // Next/prev match
-            if state.ui.search.active && !state.ui.search.matches.is_empty() {
-                if shift_pressed {
-                    // Previous match
+        KeyboardAction::SearchNavigate { reverse } => {
+            if !state.ui.search.matches.is_empty() {
+                if *reverse {
                     if state.ui.search.current_match == 0 {
                         state.ui.search.current_match = state.ui.search.matches.len() - 1;
                     } else {
                         state.ui.search.current_match -= 1;
                     }
                 } else {
-                    // Next match
                     state.ui.search.current_match =
                         (state.ui.search.current_match + 1) % state.ui.search.matches.len();
                 }
@@ -338,32 +432,140 @@ fn handle_command_shortcuts(
                 state.force_active_tab_redraw();
                 state.window.request_redraw();
             }
-            Some(KeyboardAction::Handled)
+            return Some(KeyboardAction::Handled);
         }
-        Key::Character(c) if c.as_str() == "[" && shift_pressed => {
+        KeyboardAction::PrevTab => {
             state.gpu.tab_bar.prev_tab();
             state.force_active_tab_redraw();
             state.window.request_redraw();
-            Some(KeyboardAction::Handled)
+            return Some(KeyboardAction::Handled);
         }
-        Key::Character(c) if c.as_str() == "]" && shift_pressed => {
+        KeyboardAction::NextTab => {
             state.gpu.tab_bar.next_tab();
             state.force_active_tab_redraw();
             state.window.request_redraw();
-            Some(KeyboardAction::Handled)
+            return Some(KeyboardAction::Handled);
         }
-        Key::Character(c) if c.len() == 1 => {
-            // Tab selection with Cmd+1-9
-            if let Some(digit) = c.chars().next().and_then(|ch| ch.to_digit(10))
-                && (1..=9).contains(&digit)
-            {
-                state.gpu.tab_bar.select_tab_index((digit - 1) as usize);
-                state.force_active_tab_redraw();
-                state.window.request_redraw();
-                return Some(KeyboardAction::Handled);
-            }
-            None
+        KeyboardAction::SelectTab(index) => {
+            state.gpu.tab_bar.select_tab_index(*index);
+            state.force_active_tab_redraw();
+            state.window.request_redraw();
+            return Some(KeyboardAction::Handled);
         }
-        _ => None,
+        // Actions that don't need local side effects (handled by caller)
+        _ => {}
+    }
+
+    Some(action)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn default_ctx() -> InputContext {
+        InputContext {
+            context_menu_visible: false,
+            tab_editing_active: false,
+            window_rename_active: false,
+            search_active: false,
+            search_match_count: 0,
+            tab_count: 1,
+            active_tab_id: Some(1),
+        }
+    }
+
+    #[test]
+    fn test_cmd_q_returns_quit() {
+        let ctx = default_ctx();
+        let key = Key::Character("q".into());
+        let result = determine_command_shortcut(&key, false, &ctx);
+        assert!(matches!(result, Some(KeyboardAction::Quit)));
+    }
+
+    #[test]
+    fn test_cmd_t_returns_new_tab() {
+        let ctx = default_ctx();
+        let key = Key::Character("t".into());
+        let result = determine_command_shortcut(&key, false, &ctx);
+        assert!(matches!(result, Some(KeyboardAction::NewTab)));
+    }
+
+    #[test]
+    fn test_cmd_n_returns_new_window() {
+        let ctx = default_ctx();
+        let key = Key::Character("n".into());
+        let result = determine_command_shortcut(&key, false, &ctx);
+        assert!(matches!(result, Some(KeyboardAction::NewWindow)));
+    }
+
+    #[test]
+    fn test_cmd_w_single_tab_returns_close_window() {
+        let ctx = InputContext {
+            tab_count: 1,
+            active_tab_id: Some(1),
+            ..default_ctx()
+        };
+        let key = Key::Character("w".into());
+        let result = determine_command_shortcut(&key, false, &ctx);
+        assert!(matches!(result, Some(KeyboardAction::CloseWindow)));
+    }
+
+    #[test]
+    fn test_cmd_w_multiple_tabs_returns_close_tab() {
+        let ctx = InputContext {
+            tab_count: 3,
+            active_tab_id: Some(42),
+            ..default_ctx()
+        };
+        let key = Key::Character("w".into());
+        let result = determine_command_shortcut(&key, false, &ctx);
+        assert!(matches!(result, Some(KeyboardAction::CloseTab(42))));
+    }
+
+    #[test]
+    fn test_cmd_c_returns_copy() {
+        let ctx = default_ctx();
+        let key = Key::Character("c".into());
+        let result = determine_command_shortcut(&key, false, &ctx);
+        assert!(matches!(result, Some(KeyboardAction::Copy)));
+    }
+
+    #[test]
+    fn test_cmd_f_returns_toggle_search() {
+        let ctx = default_ctx();
+        let key = Key::Character("f".into());
+        let result = determine_command_shortcut(&key, false, &ctx);
+        assert!(matches!(result, Some(KeyboardAction::ToggleSearch)));
+    }
+
+    #[test]
+    fn test_cmd_1_returns_select_tab_0() {
+        let ctx = default_ctx();
+        let key = Key::Character("1".into());
+        let result = determine_command_shortcut(&key, false, &ctx);
+        assert!(matches!(result, Some(KeyboardAction::SelectTab(0))));
+    }
+
+    #[test]
+    fn test_cmd_shift_bracket_prev_tab() {
+        let ctx = default_ctx();
+        let key = Key::Character("[".into());
+        let result = determine_command_shortcut(&key, true, &ctx);
+        assert!(matches!(result, Some(KeyboardAction::PrevTab)));
+    }
+
+    #[test]
+    fn test_scroll_shift_pageup() {
+        let key = Key::Named(NamedKey::PageUp);
+        let result = determine_scroll_action(&key, false, true);
+        assert!(matches!(result, Some(Scroll::PageUp)));
+    }
+
+    #[test]
+    fn test_scroll_no_shift_returns_none() {
+        let key = Key::Named(NamedKey::PageUp);
+        let result = determine_scroll_action(&key, false, false);
+        assert!(result.is_none());
     }
 }

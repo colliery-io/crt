@@ -573,3 +573,366 @@ fn parse_color(s: &str) -> Option<Color> {
 
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Construction and defaults ────────────────────────────────
+
+    #[test]
+    fn default_matrix_is_disabled() {
+        let m = MatrixEffect::new();
+        assert!(!m.is_enabled());
+        assert_eq!(m.effect_type(), "matrix");
+    }
+
+    #[test]
+    fn default_columns_empty_before_generation() {
+        let m = MatrixEffect::new();
+        assert!(m.columns.is_empty());
+        assert!(m.needs_regeneration);
+    }
+
+    // ── Hash and rand helpers ────────────────────────────────────
+
+    #[test]
+    fn hash_is_deterministic() {
+        assert_eq!(MatrixEffect::hash(42), MatrixEffect::hash(42));
+        // Different inputs produce different outputs
+        assert_ne!(MatrixEffect::hash(0), MatrixEffect::hash(1));
+    }
+
+    #[test]
+    fn rand_produces_zero_to_one() {
+        for seed in 0..100 {
+            let val = MatrixEffect::rand(seed);
+            assert!(val >= 0.0 && val < 1.0, "rand({}) = {} out of range", seed, val);
+        }
+    }
+
+    // ── Column generation ────────────────────────────────────────
+
+    #[test]
+    fn generate_columns_creates_correct_count() {
+        let mut m = MatrixEffect::new();
+        m.num_columns = 50;
+        m.generate_columns();
+        assert_eq!(m.columns.len(), 50);
+        assert!(!m.needs_regeneration);
+    }
+
+    #[test]
+    fn generated_columns_are_active() {
+        let mut m = MatrixEffect::new();
+        m.num_columns = 10;
+        m.generate_columns();
+        for col in &m.columns {
+            assert!(col.active);
+            assert_eq!(col.respawn_delay, 0.0);
+        }
+    }
+
+    #[test]
+    fn generated_columns_have_spread_x_positions() {
+        let mut m = MatrixEffect::new();
+        m.num_columns = 10;
+        m.generate_columns();
+        for (i, col) in m.columns.iter().enumerate() {
+            let expected_x = i as f64 / 10.0;
+            assert!((col.x - expected_x).abs() < 1e-10);
+        }
+    }
+
+    #[test]
+    fn generated_columns_have_staggered_starts() {
+        let mut m = MatrixEffect::new();
+        m.num_columns = 20;
+        m.generate_columns();
+        // All should start above or at the top (head_y <= 0)
+        for col in &m.columns {
+            assert!(col.head_y <= 0.0, "Column starts at {} (should be <= 0)", col.head_y);
+        }
+    }
+
+    #[test]
+    fn generated_columns_have_char_seeds() {
+        let mut m = MatrixEffect::new();
+        m.num_columns = 5;
+        m.generate_columns();
+        for col in &m.columns {
+            assert_eq!(col.char_seeds.len(), 20); // approximate max trail characters
+        }
+    }
+
+    #[test]
+    fn generated_columns_have_varied_speeds() {
+        let mut m = MatrixEffect::new();
+        m.num_columns = 20;
+        m.generate_columns();
+        let speeds: Vec<f64> = m.columns.iter().map(|c| c.speed).collect();
+        // All speeds should be in range [0.7, 1.3]
+        for &s in &speeds {
+            assert!(s >= 0.7 && s <= 1.3, "Speed {} out of expected range", s);
+        }
+        // Not all the same
+        assert!(speeds.windows(2).any(|w| (w[0] - w[1]).abs() > 0.001));
+    }
+
+    // ── Update behavior ──────────────────────────────────────────
+
+    #[test]
+    fn update_noop_when_disabled() {
+        let mut m = MatrixEffect::new();
+        m.num_columns = 5;
+        m.generate_columns();
+        let positions_before: Vec<f64> = m.columns.iter().map(|c| c.head_y).collect();
+        m.update(0.016, 1.0); // disabled, should not move
+        let positions_after: Vec<f64> = m.columns.iter().map(|c| c.head_y).collect();
+        assert_eq!(positions_before, positions_after);
+    }
+
+    #[test]
+    fn update_moves_columns_downward() {
+        let mut m = MatrixEffect::new();
+        m.enabled = true;
+        m.num_columns = 5;
+        m.generate_columns();
+        let positions_before: Vec<f64> = m.columns.iter().map(|c| c.head_y).collect();
+        m.update(0.1, 1.0);
+        for (i, col) in m.columns.iter().enumerate() {
+            assert!(
+                col.head_y > positions_before[i],
+                "Column {} didn't move down",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn update_triggers_regeneration_when_needed() {
+        let mut m = MatrixEffect::new();
+        m.enabled = true;
+        assert!(m.needs_regeneration);
+        assert!(m.columns.is_empty());
+        m.update(0.016, 0.016);
+        // After update, columns should be generated
+        assert!(!m.needs_regeneration);
+        assert!(!m.columns.is_empty());
+    }
+
+    #[test]
+    fn column_deactivates_when_off_screen() {
+        let mut m = MatrixEffect::new();
+        m.enabled = true;
+        m.num_columns = 1;
+        m.base_speed = 100.0; // Very fast — will fly off screen quickly
+        m.generate_columns();
+        m.columns[0].head_y = 0.9; // Near bottom
+        m.columns[0].trail_length = 0.05; // Short trail
+        // Update with large dt to push past 1.0 + trail_length
+        m.update(1.0, 1.0);
+        assert!(!m.columns[0].active);
+        assert!(m.columns[0].respawn_delay > 0.0);
+    }
+
+    #[test]
+    fn column_respawns_after_delay() {
+        let mut m = MatrixEffect::new();
+        m.enabled = true;
+        m.num_columns = 1;
+        m.generate_columns();
+        // Manually deactivate with short delay
+        m.columns[0].active = false;
+        m.columns[0].respawn_delay = 0.01;
+        m.update(0.1, 1.0); // dt > respawn_delay
+        assert!(m.columns[0].active);
+        assert!(m.columns[0].head_y <= 0.0); // Respawned at top
+    }
+
+    // ── Configure behavior ───────────────────────────────────────
+
+    #[test]
+    fn configure_enables_effect() {
+        let mut m = MatrixEffect::new();
+        let mut config = EffectConfig::new();
+        config.insert("enabled", "true");
+        m.configure(&config);
+        assert!(m.is_enabled());
+        assert!(m.needs_regeneration); // enabling triggers regeneration
+    }
+
+    #[test]
+    fn configure_density_changes_column_count() {
+        let mut m = MatrixEffect::new();
+        let mut config = EffectConfig::new();
+        config.insert("density", "2.0");
+        m.configure(&config);
+        assert_eq!(m.num_columns, 200); // 100 * 2.0
+        assert!(m.needs_regeneration);
+    }
+
+    #[test]
+    fn configure_density_clamps_to_range() {
+        let mut m = MatrixEffect::new();
+        // Too high
+        let mut config = EffectConfig::new();
+        config.insert("density", "10.0");
+        m.configure(&config);
+        assert_eq!(m.num_columns, 300); // 100 * 3.0 (clamped)
+
+        // Too low
+        let mut config = EffectConfig::new();
+        config.insert("density", "0.01");
+        m.configure(&config);
+        assert_eq!(m.num_columns, 10); // 100 * 0.1 (clamped)
+    }
+
+    #[test]
+    fn configure_speed() {
+        let mut m = MatrixEffect::new();
+        let mut config = EffectConfig::new();
+        config.insert("speed", "12.5"); // 12.5 / 25.0 = 0.5
+        m.configure(&config);
+        assert!((m.base_speed - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn configure_font_size() {
+        let mut m = MatrixEffect::new();
+        let mut config = EffectConfig::new();
+        config.insert("font-size", "20.0");
+        m.configure(&config);
+        assert!((m.char_height - 20.0).abs() < 0.01);
+        assert!((m.char_width - 14.0).abs() < 0.01); // 20 * 0.7
+    }
+
+    #[test]
+    fn configure_charset() {
+        let mut m = MatrixEffect::new();
+        let mut config = EffectConfig::new();
+        config.insert("charset", "ABC");
+        m.configure(&config);
+        assert_eq!(m.charset, vec!['A', 'B', 'C']);
+    }
+
+    #[test]
+    fn configure_color_hex() {
+        let mut m = MatrixEffect::new();
+        let mut config = EffectConfig::new();
+        config.insert("color", "#ff0000");
+        m.configure(&config);
+        let [r, g, b, a] = m.color.components;
+        assert!((r - 1.0).abs() < 0.01);
+        assert!(g.abs() < 0.01);
+        assert!(b.abs() < 0.01);
+        assert!((a - 1.0).abs() < 0.01);
+    }
+
+    // ── parse_color tests ────────────────────────────────────────
+
+    #[test]
+    fn parse_color_hex6() {
+        let c = parse_color("#ff5500").unwrap();
+        let [r, g, b, a] = c.components;
+        assert!((r - 1.0).abs() < 0.01);
+        assert!((g - 85.0 / 255.0).abs() < 0.01);
+        assert!(b.abs() < 0.01);
+        assert!((a - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn parse_color_hex8() {
+        let c = parse_color("#ff550080").unwrap();
+        let [_, _, _, a] = c.components;
+        assert!((a - 128.0 / 255.0).abs() < 0.02);
+    }
+
+    #[test]
+    fn parse_color_rgb() {
+        let c = parse_color("rgb(255, 0, 128)").unwrap();
+        let [r, g, b, _] = c.components;
+        assert!((r - 1.0).abs() < 0.01);
+        assert!(g.abs() < 0.01);
+        assert!((b - 128.0 / 255.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn parse_color_rgba() {
+        let c = parse_color("rgba(0, 255, 0, 0.5)").unwrap();
+        let [r, g, _, a] = c.components;
+        assert!(r.abs() < 0.01);
+        assert!((g - 1.0).abs() < 0.01);
+        assert!((a - 127.0 / 255.0).abs() < 0.02);
+    }
+
+    #[test]
+    fn parse_color_invalid() {
+        assert!(parse_color("not-a-color").is_none());
+        assert!(parse_color("#xyz").is_none());
+        assert!(parse_color("").is_none());
+    }
+
+    // ── draw_char tests ──────────────────────────────────────────
+
+    #[test]
+    fn draw_char_without_charset_produces_path() {
+        let center = Point::new(50.0, 50.0);
+        for seed in 0..8 {
+            let path = MatrixEffect::draw_char(center, 10.0, 14.0, seed, &[]);
+            // Should produce non-empty path elements
+            assert!(path.elements().len() > 0, "Seed {} produced empty path", seed);
+        }
+    }
+
+    #[test]
+    fn draw_char_with_charset_uses_char_shapes() {
+        let center = Point::new(50.0, 50.0);
+        let charset = vec!['A', 'B', 'C'];
+        let path = MatrixEffect::draw_char(center, 10.0, 14.0, 0, &charset);
+        assert!(path.elements().len() > 0);
+    }
+
+    #[test]
+    fn draw_char_deterministic() {
+        let center = Point::new(50.0, 50.0);
+        let p1 = MatrixEffect::draw_char(center, 10.0, 14.0, 42, &[]);
+        let p2 = MatrixEffect::draw_char(center, 10.0, 14.0, 42, &[]);
+        assert_eq!(p1.elements().len(), p2.elements().len());
+    }
+
+    // ── Render behavior ──────────────────────────────────────────
+
+    #[test]
+    fn render_noop_when_disabled() {
+        let m = MatrixEffect::new();
+        let mut scene = Scene::new();
+        let bounds = Rect::new(0.0, 0.0, 800.0, 600.0);
+        m.render(&mut scene, bounds); // Should not panic
+    }
+
+    #[test]
+    fn render_noop_when_no_columns() {
+        let mut m = MatrixEffect::new();
+        m.enabled = true;
+        // columns is empty
+        let mut scene = Scene::new();
+        let bounds = Rect::new(0.0, 0.0, 800.0, 600.0);
+        m.render(&mut scene, bounds); // Should not panic
+    }
+
+    #[test]
+    fn render_with_active_columns() {
+        let mut m = MatrixEffect::new();
+        m.enabled = true;
+        m.num_columns = 5;
+        m.generate_columns();
+        // Move columns into visible range
+        for col in &mut m.columns {
+            col.head_y = 0.5;
+        }
+        let mut scene = Scene::new();
+        let bounds = Rect::new(0.0, 0.0, 800.0, 600.0);
+        m.render(&mut scene, bounds); // Should render without panic
+    }
+}

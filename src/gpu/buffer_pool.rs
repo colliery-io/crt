@@ -17,8 +17,6 @@
 //!
 //! The RAII pattern means buffers auto-return to pool when windows close.
 
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
 

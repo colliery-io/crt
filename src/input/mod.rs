@@ -8,7 +8,11 @@ mod mouse;
 
 pub use key_encoder::encode_key;
 pub use keyboard::{KeyboardAction, handle_keyboard_input};
-pub use mouse::{handle_cursor_moved, handle_mouse_input, handle_mouse_wheel};
+pub use mouse::{
+    GridLayout, MouseClickTarget, compute_click_count, determine_click_target,
+    handle_cursor_moved, handle_mouse_input, handle_mouse_wheel, normalize_scroll_delta,
+    screen_to_grid_position,
+};
 
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
@@ -594,26 +598,16 @@ pub fn handle_resize(
 /// Returns None if the position is outside the terminal area
 pub fn screen_to_cell(state: &WindowState, x: f32, y: f32) -> Option<(usize, usize)> {
     let (offset_x, offset_y) = state.gpu.tab_bar.content_offset();
-    let padding = 10.0 * state.scale_factor;
-    let cell_width = state.gpu.glyph_cache.cell_width();
-    let line_height = state.gpu.glyph_cache.line_height();
-
-    // Check if in terminal area
-    let content_x = x - offset_x - padding;
-    let content_y = y - offset_y - padding;
-
-    if content_x < 0.0 || content_y < 0.0 {
-        return None;
-    }
-
-    let col = (content_x / cell_width) as usize;
-    let line = (content_y / line_height) as usize;
-
-    // Clamp to terminal bounds
-    let col = col.min(state.cols.saturating_sub(1));
-    let line = line.min(state.rows.saturating_sub(1));
-
-    Some((col, line))
+    let layout = GridLayout {
+        content_offset_x: offset_x,
+        content_offset_y: offset_y,
+        padding: 10.0 * state.scale_factor,
+        cell_width: state.gpu.glyph_cache.cell_width(),
+        line_height: state.gpu.glyph_cache.line_height(),
+        max_cols: state.cols,
+        max_rows: state.rows,
+    };
+    screen_to_grid_position(x, y, &layout)
 }
 
 /// Handle mouse press for terminal selection or mouse reporting
@@ -1107,6 +1101,8 @@ pub fn update_search_matches(state: &mut WindowState) {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     /// Test that UTF-8 string truncation handles multi-byte characters safely.
     /// This pattern is used in paste_to_terminal for logging preview.
     /// Previously used unsafe byte slicing: &content[..content.len().min(50)]
@@ -1156,5 +1152,171 @@ mod tests {
         let japanese = "こんにちは世界"; // 7 chars, 21 bytes
         let preview: String = japanese.chars().take(5).collect();
         assert_eq!(preview, "こんにちは");
+    }
+
+    // ── URL detection tests ────────────────────────────────────────
+
+    #[test]
+    fn detect_https_url() {
+        let urls = detect_urls_in_line("visit https://example.com/path for info", 0);
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].url, "https://example.com/path");
+        assert_eq!(urls[0].start_col, 6);
+        assert_eq!(urls[0].line, 0);
+    }
+
+    #[test]
+    fn detect_http_url() {
+        let urls = detect_urls_in_line("http://localhost:8080/api", 5);
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].url, "http://localhost:8080/api");
+        assert_eq!(urls[0].line, 5);
+    }
+
+    #[test]
+    fn detect_file_url() {
+        let urls = detect_urls_in_line("file:///home/user/doc.txt", 0);
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].url, "file:///home/user/doc.txt");
+    }
+
+    #[test]
+    fn detect_www_prefix() {
+        let urls = detect_urls_in_line("go to www.example.com/page", 0);
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].url, "www.example.com/page");
+    }
+
+    #[test]
+    fn detect_url_with_query_and_fragment() {
+        let urls = detect_urls_in_line("https://example.com/path?q=hello&lang=en#section", 0);
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].url, "https://example.com/path?q=hello&lang=en#section");
+    }
+
+    #[test]
+    fn detect_multiple_urls_in_line() {
+        let urls = detect_urls_in_line("see https://a.com and https://b.com", 0);
+        assert_eq!(urls.len(), 2);
+        assert_eq!(urls[0].url, "https://a.com");
+        assert_eq!(urls[1].url, "https://b.com");
+    }
+
+    #[test]
+    fn detect_no_urls_in_plain_text() {
+        let urls = detect_urls_in_line("just some plain text here", 0);
+        assert_eq!(urls.len(), 0);
+    }
+
+    #[test]
+    fn find_url_at_position_hit() {
+        let urls = detect_urls_in_line("go to https://example.com now", 0);
+        assert!(find_url_at_position(&urls, 10, 0).is_some());
+    }
+
+    #[test]
+    fn find_url_at_position_miss() {
+        let urls = detect_urls_in_line("go to https://example.com now", 0);
+        // Position 0 is before the URL
+        assert!(find_url_at_position(&urls, 0, 0).is_none());
+        // Wrong line
+        assert!(find_url_at_position(&urls, 10, 1).is_none());
+    }
+
+    #[test]
+    fn find_url_index_at_position_returns_index() {
+        let urls = detect_urls_in_line("https://a.com https://b.com", 0);
+        assert_eq!(find_url_index_at_position(&urls, 0, 0), Some(0));
+        assert_eq!(find_url_index_at_position(&urls, 15, 0), Some(1));
+    }
+
+    // ── Mouse report protocol tests ────────────────────────────────
+
+    #[test]
+    fn mouse_report_sgr_press() {
+        let seq = mouse_report(0, 5, 10, true, true);
+        let expected = "\x1b[<0;6;11M"; // SGR: 1-indexed, M for press
+        assert_eq!(String::from_utf8(seq).unwrap(), expected);
+    }
+
+    #[test]
+    fn mouse_report_sgr_release() {
+        let seq = mouse_report(0, 5, 10, false, true);
+        let expected = "\x1b[<0;6;11m"; // SGR: lowercase m for release
+        assert_eq!(String::from_utf8(seq).unwrap(), expected);
+    }
+
+    #[test]
+    fn mouse_report_legacy_press() {
+        let seq = mouse_report(0, 0, 0, true, false);
+        // Legacy: ESC [ M <btn+32> <col+33> <row+33>
+        assert_eq!(seq, vec![0x1b, b'[', b'M', 32, 33, 33]);
+    }
+
+    #[test]
+    fn mouse_report_legacy_release() {
+        let seq = mouse_report(MOUSE_BUTTON_RELEASE, 0, 0, false, false);
+        assert_eq!(seq, vec![0x1b, b'[', b'M', 35, 33, 33]); // 3+32=35
+    }
+
+    #[test]
+    fn mouse_report_scroll_buttons() {
+        let up = mouse_report(MOUSE_BUTTON_SCROLL_UP, 10, 5, true, true);
+        let down = mouse_report(MOUSE_BUTTON_SCROLL_DOWN, 10, 5, true, true);
+        assert_ne!(up, down);
+        let up_str = String::from_utf8(up).unwrap();
+        assert!(up_str.contains("<64;")); // scroll up = 64
+        let down_str = String::from_utf8(down).unwrap();
+        assert!(down_str.contains("<65;")); // scroll down = 65
+    }
+
+    #[test]
+    fn mouse_report_legacy_clamps_coordinates() {
+        // Legacy mode clamps to 255
+        let seq = mouse_report(0, 300, 300, true, false);
+        // col+33 and row+33 should be clamped to 255
+        assert_eq!(seq[4], 255);
+        assert_eq!(seq[5], 255);
+    }
+
+    // ── URL merge tests ────────────────────────────────────────────
+
+    #[test]
+    fn merge_wrapped_urls_single_line() {
+        let mut urls = detect_urls_in_line("https://short.com", 0);
+        let mut lines = std::collections::BTreeMap::new();
+        lines.insert(0, "https://short.com".to_string());
+        merge_wrapped_urls(&mut urls, &lines, 80);
+        // No merge should happen — URL doesn't end at column boundary
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].end_line, 0);
+    }
+
+    #[test]
+    fn merge_wrapped_urls_across_lines() {
+        // URL that ends at column boundary (col 20)
+        let line0 = "https://example.com/";
+        let line1 = "very/long/path/here";
+        let mut urls = detect_urls_in_line(line0, 0);
+        let mut lines = std::collections::BTreeMap::new();
+        lines.insert(0, line0.to_string());
+        lines.insert(1, line1.to_string());
+        merge_wrapped_urls(&mut urls, &lines, 20);
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].end_line, 1);
+        assert!(urls[0].url.contains("very/long/path/here"));
+    }
+
+    #[test]
+    fn merge_wrapped_urls_stops_at_new_protocol() {
+        let line0 = "https://example.com/";
+        let line1 = "https://other.com";
+        let mut urls = detect_urls_in_line(line0, 0);
+        let mut lines = std::collections::BTreeMap::new();
+        lines.insert(0, line0.to_string());
+        lines.insert(1, line1.to_string());
+        merge_wrapped_urls(&mut urls, &lines, 20);
+        // Should NOT merge — next line starts with https://
+        assert_eq!(urls[0].end_line, 0);
     }
 }

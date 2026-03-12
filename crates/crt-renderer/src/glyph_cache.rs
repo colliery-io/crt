@@ -63,13 +63,17 @@ pub struct CachedGlyph {
     pub offset_y: f32,
 }
 
-/// Atlas packing state
+/// Atlas packing state with capacity monitoring
 struct AtlasPacker {
     width: u32,
     height: u32,
     row_x: u32,
     row_y: u32,
     row_height: u32,
+    /// Total pixels allocated (for capacity tracking)
+    pixels_allocated: u64,
+    /// Whether we've logged the 80% capacity warning
+    warned_high_usage: bool,
 }
 
 impl AtlasPacker {
@@ -80,7 +84,19 @@ impl AtlasPacker {
             row_x: 1,
             row_y: 1,
             row_height: 0,
+            pixels_allocated: 0,
+            warned_high_usage: false,
         }
+    }
+
+    /// Total atlas area in pixels
+    fn total_pixels(&self) -> u64 {
+        self.width as u64 * self.height as u64
+    }
+
+    /// Current utilization as a fraction (0.0 to 1.0)
+    fn utilization(&self) -> f32 {
+        self.pixels_allocated as f32 / self.total_pixels() as f32
     }
 
     fn allocate(&mut self, glyph_width: u32, glyph_height: u32) -> Option<(u32, u32)> {
@@ -102,8 +118,31 @@ impl AtlasPacker {
 
         self.row_x += padded_width;
         self.row_height = self.row_height.max(padded_height);
+        self.pixels_allocated += (glyph_width as u64) * (glyph_height as u64);
+
+        // Log warning when crossing 80% capacity
+        if !self.warned_high_usage && self.utilization() >= 0.8 {
+            self.warned_high_usage = true;
+            log::warn!(
+                "Glyph atlas at {:.0}% capacity ({} pixels used of {}, atlas {}x{})",
+                self.utilization() * 100.0,
+                self.pixels_allocated,
+                self.total_pixels(),
+                self.width,
+                self.height,
+            );
+        }
 
         Some((x, y))
+    }
+
+    /// Reset packing state (for atlas clear/rebuild)
+    fn reset(&mut self) {
+        self.row_x = 1;
+        self.row_y = 1;
+        self.row_height = 0;
+        self.pixels_allocated = 0;
+        self.warned_high_usage = false;
     }
 }
 
@@ -386,10 +425,33 @@ impl GlyphCache {
             return Some(glyph);
         }
 
-        // Allocate space in atlas
-        let (x, y) = self
+        // Allocate space in atlas, with overflow recovery
+        let (x, y) = match self
             .packer
-            .allocate(image.placement.width, image.placement.height)?;
+            .allocate(image.placement.width, image.placement.height)
+        {
+            Some(pos) => pos,
+            None => {
+                // Atlas full — clear all cached glyphs and reset packer.
+                // Glyphs will be re-rendered on demand (effectively LRU eviction
+                // of all inactive glyphs since only visible ones get re-cached).
+                log::warn!(
+                    "Glyph atlas full ({} glyphs cached, {:.0}% utilized in {}x{} atlas). \
+                     Clearing cache for recovery.",
+                    self.glyphs.len(),
+                    self.packer.utilization() * 100.0,
+                    self.atlas_width,
+                    self.atlas_height,
+                );
+                self.glyphs.clear();
+                self.packer.reset();
+                self.staging_data.clear();
+                self.pending_uploads.clear();
+                // Retry allocation after reset — should always succeed
+                self.packer
+                    .allocate(image.placement.width, image.placement.height)?
+            }
+        };
 
         // Store bitmap for upload
         let data_offset = self.staging_data.len();
@@ -499,6 +561,16 @@ impl GlyphCache {
         self.staging_data.clear();
     }
 
+    /// Get atlas capacity stats for monitoring
+    pub fn atlas_stats(&self) -> (usize, f32, u32, u32) {
+        (
+            self.glyphs.len(),
+            self.packer.utilization(),
+            self.atlas_width,
+            self.atlas_height,
+        )
+    }
+
     /// Pre-cache ASCII characters
     pub fn precache_ascii(&mut self) {
         for c in 32u8..=126u8 {
@@ -582,7 +654,7 @@ impl GlyphCache {
         self.glyphs.clear();
 
         // Reset atlas packer
-        self.packer = AtlasPacker::new(self.atlas_width, self.atlas_height);
+        self.packer.reset();
 
         // Clear atlas texture (fill with zeros)
         let clear_data = vec![0u8; (self.atlas_width * self.atlas_height) as usize];

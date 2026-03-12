@@ -12,3 +12,5 @@ swash.workspace = true
 bytemuck.workspace = true
 log.workspace = true
 image.workspace = true
+pollster.workspace = true
+thiserror = "2.0"

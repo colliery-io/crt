@@ -32,14 +32,123 @@ pub enum PtyInput {
     Shutdown,
 }
 
+/// Trait abstracting PTY I/O operations.
+///
+/// Enables testing terminal logic with mock PTY implementations
+/// instead of real shell processes.
+pub trait PtyBackend: Send {
+    /// Write data to the PTY (keyboard input)
+    fn write(&self, data: &[u8]);
+    /// Try to read available output from the PTY (non-blocking)
+    fn try_read(&self) -> Option<Vec<u8>>;
+    /// Read all available output from the PTY (non-blocking)
+    fn read_available(&self) -> Vec<u8>;
+    /// Resize the PTY
+    fn resize(&self, cols: u16, rows: u16);
+    /// Shutdown the PTY
+    fn shutdown(&self);
+    /// Get the process ID of the shell
+    fn process_id(&self) -> Option<u32>;
+    /// Get the current working directory of the shell process
+    fn working_directory(&self) -> Option<PathBuf>;
+}
+
 /// PTY handle for communicating with a shell process
 pub struct Pty {
     /// Channel to send input to the PTY
     input_tx: Sender<PtyInput>,
     /// Channel to receive output from the PTY
     output_rx: Receiver<Vec<u8>>,
+    /// Channel to return spent buffers to the reader thread for reuse
+    recycle_tx: Sender<Vec<u8>>,
     /// Child process handle
     child: Box<dyn Child + Send + Sync>,
+}
+
+/// Spawn reader and writer threads for a PTY pair and return the Pty handle.
+///
+/// This is the shared implementation for all PTY spawn functions.
+/// It takes ownership of the PTY pair and child process, sets up channels,
+/// and spawns the I/O threads.
+fn spawn_pty_threads(
+    pair: portable_pty::PtyPair,
+    child: Box<dyn portable_pty::Child + Send + Sync>,
+) -> anyhow::Result<Pty> {
+    let (input_tx, input_rx) = mpsc::channel::<PtyInput>();
+    let (output_tx, output_rx) = mpsc::channel::<Vec<u8>>();
+    let (recycle_tx, recycle_rx) = mpsc::channel::<Vec<u8>>();
+
+    let mut reader = pair.master.try_clone_reader()?;
+    let master = pair.master;
+
+    // Spawn reader thread — reads PTY output and sends to channel.
+    // Recycles buffers returned by the consumer to avoid per-read allocations.
+    thread::spawn(move || {
+        const READ_BUF_SIZE: usize = 4096;
+
+        loop {
+            // Try to reuse a recycled buffer, or allocate a new one
+            let mut buf = recycle_rx
+                .try_recv()
+                .unwrap_or_else(|_| Vec::with_capacity(READ_BUF_SIZE));
+            buf.resize(READ_BUF_SIZE, 0);
+
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    buf.truncate(n);
+                    if output_tx.send(buf).is_err() {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    log::error!("PTY read error: {}", e);
+                    break;
+                }
+            }
+        }
+        log::debug!("PTY reader thread exiting");
+    });
+
+    // Spawn writer thread — receives from channel and writes to PTY
+    thread::spawn(move || {
+        let mut writer = master.take_writer().expect("Failed to get PTY writer");
+
+        for msg in input_rx {
+            match msg {
+                PtyInput::Data(data) => {
+                    if let Err(e) = writer.write_all(&data) {
+                        log::error!("PTY write error: {}", e);
+                        break;
+                    }
+                    let _ = writer.flush();
+                }
+                PtyInput::Resize { cols, rows } => {
+                    let size = PtySize {
+                        rows,
+                        cols,
+                        pixel_width: 0,
+                        pixel_height: 0,
+                    };
+                    if let Err(e) = master.resize(size) {
+                        log::error!("PTY resize error: {}", e);
+                    }
+                }
+                PtyInput::Shutdown => {
+                    log::debug!("PTY writer thread shutting down");
+                    break;
+                }
+            }
+        }
+        log::debug!("PTY writer thread exiting");
+    });
+
+    Ok(Pty {
+        input_tx,
+        output_rx,
+        recycle_tx,
+        child,
+    })
 }
 
 impl Pty {
@@ -134,73 +243,7 @@ impl Pty {
         }
 
         let child = pair.slave.spawn_command(cmd)?;
-
-        // Set up channels for communication
-        let (input_tx, input_rx) = mpsc::channel::<PtyInput>();
-        let (output_tx, output_rx) = mpsc::channel::<Vec<u8>>();
-
-        // Get reader and writer from master
-        let mut reader = pair.master.try_clone_reader()?;
-        let master = pair.master;
-
-        // Spawn reader thread
-        thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        if output_tx.send(buf[..n].to_vec()).is_err() {
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("PTY read error: {}", e);
-                        break;
-                    }
-                }
-            }
-            log::debug!("PTY reader thread exiting");
-        });
-
-        // Spawn writer thread
-        thread::spawn(move || {
-            let mut writer = master.take_writer().expect("Failed to get PTY writer");
-
-            for msg in input_rx {
-                match msg {
-                    PtyInput::Data(data) => {
-                        if let Err(e) = writer.write_all(&data) {
-                            log::error!("PTY write error: {}", e);
-                            break;
-                        }
-                        let _ = writer.flush();
-                    }
-                    PtyInput::Resize { cols, rows } => {
-                        let size = PtySize {
-                            rows,
-                            cols,
-                            pixel_width: 0,
-                            pixel_height: 0,
-                        };
-                        if let Err(e) = master.resize(size) {
-                            log::error!("PTY resize error: {}", e);
-                        }
-                    }
-                    PtyInput::Shutdown => {
-                        log::debug!("PTY writer thread shutting down");
-                        break;
-                    }
-                }
-            }
-            log::debug!("PTY writer thread exiting");
-        });
-
-        Ok(Self {
-            input_tx,
-            output_rx,
-            child,
-        })
+        spawn_pty_threads(pair, child)
     }
 
     /// Spawn a new shell in a PTY with a specific working directory
@@ -241,73 +284,7 @@ impl Pty {
             cmd.cwd(dir);
         }
         let child = pair.slave.spawn_command(cmd)?;
-
-        // Set up channels for communication
-        let (input_tx, input_rx) = mpsc::channel::<PtyInput>();
-        let (output_tx, output_rx) = mpsc::channel::<Vec<u8>>();
-
-        // Get reader and writer from master
-        let mut reader = pair.master.try_clone_reader()?;
-        let master = pair.master;
-
-        // Spawn reader thread - reads PTY output and sends to channel
-        thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) => break, // EOF
-                    Ok(n) => {
-                        if output_tx.send(buf[..n].to_vec()).is_err() {
-                            break; // Channel closed
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("PTY read error: {}", e);
-                        break;
-                    }
-                }
-            }
-            log::debug!("PTY reader thread exiting");
-        });
-
-        // Spawn writer thread - receives from channel and writes to PTY
-        thread::spawn(move || {
-            let mut writer = master.take_writer().expect("Failed to get PTY writer");
-
-            for msg in input_rx {
-                match msg {
-                    PtyInput::Data(data) => {
-                        if let Err(e) = writer.write_all(&data) {
-                            log::error!("PTY write error: {}", e);
-                            break;
-                        }
-                        let _ = writer.flush();
-                    }
-                    PtyInput::Resize { cols, rows } => {
-                        let size = PtySize {
-                            rows,
-                            cols,
-                            pixel_width: 0,
-                            pixel_height: 0,
-                        };
-                        if let Err(e) = master.resize(size) {
-                            log::error!("PTY resize error: {}", e);
-                        }
-                    }
-                    PtyInput::Shutdown => {
-                        log::debug!("PTY writer thread shutting down");
-                        break;
-                    }
-                }
-            }
-            log::debug!("PTY writer thread exiting");
-        });
-
-        Ok(Self {
-            input_tx,
-            output_rx,
-            child,
-        })
+        spawn_pty_threads(pair, child)
     }
 
     /// Get the process ID of the shell
@@ -333,10 +310,14 @@ impl Pty {
     }
 
     /// Read all available output from the PTY (non-blocking)
+    ///
+    /// Recycles consumed buffers back to the reader thread to reduce allocations.
     pub fn read_available(&self) -> Vec<u8> {
         let mut output = Vec::new();
         while let Ok(data) = self.output_rx.try_recv() {
-            output.extend(data);
+            output.extend_from_slice(&data);
+            // Return the buffer to the reader thread for reuse (best-effort)
+            let _ = self.recycle_tx.send(data);
         }
         output
     }
@@ -349,6 +330,36 @@ impl Pty {
     /// Shutdown the PTY
     pub fn shutdown(&self) {
         let _ = self.input_tx.send(PtyInput::Shutdown);
+    }
+}
+
+impl PtyBackend for Pty {
+    fn write(&self, data: &[u8]) {
+        self.write(data);
+    }
+
+    fn try_read(&self) -> Option<Vec<u8>> {
+        self.try_read()
+    }
+
+    fn read_available(&self) -> Vec<u8> {
+        self.read_available()
+    }
+
+    fn resize(&self, cols: u16, rows: u16) {
+        self.resize(cols, rows);
+    }
+
+    fn shutdown(&self) {
+        self.shutdown();
+    }
+
+    fn process_id(&self) -> Option<u32> {
+        self.process_id()
+    }
+
+    fn working_directory(&self) -> Option<PathBuf> {
+        self.working_directory()
     }
 }
 
@@ -432,24 +443,52 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    /// Poll PTY until expected text appears or timeout
+    fn wait_for_pty_text(pty: &Pty, expected: &str, timeout: Duration) -> String {
+        let start = std::time::Instant::now();
+        let mut accumulated = String::new();
+
+        loop {
+            let chunk = pty.read_available();
+            if !chunk.is_empty() {
+                accumulated.push_str(&String::from_utf8_lossy(&chunk));
+            }
+            if accumulated.contains(expected) {
+                return accumulated;
+            }
+            if start.elapsed() > timeout {
+                return accumulated;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     #[test]
     fn spawn_shell() {
         let pty = Pty::spawn(Some("/bin/sh"), 80, 24).expect("Failed to spawn PTY");
 
-        // Give the shell time to start
-        thread::sleep(Duration::from_millis(100));
+        // Wait for shell prompt (poll until output stabilizes)
+        let timeout = Duration::from_secs(2);
+        let start = std::time::Instant::now();
+        let mut last_change = std::time::Instant::now();
+        loop {
+            if !pty.read_available().is_empty() {
+                last_change = std::time::Instant::now();
+            }
+            if last_change.elapsed() >= Duration::from_millis(50) {
+                break;
+            }
+            if start.elapsed() > timeout {
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
 
         // Send a simple command
         pty.write(b"echo hello\n");
 
-        // Wait for output
-        thread::sleep(Duration::from_millis(100));
-
-        let output = pty.read_available();
-        assert!(!output.is_empty(), "Should have received some output");
-
-        // Output should contain "hello"
-        let output_str = String::from_utf8_lossy(&output);
+        // Poll for output containing "hello"
+        let output_str = wait_for_pty_text(&pty, "hello", timeout);
         assert!(
             output_str.contains("hello"),
             "Output should contain 'hello': {}",

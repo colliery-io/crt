@@ -183,4 +183,128 @@ mod tests {
         let end = encode_key(&Key::Named(NamedKey::End), false, false, false);
         assert_eq!(end, Some(b"\x1b[F".to_vec()), "End key encoding (termwiz)");
     }
+
+    // ── Additional key encoding tests ──────────────────────────────
+
+    #[test]
+    fn encode_enter_produces_cr() {
+        let result = encode_key(&Key::Named(NamedKey::Enter), false, false, false);
+        assert_eq!(result, Some(b"\r".to_vec()));
+    }
+
+    #[test]
+    fn encode_escape_produces_esc() {
+        let result = encode_key(&Key::Named(NamedKey::Escape), false, false, false);
+        assert_eq!(result, Some(b"\x1b".to_vec()));
+    }
+
+    #[test]
+    fn encode_backspace_produces_del() {
+        let result = encode_key(&Key::Named(NamedKey::Backspace), false, false, false);
+        assert_eq!(result, Some(vec![0x7f])); // DEL character
+    }
+
+    #[test]
+    fn encode_delete_key() {
+        let result = encode_key(&Key::Named(NamedKey::Delete), false, false, false);
+        assert!(result.is_some());
+        let bytes = result.unwrap();
+        // Delete should produce an escape sequence (ESC [ 3 ~)
+        assert!(bytes.starts_with(b"\x1b["));
+    }
+
+    #[test]
+    fn encode_insert_key() {
+        let result = encode_key(&Key::Named(NamedKey::Insert), false, false, false);
+        assert!(result.is_some());
+        let bytes = result.unwrap();
+        assert!(bytes.starts_with(b"\x1b["));
+    }
+
+    #[test]
+    fn encode_page_up_down() {
+        let pgup = encode_key(&Key::Named(NamedKey::PageUp), false, false, false);
+        assert!(pgup.is_some());
+        let pgdn = encode_key(&Key::Named(NamedKey::PageDown), false, false, false);
+        assert!(pgdn.is_some());
+        assert_ne!(pgup, pgdn);
+    }
+
+    #[test]
+    fn encode_left_right_arrows() {
+        let left = encode_key(&Key::Named(NamedKey::ArrowLeft), false, false, false);
+        assert_eq!(left, Some(b"\x1b[D".to_vec()));
+        let right = encode_key(&Key::Named(NamedKey::ArrowRight), false, false, false);
+        assert_eq!(right, Some(b"\x1b[C".to_vec()));
+    }
+
+    #[test]
+    fn encode_ctrl_a_through_z() {
+        // Ctrl+A = 0x01, Ctrl+Z = 0x1A
+        for (i, ch) in ('a'..='z').enumerate() {
+            let result = encode_key(&Key::Character(ch.to_string().into()), true, false, false);
+            let expected = (i as u8) + 1;
+            assert_eq!(
+                result,
+                Some(vec![expected]),
+                "Ctrl+{} should be 0x{:02x}",
+                ch,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn encode_f1_through_f12_all_different() {
+        let named_keys = [
+            NamedKey::F1, NamedKey::F2, NamedKey::F3, NamedKey::F4,
+            NamedKey::F5, NamedKey::F6, NamedKey::F7, NamedKey::F8,
+            NamedKey::F9, NamedKey::F10, NamedKey::F11, NamedKey::F12,
+        ];
+        let results: Vec<_> = named_keys
+            .iter()
+            .map(|k| encode_key(&Key::Named(*k), false, false, false))
+            .collect();
+        // All should produce some output
+        for (i, r) in results.iter().enumerate() {
+            assert!(r.is_some(), "F{} should produce output", i + 1);
+        }
+        // All should be unique
+        for i in 0..results.len() {
+            for j in (i + 1)..results.len() {
+                assert_ne!(results[i], results[j], "F{} and F{} should differ", i + 1, j + 1);
+            }
+        }
+    }
+
+    #[test]
+    fn encode_space() {
+        let result = encode_key(&Key::Named(NamedKey::Space), false, false, false);
+        assert_eq!(result, Some(b" ".to_vec()));
+    }
+
+    #[test]
+    fn encode_alt_character() {
+        let result = encode_key(&Key::Character("a".into()), false, false, true);
+        assert!(result.is_some());
+        let bytes = result.unwrap();
+        // Alt+a should produce ESC + a
+        assert_eq!(bytes, b"\x1ba".to_vec());
+    }
+
+    #[test]
+    fn encode_unknown_named_key_returns_none() {
+        // CapsLock has no terminal encoding
+        let result = encode_key(&Key::Named(NamedKey::CapsLock), false, false, false);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn encode_shift_arrows_produce_modified_sequences() {
+        let result = encode_key(&Key::Named(NamedKey::ArrowUp), false, true, false);
+        assert!(result.is_some());
+        let bytes = result.unwrap();
+        // Shift+Up should produce a modified sequence (different from plain Up)
+        assert_ne!(bytes, b"\x1b[A".to_vec());
+    }
 }

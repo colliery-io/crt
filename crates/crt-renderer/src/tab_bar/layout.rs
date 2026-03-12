@@ -180,3 +180,208 @@ impl TabLayout {
         self.dirty = false;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crt_theme::TabTheme;
+
+    fn layout_with_rects(tab_count: usize) -> TabLayout {
+        let mut state = TabBarState::new();
+        for i in 1..tab_count {
+            state.add_tab(format!("Tab {}", i));
+        }
+        let theme = TabTheme::default();
+        let mut layout = TabLayout::new();
+        layout.resize(800.0, 600.0);
+        layout.calculate_rects(&state, &theme);
+        layout
+    }
+
+    #[test]
+    fn new_layout_defaults() {
+        let layout = TabLayout::new();
+        assert_eq!(layout.height(), 36.0);
+        assert_eq!(layout.content_offset(), (0.0, 40.0)); // 36 + 4 padding
+        assert!(layout.is_dirty());
+        assert!(layout.tab_rects().is_empty());
+    }
+
+    #[test]
+    fn content_offset_respects_padding() {
+        let mut layout = TabLayout::new();
+        layout.set_content_padding(10.0);
+        assert_eq!(layout.content_offset(), (0.0, 46.0)); // 36 + 10
+    }
+
+    #[test]
+    fn resize_updates_screen_size() {
+        let mut layout = TabLayout::new();
+        layout.resize(1024.0, 768.0);
+        assert_eq!(layout.screen_size(), (1024.0, 768.0));
+        assert!(layout.is_dirty());
+    }
+
+    #[test]
+    fn calculate_rects_produces_correct_count() {
+        let layout = layout_with_rects(3);
+        assert_eq!(layout.tab_rects().len(), 3);
+        assert!(!layout.is_dirty()); // cleared after calculate
+    }
+
+    #[test]
+    fn calculate_rects_tabs_are_contiguous() {
+        let layout = layout_with_rects(3);
+        let rects = layout.tab_rects();
+        // Each tab should start after the previous one (with gap)
+        for i in 1..rects.len() {
+            assert!(
+                rects[i].x > rects[i - 1].x + rects[i - 1].width - 1.0,
+                "Tab {} should be after tab {}",
+                i,
+                i - 1
+            );
+        }
+    }
+
+    #[test]
+    fn calculate_rects_zero_tabs() {
+        let mut state = TabBarState::new();
+        // Remove the default tab by creating a fresh state with manipulated internals
+        // Actually, TabBarState always has at least 1 tab, so test with 1
+        let theme = TabTheme::default();
+        let mut layout = TabLayout::new();
+        layout.resize(800.0, 600.0);
+        layout.calculate_rects(&state, &theme);
+        assert_eq!(layout.tab_rects().len(), 1);
+
+        // Add more tabs
+        state.add_tab("A");
+        layout.mark_dirty();
+        layout.calculate_rects(&state, &theme);
+        assert_eq!(layout.tab_rects().len(), 2);
+    }
+
+    #[test]
+    fn tab_width_clamped_to_max() {
+        // Single tab with wide screen — should not exceed max_width
+        let layout = layout_with_rects(1);
+        let rects = layout.tab_rects();
+        let theme = TabTheme::default();
+        assert!(rects[0].width <= theme.tab.max_width);
+    }
+
+    #[test]
+    fn many_tabs_shrink_to_fit() {
+        // Many tabs should shrink but not below min_width
+        let layout = layout_with_rects(20);
+        let rects = layout.tab_rects();
+        let theme = TabTheme::default();
+        assert_eq!(rects.len(), 20);
+        for rect in rects {
+            assert!(rect.width >= theme.tab.min_width);
+        }
+    }
+
+    #[test]
+    fn hit_test_first_tab() {
+        let layout = layout_with_rects(3);
+        let first = &layout.tab_rects()[0];
+        // Click in center of first tab
+        let result = layout.hit_test(first.x + first.width / 2.0, first.y + first.height / 2.0);
+        assert_eq!(result, Some((0, false)));
+    }
+
+    #[test]
+    fn hit_test_close_button() {
+        let layout = layout_with_rects(3);
+        let first = &layout.tab_rects()[0];
+        // Click on close button area
+        let result = layout.hit_test(
+            first.close_x + first.close_width / 2.0,
+            first.y + first.height / 2.0,
+        );
+        assert_eq!(result, Some((0, true)));
+    }
+
+    #[test]
+    fn hit_test_outside_returns_none() {
+        let layout = layout_with_rects(3);
+        // Click way below the tab bar
+        assert_eq!(layout.hit_test(400.0, 500.0), None);
+        // Click way to the right
+        assert_eq!(layout.hit_test(2000.0, 10.0), None);
+    }
+
+    #[test]
+    fn hit_test_second_tab() {
+        let layout = layout_with_rects(3);
+        let second = &layout.tab_rects()[1];
+        let result =
+            layout.hit_test(second.x + second.width / 2.0, second.y + second.height / 2.0);
+        assert_eq!(result, Some((1, false)));
+    }
+
+    #[test]
+    fn scale_factor_affects_rects() {
+        let mut state = TabBarState::new();
+        state.add_tab("Tab 1");
+        let theme = TabTheme::default();
+
+        let mut layout1 = TabLayout::new();
+        layout1.resize(800.0, 600.0);
+        layout1.set_scale_factor(1.0);
+        layout1.calculate_rects(&state, &theme);
+
+        let mut layout2 = TabLayout::new();
+        layout2.resize(800.0, 600.0);
+        layout2.set_scale_factor(2.0);
+        layout2.calculate_rects(&state, &theme);
+
+        // At 2x scale, tab heights should be larger
+        assert!(layout2.tab_rects()[0].height > layout1.tab_rects()[0].height);
+    }
+
+    #[test]
+    fn tab_rect_contains() {
+        let rect = TabRect {
+            x: 10.0,
+            y: 5.0,
+            width: 100.0,
+            height: 30.0,
+            close_x: 90.0,
+            close_width: 16.0,
+        };
+        assert!(rect.contains(50.0, 20.0)); // center
+        assert!(rect.contains(10.0, 5.0)); // top-left edge
+        assert!(!rect.contains(9.0, 20.0)); // just outside left
+        assert!(!rect.contains(110.0, 20.0)); // just outside right
+        assert!(!rect.contains(50.0, 4.0)); // just above
+        assert!(!rect.contains(50.0, 35.0)); // just below
+    }
+
+    #[test]
+    fn tab_rect_close_contains() {
+        let rect = TabRect {
+            x: 10.0,
+            y: 5.0,
+            width: 100.0,
+            height: 30.0,
+            close_x: 90.0,
+            close_width: 16.0,
+        };
+        assert!(rect.close_contains(95.0, 20.0)); // in close area
+        assert!(!rect.close_contains(50.0, 20.0)); // in tab but not close
+        assert!(!rect.close_contains(95.0, 4.0)); // close x but above
+    }
+
+    #[test]
+    fn dirty_flag_lifecycle() {
+        let mut layout = TabLayout::new();
+        assert!(layout.is_dirty()); // dirty by default
+        layout.clear_dirty();
+        assert!(!layout.is_dirty());
+        layout.mark_dirty();
+        assert!(layout.is_dirty());
+    }
+}

@@ -373,4 +373,296 @@ mod tests {
         state.prev_tab(); // wraps back
         assert_eq!(state.active_tab_index(), 2);
     }
+
+    #[test]
+    fn add_tab_returns_incrementing_ids() {
+        let mut state = TabBarState::new();
+        let id1 = state.add_tab("A");
+        let id2 = state.add_tab("B");
+        let id3 = state.add_tab("C");
+        assert_eq!(id1, 1);
+        assert_eq!(id2, 2);
+        assert_eq!(id3, 3);
+    }
+
+    #[test]
+    fn select_tab_by_id() {
+        let mut state = TabBarState::new();
+        let id1 = state.add_tab("Tab 1");
+        let _id2 = state.add_tab("Tab 2");
+
+        assert!(state.select_tab(id1));
+        assert_eq!(state.active_tab_id(), Some(id1));
+
+        // Invalid ID
+        assert!(!state.select_tab(999));
+        assert_eq!(state.active_tab_id(), Some(id1)); // unchanged
+    }
+
+    #[test]
+    fn select_tab_by_index() {
+        let mut state = TabBarState::new();
+        state.add_tab("Tab 1");
+        state.add_tab("Tab 2");
+
+        assert!(state.select_tab_index(2));
+        assert_eq!(state.active_tab_index(), 2);
+
+        // Out of range
+        assert!(!state.select_tab_index(10));
+        assert_eq!(state.active_tab_index(), 2); // unchanged
+    }
+
+    #[test]
+    fn close_active_tab_selects_previous() {
+        let mut state = TabBarState::new();
+        let id1 = state.add_tab("Tab 1");
+        let id2 = state.add_tab("Tab 2");
+
+        // Select last tab then close it
+        state.select_tab(id2);
+        assert_eq!(state.active_tab_index(), 2);
+        assert!(state.close_tab(id2));
+        // Active index should clamp to last valid
+        assert!(state.active_tab_index() < state.tab_count());
+
+        // Close middle tab
+        state.select_tab(id1);
+        assert!(state.close_tab(id1));
+        assert_eq!(state.tab_count(), 1);
+    }
+
+    #[test]
+    fn close_nonexistent_tab_returns_false() {
+        let mut state = TabBarState::new();
+        state.add_tab("Tab 1");
+        assert!(!state.close_tab(999));
+        assert_eq!(state.tab_count(), 2);
+    }
+
+    #[test]
+    fn set_tab_title_from_osc() {
+        let mut state = TabBarState::new();
+        assert!(state.set_tab_title(0, "New Title"));
+        assert_eq!(state.get_tab_title(0), Some("New Title"));
+    }
+
+    #[test]
+    fn set_tab_title_truncates_long_titles() {
+        let mut state = TabBarState::new();
+        let long_title = "This is a very long tab title that exceeds 20 chars";
+        assert!(state.set_tab_title(0, long_title));
+        let title = state.get_tab_title(0).unwrap();
+        assert!(title.ends_with("..."));
+        assert!(title.chars().count() <= 20);
+    }
+
+    #[test]
+    fn set_tab_title_strips_control_chars() {
+        let mut state = TabBarState::new();
+        assert!(state.set_tab_title(0, "Hello\x1b[0mWorld"));
+        assert_eq!(state.get_tab_title(0), Some("Hello[0mWorld"));
+    }
+
+    #[test]
+    fn set_tab_title_rejects_empty() {
+        let mut state = TabBarState::new();
+        assert!(!state.set_tab_title(0, ""));
+        assert_eq!(state.get_tab_title(0), Some("Terminal")); // unchanged
+    }
+
+    #[test]
+    fn custom_title_blocks_osc_updates() {
+        let mut state = TabBarState::new();
+        assert!(state.set_custom_tab_title(0, "My Tab"));
+        assert!(state.has_custom_title(0));
+
+        // OSC update should be blocked
+        assert!(!state.set_tab_title(0, "From OSC"));
+        assert_eq!(state.get_tab_title(0), Some("My Tab"));
+
+        // Clear custom flag, OSC should work again
+        state.clear_custom_title(0);
+        assert!(!state.has_custom_title(0));
+        assert!(state.set_tab_title(0, "From OSC"));
+        assert_eq!(state.get_tab_title(0), Some("From OSC"));
+    }
+
+    #[test]
+    fn get_tab_title_nonexistent_returns_none() {
+        let state = TabBarState::new();
+        assert_eq!(state.get_tab_title(999), None);
+    }
+
+    // ── Edit mode tests ────────────────────────────────────────────
+
+    #[test]
+    fn edit_start_and_cancel() {
+        let mut state = TabBarState::new();
+        assert!(!state.is_editing());
+
+        assert!(state.start_editing(0));
+        assert!(state.is_editing());
+        assert_eq!(state.editing_tab_id(), Some(0));
+        assert_eq!(state.edit_state().text, "Terminal");
+
+        state.cancel_editing();
+        assert!(!state.is_editing());
+        assert_eq!(state.get_tab_title(0), Some("Terminal")); // unchanged
+    }
+
+    #[test]
+    fn edit_start_nonexistent_tab_fails() {
+        let mut state = TabBarState::new();
+        assert!(!state.start_editing(999));
+        assert!(!state.is_editing());
+    }
+
+    #[test]
+    fn edit_insert_and_confirm() {
+        let mut state = TabBarState::new();
+        state.start_editing(0);
+
+        // Clear existing text by backspacing
+        for _ in 0.."Terminal".len() {
+            state.edit_backspace();
+        }
+        assert_eq!(state.edit_state().text, "");
+
+        // Type new title
+        for c in "Hello".chars() {
+            state.edit_insert_char(c);
+        }
+        assert_eq!(state.edit_state().text, "Hello");
+        assert_eq!(state.edit_state().cursor, 5);
+
+        assert!(state.confirm_editing());
+        assert!(!state.is_editing());
+        assert_eq!(state.get_tab_title(0), Some("Hello"));
+        assert!(state.has_custom_title(0));
+    }
+
+    #[test]
+    fn edit_cursor_movement() {
+        let mut state = TabBarState::new();
+        state.start_editing(0);
+        // Cursor starts at end: "Terminal" len = 8
+        assert_eq!(state.edit_state().cursor, 8);
+
+        state.edit_cursor_home();
+        assert_eq!(state.edit_state().cursor, 0);
+
+        state.edit_cursor_end();
+        assert_eq!(state.edit_state().cursor, 8);
+
+        state.edit_cursor_left();
+        assert_eq!(state.edit_state().cursor, 7);
+
+        state.edit_cursor_right();
+        assert_eq!(state.edit_state().cursor, 8);
+
+        // Right at end should not go past
+        state.edit_cursor_right();
+        assert_eq!(state.edit_state().cursor, 8);
+
+        // Left at 0 should not go negative
+        state.edit_cursor_home();
+        state.edit_cursor_left();
+        assert_eq!(state.edit_state().cursor, 0);
+    }
+
+    #[test]
+    fn edit_backspace_and_delete() {
+        let mut state = TabBarState::new();
+        state.start_editing(0);
+        // Text is "Terminal", cursor at 8
+
+        // Backspace removes last char
+        state.edit_backspace();
+        assert_eq!(state.edit_state().text, "Termina");
+        assert_eq!(state.edit_state().cursor, 7);
+
+        // Move to start and delete forward
+        state.edit_cursor_home();
+        state.edit_delete();
+        assert_eq!(state.edit_state().text, "ermina");
+        assert_eq!(state.edit_state().cursor, 0);
+
+        // Backspace at position 0 does nothing
+        state.edit_backspace();
+        assert_eq!(state.edit_state().text, "ermina");
+
+        // Delete at end does nothing
+        state.edit_cursor_end();
+        state.edit_delete();
+        assert_eq!(state.edit_state().text, "ermina");
+    }
+
+    #[test]
+    fn edit_insert_respects_max_length() {
+        let mut state = TabBarState::new();
+        state.start_editing(0);
+        // Clear and fill to 50 chars
+        for _ in 0.."Terminal".len() {
+            state.edit_backspace();
+        }
+        for _ in 0..50 {
+            state.edit_insert_char('x');
+        }
+        assert_eq!(state.edit_state().text.len(), 50);
+        // 51st char should be rejected
+        state.edit_insert_char('y');
+        assert_eq!(state.edit_state().text.len(), 50);
+    }
+
+    #[test]
+    fn edit_operations_noop_when_not_editing() {
+        let mut state = TabBarState::new();
+        // These should all be no-ops when not editing
+        state.edit_insert_char('x');
+        state.edit_backspace();
+        state.edit_delete();
+        state.edit_cursor_left();
+        state.edit_cursor_right();
+        state.edit_cursor_home();
+        state.edit_cursor_end();
+        // No crash, title unchanged
+        assert_eq!(state.get_tab_title(0), Some("Terminal"));
+    }
+
+    #[test]
+    fn confirm_empty_edit_does_not_save() {
+        let mut state = TabBarState::new();
+        state.start_editing(0);
+        // Clear all text
+        for _ in 0.."Terminal".len() {
+            state.edit_backspace();
+        }
+        assert_eq!(state.edit_state().text, "");
+        // Confirm with empty text should not change title
+        assert!(!state.confirm_editing());
+        assert_eq!(state.get_tab_title(0), Some("Terminal"));
+    }
+
+    #[test]
+    fn prev_tab_single_tab_stays() {
+        let mut state = TabBarState::new();
+        assert_eq!(state.active_tab_index(), 0);
+        state.prev_tab();
+        assert_eq!(state.active_tab_index(), 0);
+        state.next_tab();
+        assert_eq!(state.active_tab_index(), 0);
+    }
+
+    #[test]
+    fn tabs_slice_reflects_state() {
+        let mut state = TabBarState::new();
+        state.add_tab("A");
+        state.add_tab("B");
+        let tabs = state.tabs();
+        assert_eq!(tabs.len(), 3);
+        assert_eq!(tabs[0].title, "Terminal");
+        assert_eq!(tabs[1].title, "A");
+        assert_eq!(tabs[2].title, "B");
+    }
 }

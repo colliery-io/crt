@@ -114,3 +114,143 @@ impl ThemeRegistry {
         self.scan_themes();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// Minimal valid CSS theme for testing
+    const MINIMAL_CSS: &str = r#"
+        :terminal {
+            color: #ffffff;
+            background: #000000;
+        }
+    "#;
+
+    fn setup_themes_dir(themes: &[(&str, &str)]) -> TempDir {
+        let dir = TempDir::new().unwrap();
+        for (name, css) in themes {
+            fs::write(dir.path().join(format!("{}.css", name)), css).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn new_empty_dir() {
+        let dir = TempDir::new().unwrap();
+        let registry = ThemeRegistry::new(dir.path().to_path_buf(), "default".to_string());
+        assert!(registry.list_themes().is_empty());
+    }
+
+    #[test]
+    fn new_nonexistent_dir() {
+        let registry =
+            ThemeRegistry::new(PathBuf::from("/nonexistent/themes"), "default".to_string());
+        assert!(registry.list_themes().is_empty());
+    }
+
+    #[test]
+    fn loads_css_files() {
+        let dir = setup_themes_dir(&[("alpha", MINIMAL_CSS), ("beta", MINIMAL_CSS)]);
+        let registry = ThemeRegistry::new(dir.path().to_path_buf(), "alpha".to_string());
+        let names = registry.list_themes();
+        assert_eq!(names.len(), 2);
+        assert!(names.contains(&"alpha"));
+        assert!(names.contains(&"beta"));
+    }
+
+    #[test]
+    fn ignores_non_css_files() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("valid.css"), MINIMAL_CSS).unwrap();
+        fs::write(dir.path().join("readme.txt"), "not a theme").unwrap();
+        fs::write(dir.path().join("data.json"), "{}").unwrap();
+        let registry = ThemeRegistry::new(dir.path().to_path_buf(), "valid".to_string());
+        assert_eq!(registry.list_themes(), vec!["valid"]);
+    }
+
+    #[test]
+    fn get_theme_by_name() {
+        let dir = setup_themes_dir(&[("test", MINIMAL_CSS)]);
+        let registry = ThemeRegistry::new(dir.path().to_path_buf(), "test".to_string());
+        assert!(registry.get_theme("test").is_some());
+        assert!(registry.get_theme("nonexistent").is_none());
+    }
+
+    #[test]
+    fn get_default_theme_when_present() {
+        let dir = setup_themes_dir(&[("mydefault", MINIMAL_CSS)]);
+        let registry = ThemeRegistry::new(dir.path().to_path_buf(), "mydefault".to_string());
+        let (name, _theme) = registry.get_default_theme();
+        assert_eq!(name, "mydefault");
+    }
+
+    #[test]
+    fn get_default_theme_falls_back_when_missing() {
+        let dir = setup_themes_dir(&[("other", MINIMAL_CSS)]);
+        let registry = ThemeRegistry::new(dir.path().to_path_buf(), "missing".to_string());
+        let (name, _theme) = registry.get_default_theme();
+        // Falls back to whatever theme is available
+        assert_eq!(name, "other");
+    }
+
+    #[test]
+    fn get_default_theme_uses_builtin_when_no_themes() {
+        let dir = TempDir::new().unwrap();
+        let registry = ThemeRegistry::new(dir.path().to_path_buf(), "anything".to_string());
+        let (name, _theme) = registry.get_default_theme();
+        assert_eq!(name, "default");
+    }
+
+    #[test]
+    fn default_theme_name_returns_configured() {
+        let dir = TempDir::new().unwrap();
+        let registry = ThemeRegistry::new(dir.path().to_path_buf(), "synthwave".to_string());
+        assert_eq!(registry.default_theme_name(), "synthwave");
+    }
+
+    #[test]
+    fn list_themes_sorted_alphabetically() {
+        let dir = setup_themes_dir(&[("zeta", MINIMAL_CSS), ("alpha", MINIMAL_CSS), ("mid", MINIMAL_CSS)]);
+        let registry = ThemeRegistry::new(dir.path().to_path_buf(), "alpha".to_string());
+        assert_eq!(registry.list_themes(), vec!["alpha", "mid", "zeta"]);
+    }
+
+    #[test]
+    fn reload_picks_up_new_themes() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("first.css"), MINIMAL_CSS).unwrap();
+        let mut registry = ThemeRegistry::new(dir.path().to_path_buf(), "first".to_string());
+        assert_eq!(registry.list_themes().len(), 1);
+
+        // Add a new theme
+        fs::write(dir.path().join("second.css"), MINIMAL_CSS).unwrap();
+        registry.reload_all();
+        assert_eq!(registry.list_themes().len(), 2);
+    }
+
+    #[test]
+    fn reload_removes_deleted_themes() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("temp.css"), MINIMAL_CSS).unwrap();
+        let mut registry = ThemeRegistry::new(dir.path().to_path_buf(), "temp".to_string());
+        assert_eq!(registry.list_themes().len(), 1);
+
+        fs::remove_file(dir.path().join("temp.css")).unwrap();
+        registry.reload_all();
+        assert!(registry.list_themes().is_empty());
+    }
+
+    #[test]
+    fn malformed_css_skipped() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("good.css"), MINIMAL_CSS).unwrap();
+        // Not valid theme CSS, but won't panic — just gets default/empty theme or skips
+        fs::write(dir.path().join("bad.css"), "this is not css { at all }}}").unwrap();
+        let registry = ThemeRegistry::new(dir.path().to_path_buf(), "good".to_string());
+        // Should at least have the good theme (bad may parse or fail gracefully)
+        assert!(registry.get_theme("good").is_some());
+    }
+}

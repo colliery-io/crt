@@ -942,4 +942,142 @@ unknown_field = "should be ignored"
         assert_eq!(config.window.columns, 80);
         assert!(error.is_some());
     }
+
+    // ========== Additional Edge Case Tests ==========
+
+    #[test]
+    fn test_keybinding_invalid_action_rejected() {
+        let result: Result<Keybinding, _> = toml::from_str(
+            r#"
+            key = "x"
+            mods = ["super"]
+            action = "nonexistent_action"
+            "#,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_keybinding_empty_mods_list() {
+        let binding: Keybinding = toml::from_str(
+            r#"
+            key = "space"
+            mods = []
+            action = "paste"
+            "#,
+        )
+        .unwrap();
+        assert!(binding.mods.is_empty());
+        assert_eq!(binding.action, KeyAction::Paste);
+    }
+
+    #[test]
+    fn test_keybindings_config_custom_replaces_defaults() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        // User provides only one binding — this replaces the entire default list
+        fs::write(
+            &config_path,
+            r#"
+[[keybindings.bindings]]
+key = "x"
+mods = ["super"]
+action = "quit"
+"#,
+        )
+        .unwrap();
+
+        let config = Config::load_from(&config_path);
+        assert_eq!(config.keybindings.bindings.len(), 1);
+        assert_eq!(config.keybindings.bindings[0].action, KeyAction::Quit);
+    }
+
+    #[test]
+    fn test_cursor_invalid_style_rejected() {
+        let result: Result<CursorConfig, _> = toml::from_str(r#"style = "beam""#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_partial_nested_config_preserves_sibling_defaults() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        // Set font size only — family and line_height should default
+        fs::write(&config_path, "[font]\nsize = 20.0\n").unwrap();
+
+        let config = Config::load_from(&config_path);
+        assert_eq!(config.font.size, 20.0);
+        // These should get their defaults
+        assert!(!config.font.family.is_empty());
+        assert!((config.font.line_height - 1.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_empty_config_file_uses_all_defaults() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+        fs::write(&config_path, "").unwrap();
+
+        let config = Config::load_from(&config_path);
+        assert_eq!(config.window.columns, 80);
+        assert_eq!(config.window.rows, 24);
+        assert_eq!(config.font.size, 14.0);
+    }
+
+    #[test]
+    fn test_config_paths_shell_assets_dir() {
+        let paths = ConfigPaths::new(PathBuf::from("/test/config"));
+        assert_eq!(
+            paths.shell_assets_dir(),
+            PathBuf::from("/test/config/shell")
+        );
+    }
+
+    #[test]
+    fn test_shell_config_semantic_prompts_default_false() {
+        let shell = ShellConfig::default();
+        assert!(!shell.semantic_prompts);
+    }
+
+    #[test]
+    fn test_shell_config_semantic_prompts_serde() {
+        let config: ShellConfig = toml::from_str("semantic_prompts = true").unwrap();
+        assert!(config.semantic_prompts);
+    }
+
+    #[test]
+    fn test_all_key_actions_deserialize() {
+        let actions = [
+            "new_tab",
+            "close_tab",
+            "next_tab",
+            "prev_tab",
+            "select_tab1",
+            "select_tab2",
+            "select_tab3",
+            "select_tab4",
+            "select_tab5",
+            "select_tab6",
+            "select_tab7",
+            "select_tab8",
+            "select_tab9",
+            "increase_font_size",
+            "decrease_font_size",
+            "reset_font_size",
+            "toggle_fullscreen",
+            "copy",
+            "paste",
+            "quit",
+        ];
+        for action in &actions {
+            let toml_str = format!(
+                "key = \"x\"\nmods = [\"super\"]\naction = \"{}\"",
+                action
+            );
+            let result: Result<Keybinding, _> = toml::from_str(&toml_str);
+            assert!(result.is_ok(), "Failed to parse action: {}", action);
+        }
+    }
 }
