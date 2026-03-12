@@ -10,6 +10,7 @@ use vello::kurbo::Rect;
 use vello::{AaConfig, RenderParams, Renderer, Scene, peniko};
 
 use super::{BackdropEffect, EffectConfig};
+use crate::shared_pipelines::SharedEffectsBlitPipeline;
 
 /// Manages backdrop effects and renders them to a texture
 ///
@@ -48,101 +49,19 @@ pub struct EffectsRenderer {
     /// Total elapsed time
     time: f32,
 
-    /// Blit pipeline for compositing effects to frame
-    blit_pipeline: wgpu::RenderPipeline,
-
-    /// Bind group layout for blit
-    blit_bind_group_layout: wgpu::BindGroupLayout,
-
-    /// Sampler for blit
-    blit_sampler: wgpu::Sampler,
+    /// Shared blit pipeline objects (pipeline, bind group layout, sampler)
+    shared_blit: Arc<SharedEffectsBlitPipeline>,
 
     /// Current bind group (recreated when texture changes)
     blit_bind_group: Option<wgpu::BindGroup>,
 }
 
 impl EffectsRenderer {
-    /// Create a new effects renderer with shared Vello renderer
-    pub fn new(
-        device: &wgpu::Device,
+    /// Create a new effects renderer with shared pipeline objects
+    pub fn new_with_shared(
         vello_renderer: Arc<Mutex<Option<Renderer>>>,
-        format: wgpu::TextureFormat,
+        shared_blit: &Arc<SharedEffectsBlitPipeline>,
     ) -> Self {
-        // Create blit shader
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Effects Blit Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/effects_blit.wgsl").into()),
-        });
-
-        // Bind group layout
-        let blit_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Effects Blit Bind Group Layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-            });
-
-        // Pipeline layout
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Effects Blit Pipeline Layout"),
-            bind_group_layouts: &[&blit_bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        // Blit pipeline with alpha blending
-        let blit_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Effects Blit Pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            multiview: None,
-            cache: None,
-        });
-
-        // Sampler
-        let blit_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Effects Blit Sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
-
         Self {
             effects: Vec::new(),
             vello_renderer,
@@ -151,11 +70,19 @@ impl EffectsRenderer {
             target_view: None,
             target_size: (0, 0),
             time: 0.0,
-            blit_pipeline,
-            blit_bind_group_layout,
-            blit_sampler,
+            shared_blit: shared_blit.clone(),
             blit_bind_group: None,
         }
+    }
+
+    /// Create a new effects renderer with its own pipeline objects
+    pub fn new(
+        device: &wgpu::Device,
+        vello_renderer: Arc<Mutex<Option<Renderer>>>,
+        format: wgpu::TextureFormat,
+    ) -> Self {
+        let shared_blit = Arc::new(SharedEffectsBlitPipeline::new(device, format));
+        Self::new_with_shared(vello_renderer, &shared_blit)
     }
 
     /// Add an effect to the renderer
@@ -260,7 +187,7 @@ impl EffectsRenderer {
             // Create bind group for blitting this texture
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Effects Blit Bind Group"),
-                layout: &self.blit_bind_group_layout,
+                layout: &self.shared_blit.bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
@@ -268,7 +195,7 @@ impl EffectsRenderer {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&self.blit_sampler),
+                        resource: wgpu::BindingResource::Sampler(&self.shared_blit.sampler),
                     },
                 ],
             });
@@ -286,7 +213,7 @@ impl EffectsRenderer {
     /// The render pass should already be started with the frame as target.
     pub fn composite<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
         if let Some(bind_group) = &self.blit_bind_group {
-            pass.set_pipeline(&self.blit_pipeline);
+            pass.set_pipeline(&self.shared_blit.pipeline);
             pass.set_bind_group(0, bind_group, &[]);
             pass.draw(0..4, 0..1);
         }

@@ -22,7 +22,8 @@ use std::sync::{Arc, Mutex};
 
 use crt_renderer::{
     BackgroundImagePipeline, BackgroundImageState, CrtPipeline, EffectPipeline, EffectsRenderer,
-    GlyphCache, GridRenderer, RectRenderer, SpriteAnimationState, TabBar, TerminalVelloRenderer,
+    GlyphCache, GridRenderer, RectRenderer, SharedPipelines, SpriteAnimationState, TabBar,
+    TerminalVelloRenderer,
 };
 
 /// Shared GPU resources across all windows
@@ -41,6 +42,8 @@ pub struct SharedGpuState {
     pub buffer_pool: BufferPool,
     /// Texture pool for reusing render target textures (fully integrated)
     pub texture_pool: TexturePool,
+    /// Shared render pipelines across all windows (created lazily on first window)
+    pub shared_pipelines: Option<SharedPipelines>,
 }
 
 impl SharedGpuState {
@@ -99,6 +102,18 @@ impl SharedGpuState {
             vello_renderer,
             buffer_pool,
             texture_pool,
+            shared_pipelines: None,
+        }
+    }
+
+    /// Ensure shared render pipelines are initialized for the given surface format.
+    ///
+    /// Called on first window creation when the surface format is known.
+    /// Subsequent calls are no-ops.
+    pub fn ensure_shared_pipelines(&mut self, target_format: wgpu::TextureFormat) {
+        if self.shared_pipelines.is_none() {
+            log::info!("Creating shared render pipelines for format {:?}", target_format);
+            self.shared_pipelines = Some(SharedPipelines::new(&self.device, target_format));
         }
     }
 

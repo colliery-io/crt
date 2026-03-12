@@ -4,8 +4,10 @@
 //! Each glyph is one instance with position, UV coords, and color.
 //! All text renders in a single draw call.
 
+use std::sync::Arc;
+
 use crate::glyph_cache::PositionedGlyph;
-use crate::shaders::builtin;
+use crate::shared_pipelines::SharedGridPipeline;
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
@@ -50,12 +52,16 @@ struct Globals {
 /// The renderer does not own its instance buffer - this allows for buffer pooling
 /// across window lifecycles. Use `create_instance_buffer()` to create a buffer,
 /// or provide one from a buffer pool.
+///
+/// Pipeline objects (pipeline, bind group layout, sampler) can be shared across
+/// windows via `new_with_shared()` to avoid duplicating Metal shader caches.
 pub struct GridRenderer {
-    pipeline: wgpu::RenderPipeline,
-    bind_group_layout: wgpu::BindGroupLayout,
+    /// Shared pipeline objects (pipeline, bind group layout, sampler).
+    /// Multiple GridRenderers can share the same Arc to avoid duplicate
+    /// Metal shader compilation (~5-15 MB per pipeline on macOS).
+    shared: Arc<SharedGridPipeline>,
     globals_buffer: wgpu::Buffer,
     instance_capacity: usize,
-    sampler: wgpu::Sampler,
     bind_group: Option<wgpu::BindGroup>,
     /// Pending instances to render
     instances: Vec<GlyphInstance>,
@@ -84,145 +90,51 @@ impl GridRenderer {
         })
     }
 
-    pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Grid Shader"),
-            source: wgpu::ShaderSource::Wgsl(builtin::GRID.into()),
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Grid Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Grid Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        // Instance buffer layout - simplified without offset field
-        let instance_layout = wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<GlyphInstance>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &[
-                // pos
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                // uv_min
-                wgpu::VertexAttribute {
-                    offset: 8,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                // uv_max
-                wgpu::VertexAttribute {
-                    offset: 16,
-                    shader_location: 2,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                // size
-                wgpu::VertexAttribute {
-                    offset: 24,
-                    shader_location: 3,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                // color
-                wgpu::VertexAttribute {
-                    offset: 32,
-                    shader_location: 4,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-            ],
-        };
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Grid Pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[instance_layout],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
-
-        let globals = Globals {
-            screen_size: [1.0, 1.0],
-            atlas_size: [1024.0, 1024.0],
-        };
-
-        let globals_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Grid Globals Buffer"),
-            contents: bytemuck::cast_slice(&[globals]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Grid Atlas Sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
+    /// Create a grid renderer using shared pipeline objects.
+    ///
+    /// This avoids duplicating the compiled Metal pipeline and shader caches
+    /// across multiple windows, saving ~5-15 MB per additional window.
+    pub fn new_with_shared(device: &wgpu::Device, shared: &Arc<SharedGridPipeline>) -> Self {
+        let globals_buffer = Self::create_globals_buffer(device);
 
         Self {
-            pipeline,
-            bind_group_layout,
+            shared: shared.clone(),
             globals_buffer,
             instance_capacity: Self::MAX_INSTANCES,
-            sampler,
             bind_group: None,
             instances: Vec::with_capacity(Self::MAX_INSTANCES),
             cached_screen_size: (0.0, 0.0),
         }
+    }
+
+    /// Create a grid renderer with its own pipeline objects.
+    ///
+    /// Prefer `new_with_shared()` when creating multiple renderers to avoid
+    /// duplicating GPU pipeline state.
+    pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
+        let shared = Arc::new(SharedGridPipeline::new(device, target_format));
+        let globals_buffer = Self::create_globals_buffer(device);
+
+        Self {
+            shared,
+            globals_buffer,
+            instance_capacity: Self::MAX_INSTANCES,
+            bind_group: None,
+            instances: Vec::with_capacity(Self::MAX_INSTANCES),
+            cached_screen_size: (0.0, 0.0),
+        }
+    }
+
+    fn create_globals_buffer(device: &wgpu::Device) -> wgpu::Buffer {
+        let globals = Globals {
+            screen_size: [1.0, 1.0],
+            atlas_size: [1024.0, 1024.0],
+        };
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Grid Globals Buffer"),
+            contents: bytemuck::cast_slice(&[globals]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        })
     }
 
     /// Update the bind group with a new glyph cache atlas
@@ -233,7 +145,7 @@ impl GridRenderer {
     ) {
         self.bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Grid Bind Group"),
-            layout: &self.bind_group_layout,
+            layout: &self.shared.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -245,7 +157,7 @@ impl GridRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    resource: wgpu::BindingResource::Sampler(&self.shared.sampler),
                 },
             ],
         }));
@@ -303,7 +215,7 @@ impl GridRenderer {
         // Upload instance data
         queue.write_buffer(instance_buffer, 0, bytemuck::cast_slice(&self.instances));
 
-        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_pipeline(&self.shared.pipeline);
         render_pass.set_bind_group(0, bind_group, &[]);
         render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
 

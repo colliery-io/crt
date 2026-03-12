@@ -3,7 +3,9 @@
 //! Renders colored rectangles for cell backgrounds.
 //! All rectangles render in a single draw call.
 
-use crate::shaders::builtin;
+use std::sync::Arc;
+
+use crate::shared_pipelines::SharedRectPipeline;
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
@@ -32,8 +34,12 @@ struct Globals {
 /// The renderer does not own its instance buffer - this allows for buffer pooling
 /// across window lifecycles. Use `create_instance_buffer()` to create a buffer,
 /// or provide one from a buffer pool.
+///
+/// Pipeline objects can be shared across windows via `new_with_shared()` to
+/// avoid duplicating Metal shader caches.
 pub struct RectRenderer {
-    pipeline: wgpu::RenderPipeline,
+    /// Shared pipeline objects (pipeline, bind group layout).
+    shared: Arc<SharedRectPipeline>,
     globals_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     instance_capacity: usize,
@@ -64,87 +70,39 @@ impl RectRenderer {
         })
     }
 
+    /// Create a rect renderer using shared pipeline objects.
+    pub fn new_with_shared(device: &wgpu::Device, shared: &Arc<SharedRectPipeline>) -> Self {
+        let (globals_buffer, bind_group) = Self::create_per_window_resources(device, &shared.bind_group_layout);
+
+        Self {
+            shared: shared.clone(),
+            globals_buffer,
+            bind_group,
+            instance_capacity: Self::MAX_INSTANCES,
+            instances: Vec::with_capacity(Self::MAX_INSTANCES),
+            cached_screen_size: (0.0, 0.0),
+        }
+    }
+
+    /// Create a rect renderer with its own pipeline objects.
     pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Rect Shader"),
-            source: wgpu::ShaderSource::Wgsl(builtin::RECT.into()),
-        });
+        let shared = Arc::new(SharedRectPipeline::new(device, target_format));
+        let (globals_buffer, bind_group) = Self::create_per_window_resources(device, &shared.bind_group_layout);
 
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Rect Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        Self {
+            shared,
+            globals_buffer,
+            bind_group,
+            instance_capacity: Self::MAX_INSTANCES,
+            instances: Vec::with_capacity(Self::MAX_INSTANCES),
+            cached_screen_size: (0.0, 0.0),
+        }
+    }
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Rect Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        // Instance buffer layout
-        let instance_layout = wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<RectInstance>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &[
-                // pos
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                // size
-                wgpu::VertexAttribute {
-                    offset: 8,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                // color
-                wgpu::VertexAttribute {
-                    offset: 16,
-                    shader_location: 2,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-            ],
-        };
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Rect Pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[instance_layout],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
-
+    fn create_per_window_resources(
+        device: &wgpu::Device,
+        bind_group_layout: &wgpu::BindGroupLayout,
+    ) -> (wgpu::Buffer, wgpu::BindGroup) {
         let globals = Globals {
             screen_size: [1.0, 1.0],
             _pad: [0.0, 0.0],
@@ -158,21 +116,14 @@ impl RectRenderer {
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Rect Bind Group"),
-            layout: &bind_group_layout,
+            layout: bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: globals_buffer.as_entire_binding(),
             }],
         });
 
-        Self {
-            pipeline,
-            globals_buffer,
-            bind_group,
-            instance_capacity: Self::MAX_INSTANCES,
-            instances: Vec::with_capacity(Self::MAX_INSTANCES),
-            cached_screen_size: (0.0, 0.0),
-        }
+        (globals_buffer, bind_group)
     }
 
     /// Clear pending instances
@@ -228,7 +179,7 @@ impl RectRenderer {
         // Upload instance data
         queue.write_buffer(instance_buffer, 0, bytemuck::cast_slice(&self.instances));
 
-        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_pipeline(&self.shared.pipeline);
         render_pass.set_bind_group(0, &self.bind_group, &[]);
         render_pass.set_vertex_buffer(0, instance_buffer.slice(..));
 

@@ -22,6 +22,7 @@ pub mod headless;
 pub mod mock;
 pub mod rect_renderer;
 pub mod shaders;
+pub mod shared_pipelines;
 pub mod sprite_renderer;
 pub mod tab_bar;
 pub mod terminal_vello;
@@ -38,6 +39,7 @@ pub use glyph_cache::{
     CachedGlyph, FontVariants, GlyphCache, GlyphKey, GlyphStyle, PositionedGlyph,
 };
 pub use grid_renderer::GridRenderer;
+pub use shared_pipelines::SharedPipelines;
 pub use mock::{MockRenderer, RenderCall};
 pub use rect_renderer::RectRenderer;
 pub use sprite_renderer::{
@@ -52,14 +54,19 @@ pub use traits::{
     TabRenderInfo, TextRenderer, UiRenderer,
 };
 
+use std::sync::Arc;
+
 use bytemuck::cast_slice;
 use crt_theme::Theme;
-use shaders::builtin;
+use shared_pipelines::{
+    SharedBackgroundImagePipeline, SharedBackgroundPipeline, SharedCompositePipeline,
+    SharedCrtPipeline,
+};
 use wgpu::util::DeviceExt;
 
 /// Background pipeline - renders gradient + animated grid
 pub struct BackgroundPipeline {
-    pipeline: wgpu::RenderPipeline,
+    shared: Arc<SharedBackgroundPipeline>,
     uniform_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     theme: Theme,
@@ -67,61 +74,7 @@ pub struct BackgroundPipeline {
 }
 
 impl BackgroundPipeline {
-    pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Background Shader"),
-            source: wgpu::ShaderSource::Wgsl(builtin::BACKGROUND.into()),
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Background Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Background Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Background Pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
-
+    pub fn new_with_shared(device: &wgpu::Device, shared: &Arc<SharedBackgroundPipeline>) -> Self {
         let theme = Theme::default();
         let uniforms = theme.to_uniforms(1.0, 1.0, 0.0);
 
@@ -133,7 +86,7 @@ impl BackgroundPipeline {
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Background Bind Group"),
-            layout: &bind_group_layout,
+            layout: &shared.bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: uniform_buffer.as_entire_binding(),
@@ -141,12 +94,17 @@ impl BackgroundPipeline {
         });
 
         Self {
-            pipeline,
+            shared: shared.clone(),
             uniform_buffer,
             bind_group,
             theme,
             start_time: std::time::Instant::now(),
         }
+    }
+
+    pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
+        let shared = Arc::new(SharedBackgroundPipeline::new(device, target_format));
+        Self::new_with_shared(device, &shared)
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
@@ -164,7 +122,7 @@ impl BackgroundPipeline {
     }
 
     pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
-        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_pipeline(&self.shared.pipeline);
         render_pass.set_bind_group(0, &self.bind_group, &[]);
         render_pass.draw(0..4, 0..1);
     }
@@ -184,86 +142,12 @@ pub struct BackgroundImageUniforms {
 
 /// Background image pipeline - renders textured background with sizing/positioning
 pub struct BackgroundImagePipeline {
-    pipeline: wgpu::RenderPipeline,
-    bind_group_layout: wgpu::BindGroupLayout,
+    shared: Arc<SharedBackgroundImagePipeline>,
     uniform_buffer: wgpu::Buffer,
-    sampler: wgpu::Sampler,
 }
 
 impl BackgroundImagePipeline {
-    pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Background Image Shader"),
-            source: wgpu::ShaderSource::Wgsl(builtin::BACKGROUND_IMAGE.into()),
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Background Image Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Background Image Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Background Image Pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
-
+    pub fn new_with_shared(device: &wgpu::Device, shared: &Arc<SharedBackgroundImagePipeline>) -> Self {
         let uniforms = BackgroundImageUniforms {
             uv_transform: [1.0, 1.0, 0.0, 0.0],
             opacity: 1.0,
@@ -276,21 +160,15 @@ impl BackgroundImagePipeline {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Background Image Sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            ..Default::default()
-        });
-
         Self {
-            pipeline,
-            bind_group_layout,
+            shared: shared.clone(),
             uniform_buffer,
-            sampler,
         }
+    }
+
+    pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
+        let shared = Arc::new(SharedBackgroundImagePipeline::new(device, target_format));
+        Self::new_with_shared(device, &shared)
     }
 
     pub fn create_bind_group(
@@ -300,7 +178,7 @@ impl BackgroundImagePipeline {
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Background Image Bind Group"),
-            layout: &self.bind_group_layout,
+            layout: &self.shared.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -312,7 +190,7 @@ impl BackgroundImagePipeline {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    resource: wgpu::BindingResource::Sampler(&self.shared.sampler),
                 },
             ],
         })
@@ -332,7 +210,7 @@ impl BackgroundImagePipeline {
         render_pass: &mut wgpu::RenderPass<'a>,
         bind_group: &'a wgpu::BindGroup,
     ) {
-        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_pipeline(&self.shared.pipeline);
         render_pass.set_bind_group(0, bind_group, &[]);
         render_pass.draw(0..4, 0..1);
     }
@@ -340,89 +218,14 @@ impl BackgroundImagePipeline {
 
 /// Composite pipeline - blends text onto screen with glow
 pub struct CompositePipeline {
-    pipeline: wgpu::RenderPipeline,
-    bind_group_layout: wgpu::BindGroupLayout,
+    shared: Arc<SharedCompositePipeline>,
     uniform_buffer: wgpu::Buffer,
-    sampler: wgpu::Sampler,
     theme: Theme,
     start_time: std::time::Instant,
 }
 
 impl CompositePipeline {
-    pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Composite Shader"),
-            source: wgpu::ShaderSource::Wgsl(builtin::COMPOSITE.into()),
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Composite Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Composite Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        // Use alpha blending to composite onto the background
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Composite Pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
-
+    pub fn new_with_shared(device: &wgpu::Device, shared: &Arc<SharedCompositePipeline>) -> Self {
         let theme = Theme::default();
         let uniforms = theme.to_uniforms(1.0, 1.0, 0.0);
 
@@ -432,21 +235,17 @@ impl CompositePipeline {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Composite Sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
-
         Self {
-            pipeline,
-            bind_group_layout,
+            shared: shared.clone(),
             uniform_buffer,
-            sampler,
             theme,
             start_time: std::time::Instant::now(),
         }
+    }
+
+    pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
+        let shared = Arc::new(SharedCompositePipeline::new(device, target_format));
+        Self::new_with_shared(device, &shared)
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
@@ -464,7 +263,7 @@ impl CompositePipeline {
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Composite Bind Group"),
-            layout: &self.bind_group_layout,
+            layout: &self.shared.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -476,7 +275,7 @@ impl CompositePipeline {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    resource: wgpu::BindingResource::Sampler(&self.shared.sampler),
                 },
             ],
         })
@@ -493,7 +292,7 @@ impl CompositePipeline {
         render_pass: &mut wgpu::RenderPass<'a>,
         bind_group: &'a wgpu::BindGroup,
     ) {
-        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_pipeline(&self.shared.pipeline);
         render_pass.set_bind_group(0, bind_group, &[]);
         render_pass.draw(0..4, 0..1);
     }
@@ -506,6 +305,17 @@ pub struct EffectPipeline {
 }
 
 impl EffectPipeline {
+    pub fn new_with_shared(
+        device: &wgpu::Device,
+        background_shared: &Arc<SharedBackgroundPipeline>,
+        composite_shared: &Arc<SharedCompositePipeline>,
+    ) -> Self {
+        Self {
+            background: BackgroundPipeline::new_with_shared(device, background_shared),
+            composite: CompositePipeline::new_with_shared(device, composite_shared),
+        }
+    }
+
     pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
         Self {
             background: BackgroundPipeline::new(device, target_format),
@@ -574,89 +384,15 @@ pub struct CrtUniforms {
 
 /// CRT post-processing pipeline - applies scanlines, curvature, vignette
 pub struct CrtPipeline {
-    pipeline: wgpu::RenderPipeline,
-    bind_group_layout: wgpu::BindGroupLayout,
+    shared: Arc<SharedCrtPipeline>,
     uniform_buffer: wgpu::Buffer,
-    sampler: wgpu::Sampler,
     start_time: std::time::Instant,
     enabled: bool,
     params: crt_theme::CrtEffect,
 }
 
 impl CrtPipeline {
-    pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("CRT Shader"),
-            source: wgpu::ShaderSource::Wgsl(builtin::CRT.into()),
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("CRT Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("CRT Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("CRT Pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
-
+    pub fn new_with_shared(device: &wgpu::Device, shared: &Arc<SharedCrtPipeline>) -> Self {
         let uniforms = CrtUniforms {
             screen_size: [1.0, 1.0],
             time: 0.0,
@@ -677,22 +413,18 @@ impl CrtPipeline {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("CRT Sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
-
         Self {
-            pipeline,
-            bind_group_layout,
+            shared: shared.clone(),
             uniform_buffer,
-            sampler,
             start_time: std::time::Instant::now(),
             enabled: false,
             params: crt_theme::CrtEffect::default(),
         }
+    }
+
+    pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
+        let shared = Arc::new(SharedCrtPipeline::new(device, target_format));
+        Self::new_with_shared(device, &shared)
     }
 
     /// Set CRT effect from theme
@@ -717,7 +449,7 @@ impl CrtPipeline {
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("CRT Bind Group"),
-            layout: &self.bind_group_layout,
+            layout: &self.shared.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -729,7 +461,7 @@ impl CrtPipeline {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    resource: wgpu::BindingResource::Sampler(&self.shared.sampler),
                 },
             ],
         })
@@ -758,7 +490,7 @@ impl CrtPipeline {
         render_pass: &mut wgpu::RenderPass<'a>,
         bind_group: &'a wgpu::BindGroup,
     ) {
-        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_pipeline(&self.shared.pipeline);
         render_pass.set_bind_group(0, bind_group, &[]);
         render_pass.draw(0..4, 0..1);
     }
@@ -793,6 +525,7 @@ impl Drop for CrtPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shaders::builtin;
 
     #[test]
     fn test_shaders_compile() {

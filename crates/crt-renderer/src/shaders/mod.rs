@@ -23,4 +23,7 @@ pub mod builtin {
 
     /// CRT post-processing shader - scanlines, curvature, vignette
     pub const CRT: &str = include_str!("crt.wgsl");
+
+    /// Effects blit shader - composites effects texture onto frame
+    pub const EFFECTS_BLIT: &str = include_str!("effects_blit.wgsl");
 }

@@ -28,7 +28,7 @@ impl App {
     pub(crate) fn create_window(&mut self, event_loop: &ActiveEventLoop) -> WindowId {
         log::debug!("Creating new window");
         self.init_shared_gpu();
-        let shared = self.shared_gpu.as_ref().unwrap();
+        let shared = self.shared_gpu.as_mut().unwrap();
 
         // Calculate initial window size
         let font_size = self.config.font.size;
@@ -85,6 +85,10 @@ impl App {
         };
         surface.configure(&shared.device, &surface_config);
 
+        // Initialize shared render pipelines (created once, shared across all windows)
+        shared.ensure_shared_pipelines(format);
+        let pipelines = shared.shared_pipelines.as_ref().unwrap();
+
         // Initialize glyph caches with font variants from config
         let scaled_font_size = self.config.font.size * scale_factor;
         let line_height_multiplier = self.config.font.line_height;
@@ -99,12 +103,12 @@ impl App {
         glyph_cache.precache_ascii();
         glyph_cache.flush(&shared.queue);
 
-        let mut grid_renderer = GridRenderer::new(&shared.device, format);
+        let mut grid_renderer = GridRenderer::new_with_shared(&shared.device, &pipelines.grid);
         grid_renderer.set_glyph_cache(&shared.device, &glyph_cache);
         grid_renderer.update_screen_size(&shared.queue, size.width as f32, size.height as f32);
 
         // Separate renderer for output text (rendered flat, no glow)
-        let mut output_grid_renderer = GridRenderer::new(&shared.device, format);
+        let mut output_grid_renderer = GridRenderer::new_with_shared(&shared.device, &pipelines.grid);
         output_grid_renderer.set_glyph_cache(&shared.device, &glyph_cache);
         output_grid_renderer.update_screen_size(
             &shared.queue,
@@ -120,19 +124,23 @@ impl App {
         tab_glyph_cache.precache_ascii();
         tab_glyph_cache.flush(&shared.queue);
 
-        let mut tab_title_renderer = GridRenderer::new(&shared.device, format);
+        let mut tab_title_renderer = GridRenderer::new_with_shared(&shared.device, &pipelines.grid);
         tab_title_renderer.set_glyph_cache(&shared.device, &tab_glyph_cache);
         tab_title_renderer
             .update_screen_size(&shared.queue, size.width as f32, size.height as f32);
 
         // Effect pipeline for background rendering - get theme from registry
         let (theme_name, theme) = self.theme_registry.get_default_theme();
-        let mut effect_pipeline = crt_renderer::EffectPipeline::new(&shared.device, format);
+        let mut effect_pipeline = crt_renderer::EffectPipeline::new_with_shared(
+            &shared.device,
+            &pipelines.background,
+            &pipelines.composite,
+        );
         effect_pipeline.set_theme(theme.clone());
 
         // Backdrop effects renderer (grid, starfield, rain, particles, etc.)
         let mut effects_renderer =
-            EffectsRenderer::new(&shared.device, shared.vello_renderer_arc(), format);
+            EffectsRenderer::new_with_shared(shared.vello_renderer_arc(), &pipelines.effects_blit);
         // Add effects (disabled by default, enabled via CSS)
         effects_renderer.add_effect(Box::new(GridEffect::new()));
         effects_renderer.add_effect(Box::new(StarfieldEffect::new()));
@@ -176,11 +184,11 @@ impl App {
         }));
 
         // Rect renderer for cell backgrounds and tab bar
-        let rect_renderer = RectRenderer::new(&shared.device, format);
+        let rect_renderer = RectRenderer::new_with_shared(&shared.device, &pipelines.rect);
 
         // Separate rect renderer for overlays (cursor, selection, underlines)
         // to avoid buffer conflicts with tab bar rendering
-        let overlay_rect_renderer = RectRenderer::new(&shared.device, format);
+        let overlay_rect_renderer = RectRenderer::new_with_shared(&shared.device, &pipelines.rect);
 
         // Checkout instance buffers from pool (reused across window lifecycles)
         use crate::gpu::BufferClass;
@@ -210,7 +218,7 @@ impl App {
             .expect("Buffer pool checkout failed");
 
         // Background image pipeline (always created, state only if theme has background image)
-        let background_image_pipeline = BackgroundImagePipeline::new(&shared.device, format);
+        let background_image_pipeline = BackgroundImagePipeline::new_with_shared(&shared.device, &pipelines.background_image);
         let (background_image_state, background_image_bind_group) =
             if let Some(ref bg_image) = theme.background_image {
                 match BackgroundImageState::new(&shared.device, &shared.queue, bg_image) {
@@ -246,7 +254,7 @@ impl App {
             .create_bind_group(&shared.device, text_texture.view());
 
         // CRT post-processing pipeline
-        let mut crt_pipeline = CrtPipeline::new(&shared.device, format);
+        let mut crt_pipeline = CrtPipeline::new_with_shared(&shared.device, &pipelines.crt);
         crt_pipeline.set_effect(theme.crt);
         let (crt_texture, crt_bind_group) = if crt_pipeline.is_enabled() {
             log::info!("CRT effect enabled - creating intermediate texture from pool");
