@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" preserveAspectRatio="none">
+  <defs>
+    <!-- Sky gradient -->
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5ba3d9"/>
+      <stop offset="50%" stop-color="#87ceeb"/>
+      <stop offset="75%" stop-color="#b8e4f0"/>
+      <stop offset="100%" stop-color="#d4f0e8"/>
+    </linearGradient>
+    <!-- Grass gradient -->
+    <linearGradient id="grass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5cb85c"/>
+      <stop offset="100%" stop-color="#3a7a3a"/>
+    </linearGradient>
+    <!-- Distant hills -->
+    <linearGradient id="hills" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6dc46d"/>
+      <stop offset="100%" stop-color="#4a9a4a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Sky -->
+  <rect width="1920" height="1080" fill="url(#sky)"/>
+
+  <!-- Soft clouds -->
+  <ellipse cx="300" cy="200" rx="180" ry="60" fill="rgba(255,255,255,0.4)"/>
+  <ellipse cx="380" cy="190" rx="140" ry="50" fill="rgba(255,255,255,0.5)"/>
+  <ellipse cx="240" cy="195" rx="120" ry="45" fill="rgba(255,255,255,0.45)"/>
+
+  <ellipse cx="1400" cy="280" rx="200" ry="55" fill="rgba(255,255,255,0.35)"/>
+  <ellipse cx="1500" cy="270" rx="150" ry="50" fill="rgba(255,255,255,0.45)"/>
+
+  <ellipse cx="900" cy="140" rx="160" ry="45" fill="rgba(255,255,255,0.3)"/>
+  <ellipse cx="980" cy="135" rx="120" ry="40" fill="rgba(255,255,255,0.4)"/>
+
+  <!-- Distant rolling hills -->
+  <path d="M0,750 Q200,680 480,720 Q700,680 960,710 Q1200,670 1440,700 Q1650,680 1920,720 L1920,1080 L0,1080Z" fill="url(#hills)" opacity="0.6"/>
+
+  <!-- Main grass -->
+  <path d="M0,800 Q300,760 600,790 Q900,760 1200,780 Q1500,750 1920,780 L1920,1080 L0,1080Z" fill="url(#grass)"/>
+
+  <!-- Darker grass foreground -->
+  <path d="M0,900 Q250,880 500,890 Q750,870 1000,885 Q1300,870 1600,880 Q1800,875 1920,890 L1920,1080 L0,1080Z" fill="#3a7a3a" opacity="0.7"/>
+</svg>

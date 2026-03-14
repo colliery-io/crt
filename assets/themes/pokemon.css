@@ -1,0 +1,141 @@
+/* Pokemon Theme - Gotta Catch 'Em All */
+/* Electric yellow meets Pokeball red on a deep indigo night */
+
+:terminal {
+    font-family: "MesloLGS NF", "Fira Code", monospace;
+    font-size: 14;
+    line-height: 1.3;
+    ligatures: true;
+
+    color: #f0e8d8;
+    background: #1a1040;
+    background-image: url("pokemon/background.png");
+    background-size: cover;
+    background-position: center;
+    --background-opacity: 0.4;
+
+    /* Subtle electric glow */
+    text-shadow: 0 0 8px rgba(255, 220, 50, 0.25);
+}
+
+:terminal::cursor {
+    background: #ffdc32;
+    text-shadow: 0 0 12px rgba(255, 220, 50, 0.7);
+}
+
+:terminal::selection {
+    background: #ee1515;
+    color: #ffffff;
+}
+
+:terminal::highlight {
+    background: #ffd700;
+    color: #1a1040;
+}
+
+:terminal::backdrop {
+    /* Running Pikachu */
+    --sprite-enabled: true;
+    --sprite-path: "pokemon/pikachu-run.png";
+    --sprite-frame-width: 128;
+    --sprite-frame-height: 72;
+    --sprite-columns: 5;
+    --sprite-rows: 1;
+    --sprite-frame-count: 5;
+    --sprite-fps: 10;
+    --sprite-scale: 2.0;
+    --sprite-opacity: 1.0;
+    --sprite-position: bottom-right;
+    --sprite-motion: none;
+}
+
+/* ANSI Palette - Pokemon type colors */
+:terminal::palette {
+    /* Normal colors */
+    --color-0: #1a1040;   /* black - deep indigo */
+    --color-1: #ee1515;   /* red - Pokeball */
+    --color-2: #4fc44f;   /* green - Grass type */
+    --color-3: #ffdc32;   /* yellow - Electric type */
+    --color-4: #3b82c4;   /* blue - Water type */
+    --color-5: #b86dc4;   /* magenta - Psychic type */
+    --color-6: #45c4c4;   /* cyan - Ice type */
+    --color-7: #f0e8d8;   /* white - menu text */
+
+    /* Bright colors */
+    --color-8: #3a2a6a;   /* bright black - lighter indigo */
+    --color-9: #ff4444;   /* bright red - Fire type */
+    --color-10: #78e878;  /* bright green - Bug type */
+    --color-11: #ffed6f;  /* bright yellow - bright electric */
+    --color-12: #6ba8e8;  /* bright blue - Flying type */
+    --color-13: #d88be8;  /* bright magenta - Fairy type */
+    --color-14: #78e8e8;  /* bright cyan - bright ice */
+    --color-15: #ffffff;  /* bright white */
+
+    /* Extended highlights */
+    --color-196: #ee1515; /* Pokeball red */
+    --color-208: #f08030; /* Fire type orange */
+    --color-226: #ffdc32; /* Electric yellow */
+    --color-46: #78c850;  /* Grass green */
+    --color-21: #6890f0;  /* Water blue */
+    --color-129: #a040a0; /* Poison purple */
+}
+
+/* Tab bar - Pokedex style */
+:terminal::tab-bar {
+    background: #1a1040;
+    border-color: #ee1515;
+    height: 36px;
+    padding: 4px;
+}
+
+:tab {
+    background: #241858;
+    color: #c8b050;
+    border-radius: 6px;
+    min-width: 80px;
+    max-width: 200px;
+}
+
+:tab.active {
+    background: #ee1515;
+    color: #ffffff;
+    accent-color: #ffdc32;
+    text-shadow: 0 0 8px rgba(255, 220, 50, 0.6);
+}
+
+:terminal::tab-close {
+    color: #c8b050;
+    --hover-background: #ee1515;
+    --hover-color: #ffffff;
+}
+
+/* UI elements */
+:terminal::ui-focus {
+    --ring-color: #ffdc32;
+    --glow-color: rgba(255, 220, 50, 0.4);
+    --ring-thickness: 2px;
+    --glow-size: 4px;
+}
+
+:terminal::ui-hover {
+    background: rgba(238, 21, 21, 0.25);
+}
+
+:terminal::context-menu {
+    background: rgba(26, 16, 64, 0.98);
+    border-color: rgba(238, 21, 21, 0.5);
+    color: #f0e8d8;
+}
+
+:terminal::search-bar {
+    background: rgba(26, 16, 64, 0.95);
+    color: #f0e8d8;
+    --placeholder-color: rgba(200, 176, 80, 0.7);
+    --no-match-color: #ee1515;
+}
+
+:terminal::rename-bar {
+    background: rgba(26, 16, 64, 0.98);
+    color: #ffdc32;
+    --label-color: #c8b050;
+}
