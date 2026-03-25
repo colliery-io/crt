@@ -21,6 +21,11 @@ Complete reference of all CSS properties supported by CRT Terminal themes.
 | `:terminal::on-command-fail` | Event override: command exited with non-zero code |
 | `:terminal::on-focus` | Event override: window gained focus |
 | `:terminal::on-blur` | Event override: window lost focus |
+| `:terminal::ui-focus` | Focus ring styling |
+| `:terminal::ui-hover` | Hover state |
+| `:terminal::context-menu` | Context menu styling |
+| `:terminal::search-bar` | Search bar styling |
+| `:terminal::rename-bar` | Window/tab rename bar |
 
 ---
 
@@ -32,7 +37,7 @@ Complete reference of all CSS properties supported by CRT Terminal themes.
 |----------|------|---------|-------------|
 | `font-family` | string list | system default | Comma-separated font names |
 | `font-size` | number | 14 | Font size in points |
-| `line-height` | number | 1.3 | Line height multiplier |
+| `line-height` | number | 1.5 | Line height multiplier |
 | `--font-bold` | string | auto | Bold font family name |
 | `--font-italic` | string | auto | Italic font family name |
 | `--font-bold-italic` | string | auto | Bold italic font family name |
@@ -150,7 +155,7 @@ Can also use `--ansi-{name}` in `:terminal`:
 | `--starfield-density` | number | 100 | Number of stars |
 | `--starfield-layers` | number | 3 | Parallax layers |
 | `--starfield-speed` | number | 0.3 | Movement speed |
-| `--starfield-direction` | keyword | down | `up`, `down`, `left`, `right` |
+| `--starfield-direction` | keyword | down | `up`, `down`, `left`, `right`, `static` |
 | `--starfield-twinkle` | bool | false | Enable twinkling |
 | `--starfield-twinkle-speed` | number | 2.0 | Twinkle frequency |
 | `--starfield-min-size` | number | 1.0 | Minimum star size |
@@ -371,25 +376,61 @@ Within event selectors, you can override:
 
 ### Shell Integration Requirements
 
-Command success/failure detection requires OSC 133 semantic prompt support in your shell. Add to your shell config:
+Command success/failure detection requires OSC 133 semantic prompt support in your shell. See [How to Set Up Reactive Themes](../how-to/set-up-reactive-themes.md) for setup instructions.
 
-**Bash** (`~/.bashrc`):
-```bash
-PS1='\[\e]133;A\a\]'$PS1
-PROMPT_COMMAND='echo -ne "\033]133;D;$?\007"'
-```
+---
 
-**Zsh** (`~/.zshrc`):
-```zsh
-precmd() { print -Pn "\e]133;A\a" }
-preexec() { print -Pn "\e]133;C\a" }
-```
+## UI Selectors
 
-Also enable in `config.toml`:
-```toml
-[shell]
-semantic_prompts = true
-```
+### :terminal::ui-focus Properties
+
+Focus ring styling applied when the terminal window has keyboard focus.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `--ring-color` | color | Focus ring color |
+| `--ring-thickness` | number, px | Ring thickness |
+| `--glow-color` | color | Focus glow color |
+| `--glow-size` | number, px | Glow blur size |
+
+### :terminal::ui-hover Properties
+
+Hover state applied when the cursor is over interactive UI elements.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `background` | color | Hover background color |
+
+### :terminal::context-menu Properties
+
+Context menu styling (right-click menu).
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `background` | color | Menu background |
+| `border-color` | color | Menu border |
+| `color` | color | Menu text color |
+
+### :terminal::search-bar Properties
+
+Search bar styling (shown when using `Cmd+F`).
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `background` | color | Search bar background |
+| `color` | color | Search text color |
+| `--placeholder-color` | color | Placeholder text color |
+| `--no-match-color` | color | Color when no matches found |
+
+### :terminal::rename-bar Properties
+
+Window/tab rename bar styling.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `background` | color | Rename bar background |
+| `color` | color | Input text color |
+| `--label-color` | color | Label text color |
 
 ---
 

@@ -262,23 +262,9 @@ chmod +x gif-to-sprite.sh
 - Ensure all frames are the same size
 - Use `-geometry 512x512+0+0` to force specific frame size
 
-## Sprite Properties Reference
+## Sprite CSS Properties
 
-| Property | Description |
-|----------|-------------|
-| `--sprite-enabled` | Enable sprite animation |
-| `--sprite-path` | Path to sprite sheet image |
-| `--sprite-frame-width` | Width of each frame in pixels |
-| `--sprite-frame-height` | Height of each frame in pixels |
-| `--sprite-columns` | Number of columns in the grid |
-| `--sprite-rows` | Number of rows in the grid |
-| `--sprite-frame-count` | Total number of frames |
-| `--sprite-fps` | Animation frames per second |
-| `--sprite-scale` | Display scale multiplier |
-| `--sprite-opacity` | Sprite opacity (0.0-1.0) |
-| `--sprite-position` | Position: `center`, `bottom-right`, `top-left`, etc. |
-| `--sprite-motion` | Movement: `none`, `float`, `bounce`, `pace` |
-| `--sprite-motion-speed` | Motion speed multiplier |
+For the complete list of sprite CSS properties and their values, see the [Theme CSS Properties Reference](../reference/theme-css-properties.md#sprite-animation).
 
 ## See Also
 
