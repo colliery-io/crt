@@ -36,7 +36,7 @@ jobs:
         run: cargo build --all-targets
 
       - name: Run tests
-        run: cargo test --all-targets
+        run: cargo test --all-targets ${{ runner.os == 'Linux' && '-- --skip visual_' || '' }}
 
   visual-tests:
     # Visual/golden tests only run on macOS where golden images were generated
