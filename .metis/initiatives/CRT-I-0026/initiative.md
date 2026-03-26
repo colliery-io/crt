@@ -4,19 +4,18 @@ level: initiative
 title: "Tab Detachment to New Window"
 short_code: "CRT-I-0026"
 created_at: 2025-12-31T14:28:08.984646+00:00
-updated_at: 2025-12-31T14:28:08.984646+00:00
+updated_at: 2026-03-26T16:20:41.720779+00:00
 parent: CRT-V-0001
 blocked_by: []
 archived: false
 
 tags:
   - "#initiative"
-  - "#phase/discovery"
+  - "#phase/active"
 
 
 exit_criteria_met: false
 estimated_complexity: L
-strategy_id: NULL
 initiative_id: tab-detachment-to-new-window
 ---
 
@@ -37,15 +36,15 @@ However, there's no drag-and-drop infrastructure for tabs.
 ## Goals & Non-Goals
 
 **Goals:**
-- Drag a tab outside the window bounds to detach it into a new window
-- The shell/PTY session continues uninterrupted during detachment
+- **Tab reordering** — drag within the tab bar to rearrange tab order
+- **Tab detachment** — drag a tab outside the window bounds to create a new window
+- **Tab merging** — drag a tab onto an existing window's tab bar to move it there
+- The shell/PTY session continues uninterrupted during all drag operations
 - New window inherits the tab's current working directory and shell state
-- Visual feedback during drag (ghost tab, drop indicator)
+- Visual feedback during drag (ghost tab, drop indicator, insertion caret for reorder/merge)
+- Unified drag state machine shared across all three interactions
 
 **Non-Goals:**
-- Tab reordering within a window (separate initiative, simpler)
-- Merging tabs from different windows (reverse operation - future work)
-- Dragging tabs between existing windows (complex drop targeting)
 - Drag to dock/taskbar (OS-specific, out of scope)
 
 ## Use Cases
@@ -83,19 +82,27 @@ The `ShellTerminal` (PTY handle) is independent of the window. We can:
 2. Add it to destination window's `shells` HashMap
 3. PTY file descriptors remain valid across this move
 
-### Detachment Flow
+### Unified Drag State Machine
 ```
-1. Mouse down on tab → Start potential drag
-2. Mouse move → Track drag state, show ghost if threshold exceeded
-3. Mouse exits window bounds → Detach mode activated
-4. Mouse up outside window → Execute detachment:
-   a. Remove tab from source TabBar
-   b. Remove ShellTerminal from source shells HashMap
-   c. Create new window
-   d. Add tab to new TabBar
-   e. Add ShellTerminal to new shells HashMap
-   f. Focus new window at mouse position
+1. Mouse down on tab → Start potential drag (record start position)
+2. Mouse move beyond threshold → Activate drag (show ghost tab at cursor)
+3. Determine drop target based on cursor position:
+   a. Over same window's tab bar → REORDER mode (show insertion caret)
+   b. Over different window's tab bar → MERGE mode (show insertion caret on target)
+   c. Outside all window bounds → DETACH mode (show detach indicator)
+4. Mouse up → Execute action based on mode:
+   - REORDER: Move tab to new index in same TabBar
+   - MERGE: Extract tab+shell from source, insert into target window
+   - DETACH: Extract tab+shell from source, create new window at cursor
+5. Escape key at any point → Cancel drag, restore original state
 ```
+
+### Drop Target Resolution
+The app must track all window positions/sizes to resolve which window (if any)
+the cursor is over. On macOS, `winit` provides `outer_position()` and
+`inner_size()` per window. The drop target resolver checks windows in
+front-to-back z-order and further narrows to "is cursor over the tab bar region"
+to distinguish merge vs. detach when cursor is over a window but not its tab bar.
 
 ## Detailed Design
 
@@ -103,15 +110,30 @@ The `ShellTerminal` (PTY handle) is independent of the window. We can:
 
 ```rust
 // src/input/drag.rs (new)
+
+/// What will happen when the user releases the mouse
+#[derive(Debug, Clone, PartialEq)]
+pub enum DragDropTarget {
+    /// Reorder within the source window's tab bar
+    Reorder { insert_index: usize },
+    /// Merge into a different window's tab bar
+    Merge { target_window_id: WindowId, insert_index: usize },
+    /// Detach into a brand new window
+    Detach,
+    /// Cursor hasn't moved past threshold yet (or is in ambiguous zone)
+    Pending,
+}
+
 pub struct TabDragState {
     pub tab_id: TabId,
     pub source_window_id: WindowId,
     pub start_pos: PhysicalPosition<f64>,
     pub current_pos: PhysicalPosition<f64>,
-    pub is_detaching: bool,  // true when cursor outside window
+    pub drop_target: DragDropTarget,
+    pub drag_active: bool,  // false until threshold exceeded
 }
 
-// In WindowState or App
+// Lives on App, not WindowState — needs cross-window visibility
 pub drag_state: Option<TabDragState>,
 ```
 
@@ -222,33 +244,47 @@ impl TabBarState {
 
 ## Implementation Plan
 
-### Phase 1: Drag State Infrastructure
-- Add `TabDragState` struct
-- Modify mouse handling to track potential drags
-- Add drag threshold (prevent accidental drags)
+### Phase 1: Drag State Infrastructure & Drop Target Resolution
+- Add `TabDragState`, `DragDropTarget` types in `src/input/drag.rs`
+- Modify mouse handling to track potential drags with threshold
+- Build drop target resolver: given cursor screen position + all window rects, return `DragDropTarget`
+- Drag state lives on `App` (not per-window) for cross-window visibility
 
-### Phase 2: Window Bounds Detection  
-- Track when cursor exits window during drag
-- Set `is_detaching` flag appropriately
-- Handle multi-monitor scenarios
+### Phase 2: Tab Reordering (simplest case first)
+- Implement `TabBarState::move_tab(from_index, to_index)`
+- Render insertion caret between tabs during reorder drag
+- Wire up mouse release → reorder execution
+- No cross-window concerns yet — validates the drag infra end-to-end
 
-### Phase 3: Tab/Shell Extraction
-- Add `TabBarState::remove_tab()` method
-- Implement shell extraction from source window
-- Handle "last tab" case (close source window)
+### Phase 3: Tab/Shell Extraction & Detachment
+- Add `TabBarState::remove_tab()` and `add_existing_tab()` methods
+- Implement shell extraction from source window's `shells` HashMap
+- Last-tab guard: if source window has only one tab, drag is not initiated (no detach/merge allowed)
+- Create new window at cursor position with extracted tab+shell
+- Verify PTY stability during transfer
 
-### Phase 4: New Window Creation
-- Create window at cursor position
-- Initialize with extracted tab and shell
-- Focus new window
+### Phase 4: Tab Merging (cross-window drop)
+- Extend drop target resolver to hit-test other windows' tab bar regions
+- Reuse extraction logic from Phase 3, but insert into existing window
+- Render insertion caret on the target window's tab bar during hover
+- Handle edge case: source and target are the same window (→ reorder)
 
-### Phase 5: Visual Feedback
-- Ghost tab rendering during drag
-- Detachment indicator when outside window
-- Smooth animation/transition
-
-### Phase 6: Edge Cases & Polish
+### Phase 5: Visual Feedback & Polish
+- Ghost tab rendering at cursor during active drag
+- Distinct visual cues per mode (reorder caret, merge caret, detach glow)
+- Smooth animation/transition on drop
 - Cancel drag with Escape key
-- Handle drag to screen edge
-- Multi-monitor support
-- Test PTY stability during transfer
+
+### Phase 6: Edge Cases
+- Multi-monitor support (cursor leaves all screens)
+- Drag to screen edge
+- Window z-order accuracy for drop target resolution
+- Test suite for drag state machine transitions
+
+## Testing Policy
+
+**After completing every task**, run the full test suite before marking it done:
+```
+cargo test --workspace
+```
+All existing tests must pass. Any new functionality must include unit tests. No task is complete until the full suite is green.

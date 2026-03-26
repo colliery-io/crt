@@ -13,6 +13,7 @@ use std::time::Instant;
 
 use crate::config::{Config, ConfigPaths};
 use crate::gpu::SharedGpuState;
+use crate::input::drag::TabDragState;
 use crate::theme_registry::ThemeRegistry;
 use crate::watcher;
 use crate::window::WindowState;
@@ -49,6 +50,18 @@ pub(crate) struct App {
     pub(crate) last_frame_time: Instant,
     /// Last frame time for unfocused windows (~1fps for PTY updates)
     pub(crate) last_unfocused_frame_time: Instant,
+    /// Global tab ID counter — ensures IDs are unique across all windows
+    pub(crate) next_tab_id: u64,
+    /// Active tab drag state (lives on App for cross-window visibility)
+    pub(crate) drag_state: Option<TabDragState>,
+    /// Pending detach operation (deferred to about_to_wait for borrow safety)
+    pub(crate) pending_detach: Option<crate::app::initialization::DetachPayload>,
+    /// Pending merge operation (deferred to about_to_wait for borrow safety)
+    pub(crate) pending_merge: Option<crate::app::initialization::MergePayload>,
+    /// Window to close after tab extraction leaves it empty
+    pub(crate) pending_close_empty: Option<WindowId>,
+    /// Floating overlay window shown during tab drag (follows cursor across screen)
+    pub(crate) drag_overlay: Option<std::sync::Arc<winit::window::Window>>,
     #[cfg(target_os = "macos")]
     pub(crate) menu: Option<Menu>,
     #[cfg(target_os = "macos")]
@@ -80,10 +93,64 @@ impl App {
             config_watcher,
             last_frame_time: Instant::now(),
             last_unfocused_frame_time: Instant::now(),
+            next_tab_id: 0,
+            drag_state: None,
+            pending_detach: None,
+            pending_merge: None,
+            pending_close_empty: None,
+            drag_overlay: None,
             #[cfg(target_os = "macos")]
             menu: None,
             #[cfg(target_os = "macos")]
             menu_ids: None,
+        }
+    }
+
+    /// Allocate the next globally unique tab ID.
+    pub(crate) fn next_tab_id(&mut self) -> u64 {
+        let id = self.next_tab_id;
+        self.next_tab_id += 1;
+        id
+    }
+
+    /// Create a small floating overlay window for drag feedback.
+    ///
+    /// The overlay follows the cursor during tab drag to provide visual feedback
+    /// that escapes window boundaries.
+    pub(crate) fn create_drag_overlay(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        title: &str,
+        screen_x: i32,
+        screen_y: i32,
+    ) {
+        use winit::window::Window;
+
+        let mut attrs = Window::default_attributes()
+            .with_title(title)
+            .with_inner_size(winit::dpi::LogicalSize::new(150u32, 28u32))
+            .with_position(winit::dpi::PhysicalPosition::new(screen_x - 75, screen_y + 15))
+            .with_decorations(false)
+            .with_resizable(false)
+            .with_window_level(winit::window::WindowLevel::AlwaysOnTop);
+
+        // Prevent macOS from grouping this with terminal windows
+        #[cfg(target_os = "macos")]
+        {
+            use winit::platform::macos::WindowAttributesExtMacOS;
+            attrs = attrs.with_tabbing_identifier("crt-drag-overlay");
+        }
+
+        match event_loop.create_window(attrs) {
+            Ok(window) => {
+                // Set opacity for translucent effect
+                window.set_window_level(winit::window::WindowLevel::AlwaysOnTop);
+                self.drag_overlay = Some(std::sync::Arc::new(window));
+                log::debug!("Created drag overlay window");
+            }
+            Err(e) => {
+                log::warn!("Failed to create drag overlay: {}", e);
+            }
         }
     }
 

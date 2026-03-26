@@ -46,7 +46,10 @@ pub use sprite_renderer::{
     OriginalSpriteValues, SpriteAnimationState, SpriteConfig, SpriteMotion, SpriteOverlayState,
     SpritePosition, SpriteRenderer, SpriteSheet, SpriteTexture,
 };
-pub use tab_bar::{EditState, Tab, TabBar, TabBarState, TabLayout, TabRect, VelloTabBarRenderer};
+pub use tab_bar::{
+    DragFeedback, DragMode, EditState, Tab, TabBar, TabBarState, TabLayout, TabRect,
+    VelloTabBarRenderer,
+};
 pub use terminal_vello::{CursorShape, CursorState, TerminalVelloRenderer};
 pub use traits::{
     BackdropRenderer, CellContent, Color, ContextMenuItem, CursorInfo,

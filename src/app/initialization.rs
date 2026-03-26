@@ -13,10 +13,27 @@ use crt_core::{ShellTerminal, Size, SpawnOptions};
 use crt_renderer::{
     BackgroundImagePipeline, BackgroundImageState, CrtPipeline, EffectsRenderer, GlyphCache,
     GridEffect, GridRenderer, MatrixEffect, ParticleEffect, RainEffect, RectRenderer, ShapeEffect,
-    SpriteEffect, StarfieldEffect, TabBar,
+    SpriteEffect, StarfieldEffect, Tab, TabBar,
 };
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowId};
+
+/// Payload for creating a window with an existing tab+shell (detach operation).
+pub(crate) struct DetachPayload {
+    pub tab: Tab,
+    pub shell: ShellTerminal,
+    pub content_hash: u64,
+    pub screen_position: Option<winit::dpi::PhysicalPosition<i32>>,
+}
+
+/// Payload for merging a tab into an existing window.
+pub(crate) struct MergePayload {
+    pub tab: Tab,
+    pub shell: ShellTerminal,
+    pub content_hash: u64,
+    pub target_window_id: WindowId,
+    pub insert_index: usize,
+}
 
 use super::effects::configure_effects_from_theme;
 use super::App;
@@ -27,6 +44,7 @@ use winit::platform::macos::WindowAttributesExtMacOS;
 impl App {
     pub(crate) fn create_window(&mut self, event_loop: &ActiveEventLoop) -> WindowId {
         log::debug!("Creating new window");
+        let initial_tab_id = self.next_tab_id();
         self.init_shared_gpu();
         let shared = self.shared_gpu.as_mut().unwrap();
 
@@ -152,8 +170,8 @@ impl App {
         // Configure effects from theme
         configure_effects_from_theme(&mut effects_renderer, &theme);
 
-        // Tab bar (always at top)
-        let mut tab_bar = TabBar::new(&shared.device, format);
+        // Tab bar (always at top, initial tab gets a globally unique ID)
+        let mut tab_bar = TabBar::with_initial_id(&shared.device, format, initial_tab_id);
         tab_bar.set_scale_factor(scale_factor);
         tab_bar.set_theme(theme.tabs);
         tab_bar.resize(size.width as f32, size.height as f32);
@@ -318,11 +336,12 @@ impl App {
         };
         if let Ok(shell) = ShellTerminal::with_options(Size::new(cols, rows), spawn_options) {
             log::info!(
-                "Shell spawned for initial tab (semantic_prompts={})",
+                "Shell spawned for initial tab {} (semantic_prompts={})",
+                initial_tab_id,
                 self.config.shell.semantic_prompts
             );
-            shells.insert(0, shell);
-            content_hashes.insert(0, 0);
+            shells.insert(initial_tab_id, shell);
+            content_hashes.insert(initial_tab_id, 0);
         }
 
         let window_state = WindowState {
@@ -375,6 +394,54 @@ impl App {
             window_id,
             self.windows.len()
         );
+        window_id
+    }
+
+    /// Create a new window with an existing tab+shell (for tab detachment).
+    ///
+    /// This reuses the full GPU setup from `create_window` but skips shell
+    /// creation and uses the provided tab+shell instead.
+    pub(crate) fn create_window_for_detach(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        payload: DetachPayload,
+    ) -> WindowId {
+        // Create a normal window first (with a throwaway initial tab)
+        let window_id = self.create_window(event_loop);
+
+        // Now replace the default tab+shell with the detached ones
+        if let Some(state) = self.windows.get_mut(&window_id) {
+            // Remove the auto-created initial tab and shell
+            if let Some(initial_tab_id) = state.gpu.tab_bar.active_tab_id() {
+                state.gpu.tab_bar.remove_tab(initial_tab_id);
+                state.shells.remove(&initial_tab_id);
+                state.content_hashes.remove(&initial_tab_id);
+            }
+
+            // Insert the detached tab+shell
+            let tab_id = payload.tab.id;
+            state.gpu.tab_bar.add_existing_tab(payload.tab);
+            state.gpu.tab_bar.select_tab(tab_id);
+
+            // Resize shell to match new window dimensions
+            let mut shell = payload.shell;
+            shell.resize(Size::new(state.cols, state.rows));
+            state.shells.insert(tab_id, shell);
+            state.content_hashes.insert(tab_id, payload.content_hash);
+
+            // Position window at cursor if provided
+            if let Some(pos) = payload.screen_position {
+                state.window.set_outer_position(winit::dpi::PhysicalPosition::new(
+                    pos.x, pos.y,
+                ));
+            }
+
+            state.render.dirty = true;
+            // Invalidate content hash so the terminal rerenders
+            state.content_hashes.insert(tab_id, 0);
+        }
+
+        log::info!("Created detached window {:?}", window_id);
         window_id
     }
 }

@@ -1,6 +1,6 @@
 # Code Index
 
-> Generated: 2026-03-12T01:00:04Z | 70 files | Rust
+> Generated: 2026-03-26T17:46:03Z | 72 files | Rust
 
 ## Project Structure
 
@@ -35,6 +35,7 @@
 │   │       ├── rect_renderer.rs
 │   │       ├── shaders/
 │   │       │   └── mod.rs
+│   │       ├── shared_pipelines.rs
 │   │       ├── sprite_renderer.rs
 │   │       ├── tab_bar/
 │   │       │   ├── layout.rs
@@ -68,6 +69,7 @@
 │   │   ├── mod.rs
 │   │   └── texture_pool.rs
 │   ├── input/
+│   │   ├── drag.rs
 │   │   ├── key_encoder.rs
 │   │   ├── keyboard.rs
 │   │   ├── mod.rs
@@ -369,24 +371,26 @@
 
 #### crates/crt-renderer/src/grid_renderer.rs
 
-- pub `GlyphInstance` struct L15-26 — `{ pos: [f32; 2], uv_min: [f32; 2], uv_max: [f32; 2], size: [f32; 2], color: [f32...` — Per-instance data for a glyph
-- pub `from_positioned` function L29-37 — `(glyph: &PositionedGlyph, color: [f32; 4]) -> Self` — All text renders in a single draw call.
-- pub `GridRenderer` struct L53-64 — `{ pipeline: wgpu::RenderPipeline, bind_group_layout: wgpu::BindGroupLayout, glob...` — Grid renderer using instanced quads
-- pub `MAX_INSTANCES` variable L68 — `: usize` — Maximum number of glyph instances per render call
-- pub `INSTANCE_BUFFER_SIZE` variable L71-72 — `: u64` — Size of instance buffer in bytes (32K instances * 48 bytes = 1.5 MB)
-- pub `create_instance_buffer` function L78-85 — `(device: &wgpu::Device) -> wgpu::Buffer` — Create an instance buffer for use with this renderer
-- pub `new` function L87-226 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — All text renders in a single draw call.
-- pub `set_glyph_cache` function L229-252 — `( &mut self, device: &wgpu::Device, glyph_cache: &crate::glyph_cache::GlyphCache...` — Update the bind group with a new glyph cache atlas
-- pub `clear` function L255-257 — `(&mut self)` — Clear pending instances
-- pub `push_glyphs` function L260-267 — `(&mut self, glyphs: &[PositionedGlyph], color: [f32; 4])` — Add positioned glyphs from layout
-- pub `update_screen_size` function L270-282 — `(&mut self, queue: &wgpu::Queue, width: f32, height: f32)` — Update screen size uniform (only writes if size changed)
-- pub `render` function L288-312 — `( &'a self, queue: &wgpu::Queue, render_pass: &mut wgpu::RenderPass<'a>, instanc...` — Upload instances and render
-- pub `instance_count` function L314-316 — `(&self) -> usize` — All text renders in a single draw call.
--  `GlyphInstance` type L28-38 — `= GlyphInstance` — All text renders in a single draw call.
--  `Globals` struct L43-46 — `{ screen_size: [f32; 2], atlas_size: [f32; 2] }` — Global uniforms for the grid shader
--  `GridRenderer` type L66-317 — `= GridRenderer` — All text renders in a single draw call.
--  `GridRenderer` type L319-325 — `impl Drop for GridRenderer` — All text renders in a single draw call.
--  `drop` function L320-324 — `(&mut self)` — All text renders in a single draw call.
+- pub `GlyphInstance` struct L17-28 — `{ pos: [f32; 2], uv_min: [f32; 2], uv_max: [f32; 2], size: [f32; 2], color: [f32...` — Per-instance data for a glyph
+- pub `from_positioned` function L31-39 — `(glyph: &PositionedGlyph, color: [f32; 4]) -> Self` — All text renders in a single draw call.
+- pub `GridRenderer` struct L58-70 — `{ shared: Arc<SharedGridPipeline>, globals_buffer: wgpu::Buffer, instance_capaci...` — Grid renderer using instanced quads
+- pub `MAX_INSTANCES` variable L74 — `: usize` — Maximum number of glyph instances per render call
+- pub `INSTANCE_BUFFER_SIZE` variable L77-78 — `: u64` — Size of instance buffer in bytes (32K instances * 48 bytes = 1.5 MB)
+- pub `create_instance_buffer` function L84-91 — `(device: &wgpu::Device) -> wgpu::Buffer` — Create an instance buffer for use with this renderer
+- pub `new_with_shared` function L97-108 — `(device: &wgpu::Device, shared: &Arc<SharedGridPipeline>) -> Self` — Create a grid renderer using shared pipeline objects.
+- pub `new` function L114-126 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — Create a grid renderer with its own pipeline objects.
+- pub `set_glyph_cache` function L141-164 — `( &mut self, device: &wgpu::Device, glyph_cache: &crate::glyph_cache::GlyphCache...` — Update the bind group with a new glyph cache atlas
+- pub `clear` function L167-169 — `(&mut self)` — Clear pending instances
+- pub `push_glyphs` function L172-179 — `(&mut self, glyphs: &[PositionedGlyph], color: [f32; 4])` — Add positioned glyphs from layout
+- pub `update_screen_size` function L182-194 — `(&mut self, queue: &wgpu::Queue, width: f32, height: f32)` — Update screen size uniform (only writes if size changed)
+- pub `render` function L200-224 — `( &'a self, queue: &wgpu::Queue, render_pass: &mut wgpu::RenderPass<'a>, instanc...` — Upload instances and render
+- pub `instance_count` function L226-228 — `(&self) -> usize` — All text renders in a single draw call.
+-  `GlyphInstance` type L30-40 — `= GlyphInstance` — All text renders in a single draw call.
+-  `Globals` struct L45-48 — `{ screen_size: [f32; 2], atlas_size: [f32; 2] }` — Global uniforms for the grid shader
+-  `GridRenderer` type L72-229 — `= GridRenderer` — All text renders in a single draw call.
+-  `create_globals_buffer` function L128-138 — `(device: &wgpu::Device) -> wgpu::Buffer` — All text renders in a single draw call.
+-  `GridRenderer` type L231-237 — `impl Drop for GridRenderer` — All text renders in a single draw call.
+-  `drop` function L232-236 — `(&mut self)` — All text renders in a single draw call.
 
 #### crates/crt-renderer/src/headless.rs
 
@@ -422,61 +426,67 @@
 - pub `mock` module L22 — `-` — text when it actually changes.
 - pub `rect_renderer` module L23 — `-` — text when it actually changes.
 - pub `shaders` module L24 — `-` — text when it actually changes.
-- pub `sprite_renderer` module L25 — `-` — text when it actually changes.
-- pub `tab_bar` module L26 — `-` — text when it actually changes.
-- pub `terminal_vello` module L27 — `-` — text when it actually changes.
-- pub `traits` module L28 — `-` — text when it actually changes.
-- pub `BackgroundPipeline` struct L61-67 — `{ pipeline: wgpu::RenderPipeline, uniform_buffer: wgpu::Buffer, bind_group: wgpu...` — Background pipeline - renders gradient + animated grid
-- pub `new` function L70-150 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — text when it actually changes.
-- pub `set_theme` function L152-154 — `(&mut self, theme: Theme)` — text when it actually changes.
-- pub `theme` function L156-158 — `(&self) -> &Theme` — text when it actually changes.
-- pub `update_uniforms` function L160-164 — `(&self, queue: &wgpu::Queue, width: f32, height: f32)` — text when it actually changes.
-- pub `render` function L166-170 — `(&'a self, render_pass: &mut wgpu::RenderPass<'a>)` — text when it actually changes.
-- pub `BackgroundImageUniforms` struct L176-183 — `{ uv_transform: [f32; 4], opacity: f32, _pad: [f32; 3] }` — Uniform buffer for background image shader
-- pub `BackgroundImagePipeline` struct L186-191 — `{ pipeline: wgpu::RenderPipeline, bind_group_layout: wgpu::BindGroupLayout, unif...` — Background image pipeline - renders textured background with sizing/positioning
-- pub `new` function L194-294 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — text when it actually changes.
-- pub `create_bind_group` function L296-319 — `( &self, device: &wgpu::Device, texture_view: &wgpu::TextureView, ) -> wgpu::Bin...` — text when it actually changes.
-- pub `update_uniforms` function L321-328 — `(&self, queue: &wgpu::Queue, uv_transform: [f32; 4], opacity: f32)` — text when it actually changes.
-- pub `render` function L330-338 — `( &'a self, render_pass: &mut wgpu::RenderPass<'a>, bind_group: &'a wgpu::BindGr...` — text when it actually changes.
-- pub `CompositePipeline` struct L342-349 — `{ pipeline: wgpu::RenderPipeline, bind_group_layout: wgpu::BindGroupLayout, unif...` — Composite pipeline - blends text onto screen with glow
-- pub `new` function L352-450 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — text when it actually changes.
-- pub `set_theme` function L452-454 — `(&mut self, theme: Theme)` — text when it actually changes.
-- pub `theme` function L456-458 — `(&self) -> &Theme` — text when it actually changes.
-- pub `create_bind_group` function L460-483 — `( &self, device: &wgpu::Device, text_texture_view: &wgpu::TextureView, ) -> wgpu...` — text when it actually changes.
-- pub `update_uniforms` function L485-489 — `(&self, queue: &wgpu::Queue, width: f32, height: f32)` — text when it actually changes.
+- pub `shared_pipelines` module L25 — `-` — text when it actually changes.
+- pub `sprite_renderer` module L26 — `-` — text when it actually changes.
+- pub `tab_bar` module L27 — `-` — text when it actually changes.
+- pub `terminal_vello` module L28 — `-` — text when it actually changes.
+- pub `traits` module L29 — `-` — text when it actually changes.
+- pub `BackgroundPipeline` struct L71-77 — `{ shared: Arc<SharedBackgroundPipeline>, uniform_buffer: wgpu::Buffer, bind_grou...` — Background pipeline - renders gradient + animated grid
+- pub `new_with_shared` function L80-106 — `(device: &wgpu::Device, shared: &Arc<SharedBackgroundPipeline>) -> Self` — text when it actually changes.
+- pub `new` function L108-111 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — text when it actually changes.
+- pub `set_theme` function L113-115 — `(&mut self, theme: Theme)` — text when it actually changes.
+- pub `theme` function L117-119 — `(&self) -> &Theme` — text when it actually changes.
+- pub `update_uniforms` function L121-125 — `(&self, queue: &wgpu::Queue, width: f32, height: f32)` — text when it actually changes.
+- pub `render` function L127-131 — `(&'a self, render_pass: &mut wgpu::RenderPass<'a>)` — text when it actually changes.
+- pub `BackgroundImageUniforms` struct L137-144 — `{ uv_transform: [f32; 4], opacity: f32, _pad: [f32; 3] }` — Uniform buffer for background image shader
+- pub `BackgroundImagePipeline` struct L147-150 — `{ shared: Arc<SharedBackgroundImagePipeline>, uniform_buffer: wgpu::Buffer }` — Background image pipeline - renders textured background with sizing/positioning
+- pub `new_with_shared` function L153-170 — `(device: &wgpu::Device, shared: &Arc<SharedBackgroundImagePipeline>) -> Self` — text when it actually changes.
+- pub `new` function L172-175 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — text when it actually changes.
+- pub `create_bind_group` function L177-200 — `( &self, device: &wgpu::Device, texture_view: &wgpu::TextureView, ) -> wgpu::Bin...` — text when it actually changes.
+- pub `update_uniforms` function L202-209 — `(&self, queue: &wgpu::Queue, uv_transform: [f32; 4], opacity: f32)` — text when it actually changes.
+- pub `render` function L211-219 — `( &'a self, render_pass: &mut wgpu::RenderPass<'a>, bind_group: &'a wgpu::BindGr...` — text when it actually changes.
+- pub `CompositePipeline` struct L223-228 — `{ shared: Arc<SharedCompositePipeline>, uniform_buffer: wgpu::Buffer, theme: The...` — Composite pipeline - blends text onto screen with glow
+- pub `new_with_shared` function L231-247 — `(device: &wgpu::Device, shared: &Arc<SharedCompositePipeline>) -> Self` — text when it actually changes.
+- pub `new` function L249-252 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — text when it actually changes.
+- pub `set_theme` function L254-256 — `(&mut self, theme: Theme)` — text when it actually changes.
+- pub `theme` function L258-260 — `(&self) -> &Theme` — text when it actually changes.
+- pub `create_bind_group` function L262-285 — `( &self, device: &wgpu::Device, text_texture_view: &wgpu::TextureView, ) -> wgpu...` — text when it actually changes.
+- pub `update_uniforms` function L287-291 — `(&self, queue: &wgpu::Queue, width: f32, height: f32)` — text when it actually changes.
+- pub `render` function L293-301 — `( &'a self, render_pass: &mut wgpu::RenderPass<'a>, bind_group: &'a wgpu::BindGr...` — text when it actually changes.
+- pub `EffectPipeline` struct L305-308 — `{ background: BackgroundPipeline, composite: CompositePipeline }` — text when it actually changes.
+- pub `new_with_shared` function L311-320 — `( device: &wgpu::Device, background_shared: &Arc<SharedBackgroundPipeline>, comp...` — text when it actually changes.
+- pub `new` function L322-327 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — text when it actually changes.
+- pub `set_theme` function L329-332 — `(&mut self, theme: Theme)` — text when it actually changes.
+- pub `theme` function L334-336 — `(&self) -> &Theme` — text when it actually changes.
+- pub `theme_mut` function L338-342 — `(&mut self) -> &mut Theme` — text when it actually changes.
+- pub `create_bind_group` function L344-350 — `( &self, device: &wgpu::Device, text_texture_view: &wgpu::TextureView, ) -> wgpu...` — text when it actually changes.
+- pub `update_uniforms` function L352-355 — `(&self, queue: &wgpu::Queue, width: f32, height: f32)` — text when it actually changes.
+- pub `render` function L358-364 — `( &'a self, _render_pass: &mut wgpu::RenderPass<'a>, _bind_group: &'a wgpu::Bind...` — text when it actually changes.
+- pub `CrtUniforms` struct L374-386 — `{ screen_size: [f32; 2], time: f32, scanline_intensity: f32, scanline_frequency:...` — Uniform buffer for CRT post-processing shader
+- pub `CrtPipeline` struct L389-395 — `{ shared: Arc<SharedCrtPipeline>, uniform_buffer: wgpu::Buffer, start_time: std:...` — CRT post-processing pipeline - applies scanlines, curvature, vignette
+- pub `new_with_shared` function L398-426 — `(device: &wgpu::Device, shared: &Arc<SharedCrtPipeline>) -> Self` — text when it actually changes.
+- pub `new` function L428-431 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — text when it actually changes.
+- pub `set_effect` function L434-441 — `(&mut self, effect: Option<crt_theme::CrtEffect>)` — Set CRT effect from theme
+- pub `is_enabled` function L444-446 — `(&self) -> bool` — Check if CRT effect is enabled
+- pub `create_bind_group` function L448-471 — `( &self, device: &wgpu::Device, input_texture_view: &wgpu::TextureView, ) -> wgp...` — text when it actually changes.
+- pub `update_uniforms` function L473-489 — `(&self, queue: &wgpu::Queue, width: f32, height: f32)` — text when it actually changes.
 - pub `render` function L491-499 — `( &'a self, render_pass: &mut wgpu::RenderPass<'a>, bind_group: &'a wgpu::BindGr...` — text when it actually changes.
-- pub `EffectPipeline` struct L503-506 — `{ background: BackgroundPipeline, composite: CompositePipeline }` — text when it actually changes.
-- pub `new` function L509-514 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — text when it actually changes.
-- pub `set_theme` function L516-519 — `(&mut self, theme: Theme)` — text when it actually changes.
-- pub `theme` function L521-523 — `(&self) -> &Theme` — text when it actually changes.
-- pub `theme_mut` function L525-529 — `(&mut self) -> &mut Theme` — text when it actually changes.
-- pub `create_bind_group` function L531-537 — `( &self, device: &wgpu::Device, text_texture_view: &wgpu::TextureView, ) -> wgpu...` — text when it actually changes.
-- pub `update_uniforms` function L539-542 — `(&self, queue: &wgpu::Queue, width: f32, height: f32)` — text when it actually changes.
-- pub `render` function L545-551 — `( &'a self, _render_pass: &mut wgpu::RenderPass<'a>, _bind_group: &'a wgpu::Bind...` — text when it actually changes.
-- pub `CrtUniforms` struct L561-573 — `{ screen_size: [f32; 2], time: f32, scanline_intensity: f32, scanline_frequency:...` — Uniform buffer for CRT post-processing shader
-- pub `CrtPipeline` struct L576-584 — `{ pipeline: wgpu::RenderPipeline, bind_group_layout: wgpu::BindGroupLayout, unif...` — CRT post-processing pipeline - applies scanlines, curvature, vignette
-- pub `new` function L587-696 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — text when it actually changes.
-- pub `set_effect` function L699-706 — `(&mut self, effect: Option<crt_theme::CrtEffect>)` — Set CRT effect from theme
-- pub `is_enabled` function L709-711 — `(&self) -> bool` — Check if CRT effect is enabled
-- pub `create_bind_group` function L713-736 — `( &self, device: &wgpu::Device, input_texture_view: &wgpu::TextureView, ) -> wgp...` — text when it actually changes.
-- pub `update_uniforms` function L738-754 — `(&self, queue: &wgpu::Queue, width: f32, height: f32)` — text when it actually changes.
-- pub `render` function L756-764 — `( &'a self, render_pass: &mut wgpu::RenderPass<'a>, bind_group: &'a wgpu::BindGr...` — text when it actually changes.
--  `BackgroundPipeline` type L69-171 — `= BackgroundPipeline` — text when it actually changes.
--  `BackgroundImagePipeline` type L193-339 — `= BackgroundImagePipeline` — text when it actually changes.
--  `CompositePipeline` type L351-500 — `= CompositePipeline` — text when it actually changes.
--  `EffectPipeline` type L508-552 — `= EffectPipeline` — text when it actually changes.
--  `CRT_REFERENCE_HEIGHT` variable L555 — `: f32` — Reference height for resolution-independent CRT effects (1080p baseline)
--  `CrtPipeline` type L586-765 — `= CrtPipeline` — text when it actually changes.
--  `BackgroundPipeline` type L769-773 — `impl Drop for BackgroundPipeline` — text when it actually changes.
--  `drop` function L770-772 — `(&mut self)` — text when it actually changes.
--  `CompositePipeline` type L775-779 — `impl Drop for CompositePipeline` — text when it actually changes.
--  `drop` function L776-778 — `(&mut self)` — text when it actually changes.
--  `BackgroundImagePipeline` type L781-785 — `impl Drop for BackgroundImagePipeline` — text when it actually changes.
--  `drop` function L782-784 — `(&mut self)` — text when it actually changes.
--  `CrtPipeline` type L787-791 — `impl Drop for CrtPipeline` — text when it actually changes.
--  `drop` function L788-790 — `(&mut self)` — text when it actually changes.
--  `tests` module L794-804 — `-` — text when it actually changes.
--  `test_shaders_compile` function L798-803 — `()` — text when it actually changes.
+-  `BackgroundPipeline` type L79-132 — `= BackgroundPipeline` — text when it actually changes.
+-  `BackgroundImagePipeline` type L152-220 — `= BackgroundImagePipeline` — text when it actually changes.
+-  `CompositePipeline` type L230-302 — `= CompositePipeline` — text when it actually changes.
+-  `EffectPipeline` type L310-365 — `= EffectPipeline` — text when it actually changes.
+-  `CRT_REFERENCE_HEIGHT` variable L368 — `: f32` — Reference height for resolution-independent CRT effects (1080p baseline)
+-  `CrtPipeline` type L397-500 — `= CrtPipeline` — text when it actually changes.
+-  `BackgroundPipeline` type L504-508 — `impl Drop for BackgroundPipeline` — text when it actually changes.
+-  `drop` function L505-507 — `(&mut self)` — text when it actually changes.
+-  `CompositePipeline` type L510-514 — `impl Drop for CompositePipeline` — text when it actually changes.
+-  `drop` function L511-513 — `(&mut self)` — text when it actually changes.
+-  `BackgroundImagePipeline` type L516-520 — `impl Drop for BackgroundImagePipeline` — text when it actually changes.
+-  `drop` function L517-519 — `(&mut self)` — text when it actually changes.
+-  `CrtPipeline` type L522-526 — `impl Drop for CrtPipeline` — text when it actually changes.
+-  `drop` function L523-525 — `(&mut self)` — text when it actually changes.
+-  `tests` module L529-540 — `-` — text when it actually changes.
+-  `test_shaders_compile` function L534-539 — `()` — text when it actually changes.
 
 #### crates/crt-renderer/src/mock.rs
 
@@ -532,21 +542,50 @@
 
 #### crates/crt-renderer/src/rect_renderer.rs
 
-- pub `RectInstance` struct L13-20 — `{ pos: [f32; 2], size: [f32; 2], color: [f32; 4] }` — Per-instance data for a rectangle
-- pub `RectRenderer` struct L35-44 — `{ pipeline: wgpu::RenderPipeline, globals_buffer: wgpu::Buffer, bind_group: wgpu...` — Rect renderer using instanced quads
-- pub `MAX_INSTANCES` variable L48 — `: usize` — Maximum number of rect instances per render call
-- pub `INSTANCE_BUFFER_SIZE` variable L51-52 — `: u64` — Size of instance buffer in bytes (16K instances * 32 bytes = 512 KB)
-- pub `create_instance_buffer` function L58-65 — `(device: &wgpu::Device) -> wgpu::Buffer` — Create an instance buffer for use with this renderer
-- pub `new` function L67-176 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — All rectangles render in a single draw call.
-- pub `clear` function L179-181 — `(&mut self)` — Clear pending instances
-- pub `push_rect` function L184-192 — `(&mut self, x: f32, y: f32, width: f32, height: f32, color: [f32; 4])` — Add a rectangle
-- pub `instance_count` function L195-197 — `(&self) -> usize` — Get the number of pending instances
-- pub `update_screen_size` function L200-212 — `(&mut self, queue: &wgpu::Queue, width: f32, height: f32)` — Update screen size uniform (only writes if size changed)
-- pub `render` function L218-237 — `( &'a self, queue: &wgpu::Queue, render_pass: &mut wgpu::RenderPass<'a>, instanc...` — Upload instances and render
--  `Globals` struct L25-28 — `{ screen_size: [f32; 2], _pad: [f32; 2] }` — Global uniforms for the rect shader
--  `RectRenderer` type L46-238 — `= RectRenderer` — All rectangles render in a single draw call.
--  `RectRenderer` type L240-246 — `impl Drop for RectRenderer` — All rectangles render in a single draw call.
--  `drop` function L241-245 — `(&mut self)` — All rectangles render in a single draw call.
+- pub `RectInstance` struct L15-22 — `{ pos: [f32; 2], size: [f32; 2], color: [f32; 4] }` — Per-instance data for a rectangle
+- pub `RectRenderer` struct L40-50 — `{ shared: Arc<SharedRectPipeline>, globals_buffer: wgpu::Buffer, bind_group: wgp...` — Rect renderer using instanced quads
+- pub `MAX_INSTANCES` variable L54 — `: usize` — Maximum number of rect instances per render call
+- pub `INSTANCE_BUFFER_SIZE` variable L57-58 — `: u64` — Size of instance buffer in bytes (16K instances * 32 bytes = 512 KB)
+- pub `create_instance_buffer` function L64-71 — `(device: &wgpu::Device) -> wgpu::Buffer` — Create an instance buffer for use with this renderer
+- pub `new_with_shared` function L74-85 — `(device: &wgpu::Device, shared: &Arc<SharedRectPipeline>) -> Self` — Create a rect renderer using shared pipeline objects.
+- pub `new` function L88-100 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — Create a rect renderer with its own pipeline objects.
+- pub `clear` function L130-132 — `(&mut self)` — Clear pending instances
+- pub `push_rect` function L135-143 — `(&mut self, x: f32, y: f32, width: f32, height: f32, color: [f32; 4])` — Add a rectangle
+- pub `instance_count` function L146-148 — `(&self) -> usize` — Get the number of pending instances
+- pub `update_screen_size` function L151-163 — `(&mut self, queue: &wgpu::Queue, width: f32, height: f32)` — Update screen size uniform (only writes if size changed)
+- pub `render` function L169-188 — `( &'a self, queue: &wgpu::Queue, render_pass: &mut wgpu::RenderPass<'a>, instanc...` — Upload instances and render
+-  `Globals` struct L27-30 — `{ screen_size: [f32; 2], _pad: [f32; 2] }` — Global uniforms for the rect shader
+-  `RectRenderer` type L52-189 — `= RectRenderer` — All rectangles render in a single draw call.
+-  `create_per_window_resources` function L102-127 — `( device: &wgpu::Device, bind_group_layout: &wgpu::BindGroupLayout, ) -> (wgpu::...` — All rectangles render in a single draw call.
+-  `RectRenderer` type L191-197 — `impl Drop for RectRenderer` — All rectangles render in a single draw call.
+-  `drop` function L192-196 — `(&mut self)` — All rectangles render in a single draw call.
+
+#### crates/crt-renderer/src/shared_pipelines.rs
+
+- pub `SharedGridPipeline` struct L16-20 — `{ pipeline: wgpu::RenderPipeline, bind_group_layout: wgpu::BindGroupLayout, samp...` — Shared pipeline objects for the grid (text) renderer.
+- pub `SharedRectPipeline` struct L23-26 — `{ pipeline: wgpu::RenderPipeline, bind_group_layout: wgpu::BindGroupLayout }` — Shared pipeline objects for the rect (background) renderer.
+- pub `SharedBackgroundPipeline` struct L29-32 — `{ pipeline: wgpu::RenderPipeline, bind_group_layout: wgpu::BindGroupLayout }` — Shared pipeline objects for the background gradient renderer.
+- pub `SharedCompositePipeline` struct L35-39 — `{ pipeline: wgpu::RenderPipeline, bind_group_layout: wgpu::BindGroupLayout, samp...` — Shared pipeline objects for the text composite/glow renderer.
+- pub `SharedCrtPipeline` struct L42-46 — `{ pipeline: wgpu::RenderPipeline, bind_group_layout: wgpu::BindGroupLayout, samp...` — Shared pipeline objects for the CRT post-processing renderer.
+- pub `SharedBackgroundImagePipeline` struct L49-53 — `{ pipeline: wgpu::RenderPipeline, bind_group_layout: wgpu::BindGroupLayout, samp...` — Shared pipeline objects for the background image renderer.
+- pub `SharedEffectsBlitPipeline` struct L56-60 — `{ pipeline: wgpu::RenderPipeline, bind_group_layout: wgpu::BindGroupLayout, samp...` — Shared pipeline objects for the effects blit renderer.
+- pub `SharedPipelines` struct L67-75 — `{ grid: Arc<SharedGridPipeline>, rect: Arc<SharedRectPipeline>, background: Arc<...` — All shared render pipelines, created once and shared across windows.
+- pub `new` function L79-89 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — Create all shared pipelines for the given surface format.
+- pub `new` function L95-191 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — separate — only the compiled pipeline objects are shared.
+- pub `new` function L197-266 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — separate — only the compiled pipeline objects are shared.
+- pub `new` function L272-329 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — separate — only the compiled pipeline objects are shared.
+- pub `new` function L335-417 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — separate — only the compiled pipeline objects are shared.
+- pub `new` function L423-505 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — separate — only the compiled pipeline objects are shared.
+- pub `new` function L511-595 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — separate — only the compiled pipeline objects are shared.
+- pub `new` function L601-673 — `(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self` — separate — only the compiled pipeline objects are shared.
+-  `SharedPipelines` type L77-90 — `= SharedPipelines` — separate — only the compiled pipeline objects are shared.
+-  `SharedGridPipeline` type L94-192 — `= SharedGridPipeline` — separate — only the compiled pipeline objects are shared.
+-  `SharedRectPipeline` type L196-267 — `= SharedRectPipeline` — separate — only the compiled pipeline objects are shared.
+-  `SharedBackgroundPipeline` type L271-330 — `= SharedBackgroundPipeline` — separate — only the compiled pipeline objects are shared.
+-  `SharedCompositePipeline` type L334-418 — `= SharedCompositePipeline` — separate — only the compiled pipeline objects are shared.
+-  `SharedCrtPipeline` type L422-506 — `= SharedCrtPipeline` — separate — only the compiled pipeline objects are shared.
+-  `SharedBackgroundImagePipeline` type L510-596 — `= SharedBackgroundImagePipeline` — separate — only the compiled pipeline objects are shared.
+-  `SharedEffectsBlitPipeline` type L600-674 — `= SharedEffectsBlitPipeline` — separate — only the compiled pipeline objects are shared.
 
 #### crates/crt-renderer/src/sprite_renderer.rs
 
@@ -920,28 +959,29 @@
 
 #### crates/crt-renderer/src/effects/renderer.rs
 
-- pub `EffectsRenderer` struct L29-62 — `{ effects: Vec<Box<dyn BackdropEffect>>, vello_renderer: Arc<Mutex<Option<Render...` — Manages backdrop effects and renders them to a texture
-- pub `new` function L66-159 — `( device: &wgpu::Device, vello_renderer: Arc<Mutex<Option<Renderer>>>, format: w...` — Create a new effects renderer with shared Vello renderer
-- pub `add_effect` function L162-164 — `(&mut self, effect: Box<dyn BackdropEffect>)` — Add an effect to the renderer
-- pub `clear_effects` function L167-169 — `(&mut self)` — Remove all effects
-- pub `effects_mut` function L172-174 — `(&mut self) -> &mut Vec<Box<dyn BackdropEffect>>` — Get a mutable reference to effects for configuration
-- pub `configure` function L180-199 — `(&mut self, config: &EffectConfig)` — Configure all effects from theme config
-- pub `update` function L205-213 — `(&mut self, dt: f32)` — Update all effects' animation state
-- pub `has_enabled_effects` function L216-218 — `(&self) -> bool` — Check if any effects are enabled
-- pub `apply_effect_patch` function L224-236 — `(&mut self, effect_type: &str, config: &EffectConfig)` — Apply a temporary patch configuration to a specific effect type
-- pub `composite` function L287-293 — `(&'a self, pass: &mut wgpu::RenderPass<'a>)` — Composite the effects texture onto the frame
-- pub `render` function L299-359 — `( &mut self, device: &wgpu::Device, queue: &wgpu::Queue, size: (u32, u32), ) -> ...` — Render all enabled effects to texture
-- pub `render_to_view` function L368-442 — `( &mut self, device: &wgpu::Device, queue: &wgpu::Queue, target_view: &wgpu::Tex...` — Render all enabled effects directly to a target texture view
-- pub `texture_view` function L445-447 — `(&self) -> Option<&wgpu::TextureView>` — Get the current render target texture view
-- pub `target_size` function L450-452 — `(&self) -> (u32, u32)` — Get current target size
-- pub `elapsed_time` function L455-457 — `(&self) -> f32` — Get total elapsed time
-- pub `reset_time` function L460-462 — `(&mut self)` — Reset elapsed time
--  `EffectsRenderer` type L64-463 — `= EffectsRenderer` — texture via the shared Vello renderer.
--  `ensure_target` function L239-281 — `(&mut self, device: &wgpu::Device, width: u32, height: u32)` — Ensure render target is sized correctly
--  `LOGGED` variable L313 — `: std::sync::atomic::AtomicBool` — texture via the shared Vello renderer.
--  `LOGGED2` variable L353 — `: std::sync::atomic::AtomicBool` — texture via the shared Vello renderer.
--  `EffectsRenderer` type L465-472 — `impl Drop for EffectsRenderer` — texture via the shared Vello renderer.
--  `drop` function L466-471 — `(&mut self)` — texture via the shared Vello renderer.
+- pub `EffectsRenderer` struct L30-57 — `{ effects: Vec<Box<dyn BackdropEffect>>, vello_renderer: Arc<Mutex<Option<Render...` — Manages backdrop effects and renders them to a texture
+- pub `new_with_shared` function L61-76 — `( vello_renderer: Arc<Mutex<Option<Renderer>>>, shared_blit: &Arc<SharedEffectsB...` — Create a new effects renderer with shared pipeline objects
+- pub `new` function L79-86 — `( device: &wgpu::Device, vello_renderer: Arc<Mutex<Option<Renderer>>>, format: w...` — Create a new effects renderer with its own pipeline objects
+- pub `add_effect` function L89-91 — `(&mut self, effect: Box<dyn BackdropEffect>)` — Add an effect to the renderer
+- pub `clear_effects` function L94-96 — `(&mut self)` — Remove all effects
+- pub `effects_mut` function L99-101 — `(&mut self) -> &mut Vec<Box<dyn BackdropEffect>>` — Get a mutable reference to effects for configuration
+- pub `configure` function L107-126 — `(&mut self, config: &EffectConfig)` — Configure all effects from theme config
+- pub `update` function L132-140 — `(&mut self, dt: f32)` — Update all effects' animation state
+- pub `has_enabled_effects` function L143-145 — `(&self) -> bool` — Check if any effects are enabled
+- pub `apply_effect_patch` function L151-163 — `(&mut self, effect_type: &str, config: &EffectConfig)` — Apply a temporary patch configuration to a specific effect type
+- pub `composite` function L214-220 — `(&'a self, pass: &mut wgpu::RenderPass<'a>)` — Composite the effects texture onto the frame
+- pub `render` function L226-286 — `( &mut self, device: &wgpu::Device, queue: &wgpu::Queue, size: (u32, u32), ) -> ...` — Render all enabled effects to texture
+- pub `render_to_view` function L295-369 — `( &mut self, device: &wgpu::Device, queue: &wgpu::Queue, target_view: &wgpu::Tex...` — Render all enabled effects directly to a target texture view
+- pub `texture_view` function L372-374 — `(&self) -> Option<&wgpu::TextureView>` — Get the current render target texture view
+- pub `target_size` function L377-379 — `(&self) -> (u32, u32)` — Get current target size
+- pub `elapsed_time` function L382-384 — `(&self) -> f32` — Get total elapsed time
+- pub `reset_time` function L387-389 — `(&mut self)` — Reset elapsed time
+-  `EffectsRenderer` type L59-390 — `= EffectsRenderer` — texture via the shared Vello renderer.
+-  `ensure_target` function L166-208 — `(&mut self, device: &wgpu::Device, width: u32, height: u32)` — Ensure render target is sized correctly
+-  `LOGGED` variable L240 — `: std::sync::atomic::AtomicBool` — texture via the shared Vello renderer.
+-  `LOGGED2` variable L280 — `: std::sync::atomic::AtomicBool` — texture via the shared Vello renderer.
+-  `EffectsRenderer` type L392-399 — `impl Drop for EffectsRenderer` — texture via the shared Vello renderer.
+-  `drop` function L393-398 — `(&mut self)` — texture via the shared Vello renderer.
 
 #### crates/crt-renderer/src/effects/shape.rs
 
@@ -1058,13 +1098,14 @@
 
 #### crates/crt-renderer/src/shaders/mod.rs
 
-- pub `builtin` module L8-26 — `-` — Built-in shaders included at compile time
+- pub `builtin` module L8-29 — `-` — Built-in shaders included at compile time
 - pub `BACKGROUND` variable L10 — `: &str` — Background shader - renders gradient + animated perspective grid
 - pub `BACKGROUND_IMAGE` variable L13 — `: &str` — Background image shader - renders textured background with sizing/positioning
 - pub `COMPOSITE` variable L16 — `: &str` — Composite shader - applies glow blur to text texture (25-sample Gaussian)
 - pub `GRID` variable L19 — `: &str` — Grid shader - GPU-accelerated text glyph rendering using instanced quads
 - pub `RECT` variable L22 — `: &str` — Rect shader - solid color rectangle rendering using instanced quads
 - pub `CRT` variable L25 — `: &str` — CRT post-processing shader - scanlines, curvature, vignette
+- pub `EFFECTS_BLIT` variable L28 — `: &str` — Effects blit shader - composites effects texture onto frame
 
 ### crates/crt-renderer/src/tab_bar
 
@@ -1116,123 +1157,162 @@
 
 #### crates/crt-renderer/src/tab_bar/mod.rs
 
-- pub `TabBar` struct L27-32 — `{ state: TabBarState, layout: TabLayout, vello_renderer: VelloTabBarRenderer, th...` — Tab bar facade - combines state, layout, and rendering
-- pub `new` function L35-42 — `(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self` — triggered by CSS properties like `text-shadow`.
-- pub `set_theme` function L47-52 — `(&mut self, theme: TabTheme)` — Set the tab theme
-- pub `set_scale_factor` function L57-59 — `(&mut self, scale_factor: f32)` — Set scale factor for HiDPI displays
-- pub `height` function L62-64 — `(&self) -> f32` — Get current tab bar height (in logical pixels)
-- pub `content_offset` function L68-70 — `(&self) -> (f32, f32)` — Get the content offset (x, y) in logical pixels
-- pub `resize` function L73-75 — `(&mut self, width: f32, height: f32)` — Update screen size (in physical pixels)
-- pub `add_tab` function L80-84 — `(&mut self, title: impl Into<String>) -> u64` — Add a new tab
-- pub `close_tab` function L87-93 — `(&mut self, id: u64) -> bool` — Close a tab by ID
-- pub `select_tab` function L96-102 — `(&mut self, id: u64) -> bool` — Select a tab by ID
-- pub `select_tab_index` function L105-111 — `(&mut self, index: usize) -> bool` — Select tab by index (0-based)
-- pub `next_tab` function L114-117 — `(&mut self)` — Select next tab
-- pub `prev_tab` function L120-123 — `(&mut self)` — Select previous tab
-- pub `active_tab_id` function L126-128 — `(&self) -> Option<u64>` — Get active tab ID
-- pub `active_tab_rect` function L132-138 — `(&self) -> Option<(f32, f32, f32, f32)>` — Get active tab rectangle (for focus indicator rendering)
-- pub `tab_count` function L141-143 — `(&self) -> usize` — Get number of tabs
-- pub `hit_test` function L146-151 — `(&self, x: f32, y: f32) -> Option<(u64, bool)>` — Hit test - returns (tab_id, is_close_button) if hit
-- pub `set_tab_title` function L154-160 — `(&mut self, id: u64, title: impl Into<String>) -> bool` — Update a tab's title by ID (from OSC escape sequences)
-- pub `set_custom_tab_title` function L163-169 — `(&mut self, id: u64, title: impl Into<String>) -> bool` — Set a custom title for a tab (user-initiated)
-- pub `clear_custom_title` function L172-174 — `(&mut self, id: u64)` — Clear custom title flag
-- pub `has_custom_title` function L177-179 — `(&self, id: u64) -> bool` — Check if a tab has a custom title
-- pub `get_tab_title` function L182-184 — `(&self, id: u64) -> Option<&str>` — Get a tab's title by ID
-- pub `is_editing` function L189-191 — `(&self) -> bool` — Check if currently editing a tab
-- pub `editing_tab_id` function L194-196 — `(&self) -> Option<u64>` — Get the tab ID being edited (if any)
-- pub `start_editing` function L199-205 — `(&mut self, id: u64) -> bool` — Start editing a tab's title
-- pub `cancel_editing` function L208-211 — `(&mut self)` — Cancel editing without saving
-- pub `confirm_editing` function L214-218 — `(&mut self) -> bool` — Confirm editing and save the new title
-- pub `edit_insert_char` function L221-224 — `(&mut self, c: char)` — Handle a character input during editing
-- pub `edit_backspace` function L227-230 — `(&mut self)` — Handle backspace during editing
-- pub `edit_delete` function L233-236 — `(&mut self)` — Handle delete during editing
-- pub `edit_cursor_left` function L239-242 — `(&mut self)` — Move cursor left during editing
-- pub `edit_cursor_right` function L245-248 — `(&mut self)` — Move cursor right during editing
-- pub `edit_cursor_home` function L251-254 — `(&mut self)` — Move cursor to start during editing
-- pub `edit_cursor_end` function L257-260 — `(&mut self)` — Move cursor to end during editing
-- pub `inactive_tab_color` function L265-267 — `(&self) -> [f32; 4]` — Get the foreground color for inactive tabs
-- pub `active_tab_color` function L270-272 — `(&self) -> [f32; 4]` — Get the foreground color for active tabs
-- pub `inactive_tab_text_shadow` function L275-280 — `(&self) -> Option<(f32, [f32; 4])>` — Get text shadow for inactive tabs (if any)
-- pub `active_tab_text_shadow` function L283-288 — `(&self) -> Option<(f32, [f32; 4])>` — Get text shadow for active tabs (if any)
-- pub `get_tab_labels` function L293-326 — `(&self) -> Vec<(f32, f32, String, bool, bool)>` — Get tab titles for text rendering (returns position and title in physical pixels)
-- pub `get_close_button_labels` function L329-343 — `(&self) -> Vec<(f32, f32)>` — Get close button positions for text rendering (returns x, y position for 'x' glyph)
-- pub `prepare` function L346-355 — `(&mut self, device: &wgpu::Device, _queue: &wgpu::Queue)` — Prepare the tab bar for rendering (builds vello scene)
-- pub `render_vello` function L358-366 — `( &mut self, renderer: &mut vello::Renderer, device: &wgpu::Device, queue: &wgpu...` — Render vello scene to internal texture using shared renderer
-- pub `vello_texture_view` function L369-371 — `(&self) -> Option<&wgpu::TextureView>` — Get vello texture view for compositing
-- pub `render_shapes_to_rects` function L383-435 — `(&self, rect_renderer: &mut crate::RectRenderer)` — Render tab bar shapes using RectRenderer (sharp corners, no Vello needed)
+- pub `DragMode` enum L23-30 — `Reorder | Merge | Detach` — Visual mode for the drag feedback indicator
+- pub `DragFeedback` struct L36-45 — `{ dragged_tab_id: u64, insertion_index: Option<usize>, ghost_position: Option<(f...` — Visual feedback state for tab dragging.
+- pub `TabBar` struct L53-60 — `{ state: TabBarState, layout: TabLayout, vello_renderer: VelloTabBarRenderer, th...` — Tab bar facade - combines state, layout, and rendering
+- pub `new` function L63-71 — `(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self` — triggered by CSS properties like `text-shadow`.
+- pub `with_initial_id` function L74-82 — `(device: &wgpu::Device, format: wgpu::TextureFormat, id: u64) -> Self` — Create a tab bar with a specific initial tab ID (for global ID support)
+- pub `set_drag_feedback` function L85-87 — `(&mut self, feedback: Option<DragFeedback>)` — Set drag visual feedback for this frame's rendering
+- pub `set_theme` function L92-97 — `(&mut self, theme: TabTheme)` — Set the tab theme
+- pub `set_scale_factor` function L102-104 — `(&mut self, scale_factor: f32)` — Set scale factor for HiDPI displays
+- pub `height` function L107-109 — `(&self) -> f32` — Get current tab bar height (in logical pixels)
+- pub `content_offset` function L113-115 — `(&self) -> (f32, f32)` — Get the content offset (x, y) in logical pixels
+- pub `resize` function L118-120 — `(&mut self, width: f32, height: f32)` — Update screen size (in physical pixels)
+- pub `add_tab` function L125-128 — `(&mut self, id: u64, title: impl Into<String>)` — Add a new tab with a caller-provided globally unique ID
+- pub `move_tab` function L131-134 — `(&mut self, from: usize, to: usize)` — Move a tab from one index to another
+- pub `tab_index` function L137-139 — `(&self, id: u64) -> Option<usize>` — Get the index of a tab by its ID
+- pub `remove_tab` function L142-148 — `(&mut self, id: u64) -> Option<super::Tab>` — Remove a tab by ID and return it (for cross-window transfer)
+- pub `add_existing_tab` function L151-154 — `(&mut self, tab: super::Tab)` — Insert a pre-existing tab at the end
+- pub `insert_existing_tab` function L157-160 — `(&mut self, tab: super::Tab, index: usize)` — Insert a pre-existing tab at a specific index
+- pub `close_tab` function L163-169 — `(&mut self, id: u64) -> bool` — Close a tab by ID
+- pub `select_tab` function L172-178 — `(&mut self, id: u64) -> bool` — Select a tab by ID
+- pub `select_tab_index` function L181-187 — `(&mut self, index: usize) -> bool` — Select tab by index (0-based)
+- pub `next_tab` function L190-193 — `(&mut self)` — Select next tab
+- pub `prev_tab` function L196-199 — `(&mut self)` — Select previous tab
+- pub `active_tab_id` function L202-204 — `(&self) -> Option<u64>` — Get active tab ID
+- pub `tab_rects` function L207-209 — `(&self) -> &[TabRect]` — Get tab rectangles for hit testing and drag computations
+- pub `active_tab_rect` function L213-219 — `(&self) -> Option<(f32, f32, f32, f32)>` — Get active tab rectangle (for focus indicator rendering)
+- pub `tab_count` function L222-224 — `(&self) -> usize` — Get number of tabs
+- pub `hit_test` function L227-232 — `(&self, x: f32, y: f32) -> Option<(u64, bool)>` — Hit test - returns (tab_id, is_close_button) if hit
+- pub `set_tab_title` function L235-241 — `(&mut self, id: u64, title: impl Into<String>) -> bool` — Update a tab's title by ID (from OSC escape sequences)
+- pub `set_custom_tab_title` function L244-250 — `(&mut self, id: u64, title: impl Into<String>) -> bool` — Set a custom title for a tab (user-initiated)
+- pub `clear_custom_title` function L253-255 — `(&mut self, id: u64)` — Clear custom title flag
+- pub `has_custom_title` function L258-260 — `(&self, id: u64) -> bool` — Check if a tab has a custom title
+- pub `get_tab_title` function L263-265 — `(&self, id: u64) -> Option<&str>` — Get a tab's title by ID
+- pub `is_editing` function L270-272 — `(&self) -> bool` — Check if currently editing a tab
+- pub `editing_tab_id` function L275-277 — `(&self) -> Option<u64>` — Get the tab ID being edited (if any)
+- pub `start_editing` function L280-286 — `(&mut self, id: u64) -> bool` — Start editing a tab's title
+- pub `cancel_editing` function L289-292 — `(&mut self)` — Cancel editing without saving
+- pub `confirm_editing` function L295-299 — `(&mut self) -> bool` — Confirm editing and save the new title
+- pub `edit_insert_char` function L302-305 — `(&mut self, c: char)` — Handle a character input during editing
+- pub `edit_backspace` function L308-311 — `(&mut self)` — Handle backspace during editing
+- pub `edit_delete` function L314-317 — `(&mut self)` — Handle delete during editing
+- pub `edit_cursor_left` function L320-323 — `(&mut self)` — Move cursor left during editing
+- pub `edit_cursor_right` function L326-329 — `(&mut self)` — Move cursor right during editing
+- pub `edit_cursor_home` function L332-335 — `(&mut self)` — Move cursor to start during editing
+- pub `edit_cursor_end` function L338-341 — `(&mut self)` — Move cursor to end during editing
+- pub `inactive_tab_color` function L346-348 — `(&self) -> [f32; 4]` — Get the foreground color for inactive tabs
+- pub `active_tab_color` function L351-353 — `(&self) -> [f32; 4]` — Get the foreground color for active tabs
+- pub `inactive_tab_text_shadow` function L356-361 — `(&self) -> Option<(f32, [f32; 4])>` — Get text shadow for inactive tabs (if any)
+- pub `active_tab_text_shadow` function L364-369 — `(&self) -> Option<(f32, [f32; 4])>` — Get text shadow for active tabs (if any)
+- pub `get_tab_labels` function L374-407 — `(&self) -> Vec<(f32, f32, String, bool, bool)>` — Get tab titles for text rendering (returns position and title in physical pixels)
+- pub `get_close_button_labels` function L410-424 — `(&self) -> Vec<(f32, f32)>` — Get close button positions for text rendering (returns x, y position for 'x' glyph)
+- pub `prepare` function L427-436 — `(&mut self, device: &wgpu::Device, _queue: &wgpu::Queue)` — Prepare the tab bar for rendering (builds vello scene)
+- pub `render_vello` function L439-447 — `( &mut self, renderer: &mut vello::Renderer, device: &wgpu::Device, queue: &wgpu...` — Render vello scene to internal texture using shared renderer
+- pub `vello_texture_view` function L450-452 — `(&self) -> Option<&wgpu::TextureView>` — Get vello texture view for compositing
+- pub `render_shapes_to_rects` function L464-595 — `(&self, rect_renderer: &mut crate::RectRenderer)` — Render tab bar shapes using RectRenderer (sharp corners, no Vello needed)
 -  `layout` module L11 — `-` — GPU-accelerated tab bar with theme support, separated into:
 -  `state` module L12 — `-` — triggered by CSS properties like `text-shadow`.
 -  `vello_renderer` module L13 — `-` — triggered by CSS properties like `text-shadow`.
--  `TabBar` type L34-372 — `= TabBar` — triggered by CSS properties like `text-shadow`.
--  `color_to_array` function L374-376 — `(color: &crt_theme::Color) -> [f32; 4]` — triggered by CSS properties like `text-shadow`.
--  `TabBar` type L378-436 — `= TabBar` — triggered by CSS properties like `text-shadow`.
+-  `TabBar` type L62-453 — `= TabBar` — triggered by CSS properties like `text-shadow`.
+-  `color_to_array` function L455-457 — `(color: &crt_theme::Color) -> [f32; 4]` — triggered by CSS properties like `text-shadow`.
+-  `TabBar` type L459-596 — `= TabBar` — triggered by CSS properties like `text-shadow`.
 
 #### crates/crt-renderer/src/tab_bar/state.rs
 
 - pub `Tab` struct L7-13 — `{ id: u64, title: String, is_active: bool, has_custom_title: bool }` — A single tab in the tab bar
 - pub `new` function L16-23 — `(id: u64, title: impl Into<String>) -> Self` — Pure data structures for tab state - no GPU dependencies.
 - pub `EditState` struct L28-35 — `{ tab_id: Option<u64>, text: String, cursor: usize }` — State for inline tab title editing
-- pub `TabBarState` struct L38-43 — `{ tabs: Vec<Tab>, active_tab: usize, next_id: u64, edit_state: EditState }` — Tab bar state - manages tabs without any GPU concerns
-- pub `new` function L52-60 — `() -> Self` — Pure data structures for tab state - no GPU dependencies.
-- pub `add_tab` function L63-68 — `(&mut self, title: impl Into<String>) -> u64` — Add a new tab, returns the new tab's ID
-- pub `close_tab` function L71-84 — `(&mut self, id: u64) -> bool` — Close a tab by ID.
-- pub `select_tab` function L87-93 — `(&mut self, id: u64) -> bool` — Select a tab by ID
-- pub `select_tab_index` function L96-102 — `(&mut self, index: usize) -> bool` — Select tab by index (0-based)
-- pub `next_tab` function L105-109 — `(&mut self)` — Select next tab (wraps around)
-- pub `prev_tab` function L112-120 — `(&mut self)` — Select previous tab (wraps around)
-- pub `active_tab_id` function L123-125 — `(&self) -> Option<u64>` — Get active tab ID
-- pub `active_tab_index` function L128-130 — `(&self) -> usize` — Get active tab index
-- pub `tab_count` function L133-135 — `(&self) -> usize` — Get number of tabs
-- pub `tabs` function L138-140 — `(&self) -> &[Tab]` — Get tabs slice
-- pub `set_tab_title` function L144-168 — `(&mut self, id: u64, title: impl Into<String>) -> bool` — Update a tab's title by ID (from OSC escape sequences)
-- pub `set_custom_tab_title` function L171-188 — `(&mut self, id: u64, title: impl Into<String>) -> bool` — Set a custom title for a tab (user-initiated)
-- pub `clear_custom_title` function L191-195 — `(&mut self, id: u64)` — Clear custom title flag (allows OSC to update title again)
-- pub `has_custom_title` function L198-204 — `(&self, id: u64) -> bool` — Check if a tab has a custom title
-- pub `get_tab_title` function L207-212 — `(&self, id: u64) -> Option<&str>` — Get a tab's title by ID
-- pub `is_editing` function L217-219 — `(&self) -> bool` — Check if currently editing a tab
-- pub `editing_tab_id` function L222-224 — `(&self) -> Option<u64>` — Get the tab ID being edited (if any)
-- pub `start_editing` function L227-237 — `(&mut self, id: u64) -> bool` — Start editing a tab's title
-- pub `cancel_editing` function L240-242 — `(&mut self)` — Cancel editing without saving
-- pub `confirm_editing` function L245-252 — `(&mut self) -> bool` — Confirm editing and save the new title
-- pub `edit_insert_char` function L268-274 — `(&mut self, c: char)` — Handle a character input during editing
-- pub `edit_backspace` function L277-283 — `(&mut self)` — Handle backspace during editing
-- pub `edit_delete` function L286-291 — `(&mut self)` — Handle delete during editing
-- pub `edit_cursor_left` function L294-298 — `(&mut self)` — Move cursor left during editing
-- pub `edit_cursor_right` function L301-305 — `(&mut self)` — Move cursor right during editing
-- pub `edit_cursor_home` function L308-312 — `(&mut self)` — Move cursor to start during editing
-- pub `edit_cursor_end` function L315-319 — `(&mut self)` — Move cursor to end during editing
-- pub `edit_state` function L322-324 — `(&self) -> &EditState` — Get edit state for display purposes
+- pub `TabBarState` struct L41-45 — `{ tabs: Vec<Tab>, active_tab: usize, edit_state: EditState }` — Tab bar state - manages tabs without any GPU concerns
+- pub `new` function L54-61 — `() -> Self` — Pure data structures for tab state - no GPU dependencies.
+- pub `with_initial_id` function L64-71 — `(id: u64) -> Self` — Create a tab bar with a specific initial tab ID (for global ID support)
+- pub `empty` function L74-80 — `() -> Self` — Create an empty tab bar (no initial tab)
+- pub `add_tab` function L86-88 — `(&mut self, id: u64, title: impl Into<String>)` — Add a new tab with a caller-provided ID.
+- pub `remove_tab` function L93-106 — `(&mut self, id: u64) -> Option<Tab>` — Remove a tab by ID and return it (for cross-window transfer).
+- pub `add_existing_tab` function L109-111 — `(&mut self, tab: Tab)` — Insert a pre-existing tab (preserving its ID) at the end.
+- pub `insert_existing_tab` function L114-121 — `(&mut self, tab: Tab, index: usize)` — Insert a pre-existing tab at a specific index.
+- pub `move_tab` function L127-149 — `(&mut self, from: usize, to: usize)` — Move a tab from one index to another, updating active_tab to follow.
+- pub `close_tab` function L152-165 — `(&mut self, id: u64) -> bool` — Close a tab by ID.
+- pub `select_tab` function L168-174 — `(&mut self, id: u64) -> bool` — Select a tab by ID
+- pub `select_tab_index` function L177-183 — `(&mut self, index: usize) -> bool` — Select tab by index (0-based)
+- pub `next_tab` function L186-190 — `(&mut self)` — Select next tab (wraps around)
+- pub `prev_tab` function L193-201 — `(&mut self)` — Select previous tab (wraps around)
+- pub `active_tab_id` function L204-206 — `(&self) -> Option<u64>` — Get active tab ID
+- pub `active_tab_index` function L209-211 — `(&self) -> usize` — Get active tab index
+- pub `tab_count` function L214-216 — `(&self) -> usize` — Get number of tabs
+- pub `tabs` function L219-221 — `(&self) -> &[Tab]` — Get tabs slice
+- pub `set_tab_title` function L225-249 — `(&mut self, id: u64, title: impl Into<String>) -> bool` — Update a tab's title by ID (from OSC escape sequences)
+- pub `set_custom_tab_title` function L252-269 — `(&mut self, id: u64, title: impl Into<String>) -> bool` — Set a custom title for a tab (user-initiated)
+- pub `clear_custom_title` function L272-276 — `(&mut self, id: u64)` — Clear custom title flag (allows OSC to update title again)
+- pub `has_custom_title` function L279-285 — `(&self, id: u64) -> bool` — Check if a tab has a custom title
+- pub `get_tab_title` function L288-293 — `(&self, id: u64) -> Option<&str>` — Get a tab's title by ID
+- pub `is_editing` function L298-300 — `(&self) -> bool` — Check if currently editing a tab
+- pub `editing_tab_id` function L303-305 — `(&self) -> Option<u64>` — Get the tab ID being edited (if any)
+- pub `start_editing` function L308-318 — `(&mut self, id: u64) -> bool` — Start editing a tab's title
+- pub `cancel_editing` function L321-323 — `(&mut self)` — Cancel editing without saving
+- pub `confirm_editing` function L326-333 — `(&mut self) -> bool` — Confirm editing and save the new title
+- pub `edit_insert_char` function L349-355 — `(&mut self, c: char)` — Handle a character input during editing
+- pub `edit_backspace` function L358-364 — `(&mut self)` — Handle backspace during editing
+- pub `edit_delete` function L367-372 — `(&mut self)` — Handle delete during editing
+- pub `edit_cursor_left` function L375-379 — `(&mut self)` — Move cursor left during editing
+- pub `edit_cursor_right` function L382-386 — `(&mut self)` — Move cursor right during editing
+- pub `edit_cursor_home` function L389-393 — `(&mut self)` — Move cursor to start during editing
+- pub `edit_cursor_end` function L396-400 — `(&mut self)` — Move cursor to end during editing
+- pub `edit_state` function L403-405 — `(&self) -> &EditState` — Get edit state for display purposes
 -  `Tab` type L15-24 — `= Tab` — Pure data structures for tab state - no GPU dependencies.
--  `TabBarState` type L45-49 — `impl Default for TabBarState` — Pure data structures for tab state - no GPU dependencies.
--  `default` function L46-48 — `() -> Self` — Pure data structures for tab state - no GPU dependencies.
--  `TabBarState` type L51-325 — `= TabBarState` — Pure data structures for tab state - no GPU dependencies.
--  `char_to_byte_index` function L255-260 — `(text: &str, char_idx: usize) -> usize` — Convert character index to byte index
--  `char_count` function L263-265 — `(&self) -> usize` — Get the number of characters in the edit text
--  `tests` module L328-668 — `-` — Pure data structures for tab state - no GPU dependencies.
--  `test_new_state` function L332-336 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `test_add_and_close_tabs` function L339-354 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `test_navigation` function L357-375 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `add_tab_returns_incrementing_ids` function L378-386 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `select_tab_by_id` function L389-400 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `select_tab_by_index` function L403-414 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `close_active_tab_selects_previous` function L417-433 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `close_nonexistent_tab_returns_false` function L436-441 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `set_tab_title_from_osc` function L444-448 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `set_tab_title_truncates_long_titles` function L451-458 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `set_tab_title_strips_control_chars` function L461-465 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `set_tab_title_rejects_empty` function L468-472 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `custom_title_blocks_osc_updates` function L475-489 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `get_tab_title_nonexistent_returns_none` function L492-495 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `edit_start_and_cancel` function L500-512 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `edit_start_nonexistent_tab_fails` function L515-519 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `edit_insert_and_confirm` function L522-543 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `edit_cursor_movement` function L546-572 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `edit_backspace_and_delete` function L575-599 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `edit_insert_respects_max_length` function L602-616 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `edit_operations_noop_when_not_editing` function L619-631 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `confirm_empty_edit_does_not_save` function L634-645 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `prev_tab_single_tab_stays` function L648-655 — `()` — Pure data structures for tab state - no GPU dependencies.
--  `tabs_slice_reflects_state` function L658-667 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `TabBarState` type L47-51 — `impl Default for TabBarState` — Pure data structures for tab state - no GPU dependencies.
+-  `default` function L48-50 — `() -> Self` — Pure data structures for tab state - no GPU dependencies.
+-  `TabBarState` type L53-406 — `= TabBarState` — Pure data structures for tab state - no GPU dependencies.
+-  `char_to_byte_index` function L336-341 — `(text: &str, char_idx: usize) -> usize` — Convert character index to byte index
+-  `char_count` function L344-346 — `(&self) -> usize` — Get the number of characters in the edit text
+-  `tests` module L409-952 — `-` — Pure data structures for tab state - no GPU dependencies.
+-  `test_new_state` function L413-417 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `test_add_and_close_tabs` function L420-435 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `test_navigation` function L438-456 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `add_tab_uses_caller_provided_ids` function L459-467 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `with_initial_id_sets_first_tab_id` function L470-474 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `empty_creates_no_tabs` function L477-481 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `select_tab_by_id` function L484-495 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `select_tab_by_index` function L498-509 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `close_active_tab_selects_previous` function L512-528 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `close_nonexistent_tab_returns_false` function L531-536 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `set_tab_title_from_osc` function L539-543 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `set_tab_title_truncates_long_titles` function L546-553 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `set_tab_title_strips_control_chars` function L556-560 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `set_tab_title_rejects_empty` function L563-567 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `custom_title_blocks_osc_updates` function L570-584 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `get_tab_title_nonexistent_returns_none` function L587-590 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `edit_start_and_cancel` function L595-607 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `edit_start_nonexistent_tab_fails` function L610-614 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `edit_insert_and_confirm` function L617-638 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `edit_cursor_movement` function L641-667 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `edit_backspace_and_delete` function L670-694 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `edit_insert_respects_max_length` function L697-711 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `edit_operations_noop_when_not_editing` function L714-726 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `confirm_empty_edit_does_not_save` function L729-740 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `prev_tab_single_tab_stays` function L743-750 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `tabs_slice_reflects_state` function L753-762 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `make_state_with_tabs` function L766-776 — `(names: &[&str]) -> TabBarState` — Pure data structures for tab state - no GPU dependencies.
+-  `tab_titles` function L778-780 — `(state: &TabBarState) -> Vec<String>` — Pure data structures for tab state - no GPU dependencies.
+-  `move_tab_forward` function L783-788 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `move_tab_backward` function L791-796 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `move_tab_same_position_is_noop` function L799-803 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `move_tab_to_start` function L806-810 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `move_tab_to_end` function L813-817 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `move_tab_active_follows_moved_tab` function L820-828 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `move_tab_active_shifts_when_between_from_and_to` function L831-839 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `move_tab_active_shifts_backward_move` function L842-850 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `move_tab_out_of_bounds_is_noop` function L853-859 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `move_tab_adjacent_swap` function L862-866 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `remove_tab_returns_tab` function L871-876 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `remove_tab_nonexistent_returns_none` function L879-883 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `remove_tab_adjusts_active_index` function L886-892 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `remove_tab_active_clamps_when_last` function L895-900 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `add_existing_tab_appends` function L903-909 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `insert_existing_tab_at_beginning` function L912-917 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `insert_existing_tab_at_middle` function L920-925 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `insert_existing_tab_adjusts_active` function L928-936 — `()` — Pure data structures for tab state - no GPU dependencies.
+-  `round_trip_remove_and_insert` function L939-951 — `()` — Pure data structures for tab state - no GPU dependencies.
 
 #### crates/crt-renderer/src/tab_bar/vello_renderer.rs
 
@@ -1600,26 +1680,29 @@
 
 #### src/app/handler.rs
 
--  `App` type L33-314 — `impl ApplicationHandler for App` — Handles window events, keyboard/mouse input, and frame timing.
+-  `App` type L33-638 — `impl ApplicationHandler for App` — Handles window events, keyboard/mouse input, and frame timing.
 -  `resumed` function L34-50 — `(&mut self, event_loop: &ActiveEventLoop)` — Handles window events, keyboard/mouse input, and frame timing.
--  `window_event` function L52-234 — `(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent)` — Handles window events, keyboard/mouse input, and frame timing.
--  `about_to_wait` function L236-313 — `(&mut self, event_loop: &ActiveEventLoop)` — Handles window events, keyboard/mouse input, and frame timing.
--  `TARGET_FRAME_TIME` variable L282-283 — `: std::time::Duration` — Handles window events, keyboard/mouse input, and frame timing.
--  `UNFOCUSED_FRAME_TIME` variable L299-300 — `: std::time::Duration` — Handles window events, keyboard/mouse input, and frame timing.
+-  `window_event` function L52-515 — `(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent)` — Handles window events, keyboard/mouse input, and frame timing.
+-  `about_to_wait` function L517-637 — `(&mut self, event_loop: &ActiveEventLoop)` — Handles window events, keyboard/mouse input, and frame timing.
+-  `TARGET_FRAME_TIME` variable L606-607 — `: std::time::Duration` — Handles window events, keyboard/mouse input, and frame timing.
+-  `UNFOCUSED_FRAME_TIME` variable L623-624 — `: std::time::Duration` — Handles window events, keyboard/mouse input, and frame timing.
 
 #### src/app/initialization.rs
 
--  `App` type L27-372 — `= App` — Contains the heavy `create_window()` function and scale factor handling.
--  `create_window` function L28-371 — `(&mut self, event_loop: &ActiveEventLoop) -> WindowId` — Contains the heavy `create_window()` function and scale factor handling.
--  `handle_scale_factor_change` function L378-472 — `( state: &mut WindowState, shared: &SharedGpuState, config: &Config, new_scale: ...` — Handle scale factor change (display DPI change)
+-  `DetachPayload` struct L22-27 — `{ tab: Tab, shell: ShellTerminal, content_hash: u64, screen_position: Option<win...` — Payload for creating a window with an existing tab+shell (detach operation).
+-  `MergePayload` struct L30-36 — `{ tab: Tab, shell: ShellTerminal, content_hash: u64, target_window_id: WindowId,...` — Payload for merging a tab into an existing window.
+-  `App` type L44-447 — `= App` — Contains the heavy `create_window()` function and scale factor handling.
+-  `create_window` function L45-398 — `(&mut self, event_loop: &ActiveEventLoop) -> WindowId` — Contains the heavy `create_window()` function and scale factor handling.
+-  `create_window_for_detach` function L404-446 — `( &mut self, event_loop: &ActiveEventLoop, payload: DetachPayload, ) -> WindowId` — Create a new window with an existing tab+shell (for tab detachment).
+-  `handle_scale_factor_change` function L453-547 — `( state: &mut WindowState, shared: &SharedGpuState, config: &Config, new_scale: ...` — Handle scale factor change (display DPI change)
 
 #### src/app/menu_actions.rs
 
--  `App` type L15-278 — `= App` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
--  `handle_menu_action` function L16-180 — `(&mut self, action: MenuAction, event_loop: &ActiveEventLoop)` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
--  `adjust_font_scale` function L182-257 — `(&mut self, delta: f32)` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
--  `navigate_tab` function L259-269 — `(&mut self, next: bool)` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
--  `select_tab_index` function L271-277 — `(&mut self, index: usize)` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
+-  `App` type L15-280 — `= App` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
+-  `handle_menu_action` function L16-182 — `(&mut self, action: MenuAction, event_loop: &ActiveEventLoop)` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
+-  `adjust_font_scale` function L184-259 — `(&mut self, delta: f32)` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
+-  `navigate_tab` function L261-271 — `(&mut self, next: bool)` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
+-  `select_tab_index` function L273-279 — `(&mut self, index: usize)` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
 
 #### src/app/mod.rs
 
@@ -1627,21 +1710,23 @@
 -  `handler` module L7 — `-` — GPU state, config, and theme resources.
 -  `initialization` module L8 — `-` — GPU state, config, and theme resources.
 -  `menu_actions` module L9 — `-` — GPU state, config, and theme resources.
--  `MIN_FONT_SCALE` variable L32 — `: f32` — GPU state, config, and theme resources.
--  `MAX_FONT_SCALE` variable L33 — `: f32` — GPU state, config, and theme resources.
--  `FONT_SCALE_STEP` variable L34 — `: f32` — GPU state, config, and theme resources.
--  `App` struct L36-56 — `{ windows: HashMap<WindowId, WindowState>, shared_gpu: Option<SharedGpuState>, f...` — GPU state, config, and theme resources.
--  `App` type L58-366 — `= App` — GPU state, config, and theme resources.
--  `new` function L59-88 — `() -> Self` — GPU state, config, and theme resources.
--  `init_shared_gpu` function L90-94 — `(&mut self)` — GPU state, config, and theme resources.
--  `focused_window_mut` function L96-98 — `(&mut self) -> Option<&mut WindowState>` — GPU state, config, and theme resources.
--  `update_crt_pipeline` function L101-134 — `( state: &mut WindowState, shared: &SharedGpuState, theme: &Theme, )` — Update CRT pipeline and textures for new theme
--  `update_background_image` function L137-164 — `( state: &mut WindowState, device: &wgpu::Device, queue: &wgpu::Queue, theme: &T...` — Update background image state for new theme
--  `create_sprite_state` function L167-225 — `( device: &wgpu::Device, queue: &wgpu::Queue, theme: &Theme, format: wgpu::Textu...` — Create sprite animation state from theme configuration
--  `close_window` function L227-266 — `(&mut self, window_id: WindowId)` — GPU state, config, and theme resources.
--  `reload_config` function L269-313 — `(&mut self)` — Reload config from disk and apply changes
--  `reload_theme` function L316-364 — `(&mut self)` — Reload themes from disk and apply to all windows
--  `apply_theme_to_window` function L373-396 — `( state: &mut WindowState, shared_gpu: Option<&SharedGpuState>, theme_name: &str...` — Apply a theme switch to a specific window state.
+-  `MIN_FONT_SCALE` variable L33 — `: f32` — GPU state, config, and theme resources.
+-  `MAX_FONT_SCALE` variable L34 — `: f32` — GPU state, config, and theme resources.
+-  `FONT_SCALE_STEP` variable L35 — `: f32` — GPU state, config, and theme resources.
+-  `App` struct L37-69 — `{ windows: HashMap<WindowId, WindowState>, shared_gpu: Option<SharedGpuState>, f...` — GPU state, config, and theme resources.
+-  `App` type L71-433 — `= App` — GPU state, config, and theme resources.
+-  `new` function L72-107 — `() -> Self` — GPU state, config, and theme resources.
+-  `next_tab_id` function L110-114 — `(&mut self) -> u64` — Allocate the next globally unique tab ID.
+-  `create_drag_overlay` function L120-155 — `( &mut self, event_loop: &winit::event_loop::ActiveEventLoop, title: &str, scree...` — Create a small floating overlay window for drag feedback.
+-  `init_shared_gpu` function L157-161 — `(&mut self)` — GPU state, config, and theme resources.
+-  `focused_window_mut` function L163-165 — `(&mut self) -> Option<&mut WindowState>` — GPU state, config, and theme resources.
+-  `update_crt_pipeline` function L168-201 — `( state: &mut WindowState, shared: &SharedGpuState, theme: &Theme, )` — Update CRT pipeline and textures for new theme
+-  `update_background_image` function L204-231 — `( state: &mut WindowState, device: &wgpu::Device, queue: &wgpu::Queue, theme: &T...` — Update background image state for new theme
+-  `create_sprite_state` function L234-292 — `( device: &wgpu::Device, queue: &wgpu::Queue, theme: &Theme, format: wgpu::Textu...` — Create sprite animation state from theme configuration
+-  `close_window` function L294-333 — `(&mut self, window_id: WindowId)` — GPU state, config, and theme resources.
+-  `reload_config` function L336-380 — `(&mut self)` — Reload config from disk and apply changes
+-  `reload_theme` function L383-431 — `(&mut self)` — Reload themes from disk and apply to all windows
+-  `apply_theme_to_window` function L440-463 — `( state: &mut WindowState, shared_gpu: Option<&SharedGpuState>, theme_name: &str...` — Apply a theme switch to a specific window state.
 
 ### src/bin
 
@@ -1950,19 +2035,20 @@
 
 #### src/gpu/mod.rs
 
-- pub `SharedGpuState` struct L29-44 — `{ instance: wgpu::Instance, adapter: wgpu::Adapter, device: Arc<wgpu::Device>, q...` — Shared GPU resources across all windows
-- pub `new` function L48-103 — `() -> Self` — Initialize shared GPU resources
-- pub `ensure_vello_renderer` function L110-134 — `(&self)` — Ensure the Vello renderer is initialized (lazy initialization)
-- pub `vello_renderer_arc` function L137-139 — `(&self) -> Arc<Mutex<Option<vello::Renderer>>>` — Get a clone of the shared Vello renderer Arc for passing to EffectsRenderer
-- pub `reset_vello_renderer` function L146-170 — `(&self)` — Reset the Vello renderer to clean up accumulated texture atlas resources.
-- pub `WindowGpuState` struct L174-240 — `{ surface: wgpu::Surface<'static>, config: wgpu::SurfaceConfiguration, glyph_cac...` — Per-window GPU state (surface tied to specific window)
-- pub `cleanup` function L249-274 — `(&mut self, device: &wgpu::Device)` — Explicitly release GPU resources before dropping.
+- pub `SharedGpuState` struct L30-47 — `{ instance: wgpu::Instance, adapter: wgpu::Adapter, device: Arc<wgpu::Device>, q...` — Shared GPU resources across all windows
+- pub `new` function L51-107 — `() -> Self` — Initialize shared GPU resources
+- pub `ensure_shared_pipelines` function L113-118 — `(&mut self, target_format: wgpu::TextureFormat)` — Ensure shared render pipelines are initialized for the given surface format.
+- pub `ensure_vello_renderer` function L125-149 — `(&self)` — Ensure the Vello renderer is initialized (lazy initialization)
+- pub `vello_renderer_arc` function L152-154 — `(&self) -> Arc<Mutex<Option<vello::Renderer>>>` — Get a clone of the shared Vello renderer Arc for passing to EffectsRenderer
+- pub `reset_vello_renderer` function L161-185 — `(&self)` — Reset the Vello renderer to clean up accumulated texture atlas resources.
+- pub `WindowGpuState` struct L189-255 — `{ surface: wgpu::Surface<'static>, config: wgpu::SurfaceConfiguration, glyph_cac...` — Per-window GPU state (surface tied to specific window)
+- pub `cleanup` function L264-289 — `(&mut self, device: &wgpu::Device)` — Explicitly release GPU resources before dropping.
 -  `buffer_pool` module L9 — `-` — Shared and per-window GPU resources for wgpu rendering.
 -  `texture_pool` module L10 — `-` — - `texture_pool` - Render target texture pooling by size bucket
--  `SharedGpuState` type L46-171 — `= SharedGpuState` — - `texture_pool` - Render target texture pooling by size bucket
--  `WindowGpuState` type L242-275 — `= WindowGpuState` — - `texture_pool` - Render target texture pooling by size bucket
--  `WindowGpuState` type L277-285 — `impl Drop for WindowGpuState` — - `texture_pool` - Render target texture pooling by size bucket
--  `drop` function L278-284 — `(&mut self)` — - `texture_pool` - Render target texture pooling by size bucket
+-  `SharedGpuState` type L49-186 — `= SharedGpuState` — - `texture_pool` - Render target texture pooling by size bucket
+-  `WindowGpuState` type L257-290 — `= WindowGpuState` — - `texture_pool` - Render target texture pooling by size bucket
+-  `WindowGpuState` type L292-300 — `impl Drop for WindowGpuState` — - `texture_pool` - Render target texture pooling by size bucket
+-  `drop` function L293-299 — `(&mut self)` — - `texture_pool` - Render target texture pooling by size bucket
 
 #### src/gpu/texture_pool.rs
 
@@ -2000,6 +2086,54 @@
 ### src/input
 
 > *Semantic summary to be generated by AI agent.*
+
+#### src/input/drag.rs
+
+- pub `DRAG_THRESHOLD` variable L13 — `: f64` — Minimum pixel distance the cursor must move before a drag activates.
+- pub `DragDropTarget` enum L17-29 — `Reorder | Merge | Detach | Pending` — What will happen when the user releases the mouse during a tab drag.
+- pub `TabDragState` struct L35-48 — `{ tab_id: TabId, source_window_id: WindowId, start_pos: PhysicalPosition<f64>, c...` — State tracking an in-progress tab drag operation.
+- pub `new` function L52-65 — `( tab_id: TabId, source_window_id: WindowId, start_pos: PhysicalPosition<f64>, )...` — Create a new drag state in the initial (pending) state.
+- pub `exceeds_threshold` function L68-72 — `(&self) -> bool` — Check if the cursor has moved far enough to activate the drag.
+- pub `compute_reorder_index` function L84-113 — `( cursor_x: f32, tab_rects: &[crt_renderer::TabRect], dragged_index: usize, ) ->...` — Compute the insertion index for tab reordering based on cursor position.
+- pub `WindowScreenRect` struct L117-127 — `{ window_id: WindowId, origin: PhysicalPosition<i32>, size: PhysicalSize<u32>, t...` — A window's screen-space rectangle and tab bar region, used for drop target resolution.
+- pub `resolve_drop_target` function L167-223 — `( cursor_screen: PhysicalPosition<f64>, source_window_id: WindowId, dragged_inde...` — Resolve what drop target the cursor is over.
+- pub `should_start_drag` function L234-252 — `( tab_bar: &crt_renderer::TabBar, context_menu_visible: bool, x: f32, y: f32, ) ...` — Check whether a tab drag should be initiated for a mouse press at (x, y).
+-  `TabDragState` type L50-73 — `= TabDragState` — reordering, detaching, and merging tabs across windows.
+-  `WindowScreenRect` type L129-152 — `= WindowScreenRect` — reordering, detaching, and merging tabs across windows.
+-  `contains` function L131-137 — `(&self, x: f64, y: f64) -> bool` — Check if a screen-space point is inside this window
+-  `tab_bar_contains` function L140-146 — `(&self, x: f64, y: f64) -> bool` — Check if a screen-space point is inside this window's tab bar region
+-  `to_local_x` function L149-151 — `(&self, screen_x: f64) -> f32` — Convert screen-space x to window-local x for tab hit testing
+-  `tests` module L255-643 — `-` — reordering, detaching, and merging tabs across windows.
+-  `make_drag` function L262-267 — `(start_x: f64, start_y: f64) -> TabDragState` — reordering, detaching, and merging tabs across windows.
+-  `drag_drop_target_equality` function L270-282 — `()` — reordering, detaching, and merging tabs across windows.
+-  `new_drag_state_is_pending_and_inactive` function L285-294 — `()` — reordering, detaching, and merging tabs across windows.
+-  `exceeds_threshold_false_when_stationary` function L297-300 — `()` — reordering, detaching, and merging tabs across windows.
+-  `exceeds_threshold_false_for_small_movement` function L303-307 — `()` — reordering, detaching, and merging tabs across windows.
+-  `exceeds_threshold_true_for_large_movement` function L310-314 — `()` — reordering, detaching, and merging tabs across windows.
+-  `exceeds_threshold_diagonal` function L317-322 — `()` — reordering, detaching, and merging tabs across windows.
+-  `exceeds_threshold_exactly_at_boundary` function L325-330 — `()` — reordering, detaching, and merging tabs across windows.
+-  `make_tab_rects` function L336-348 — `(count: usize) -> Vec<TabRect>` — reordering, detaching, and merging tabs across windows.
+-  `reorder_index_empty_rects` function L351-353 — `()` — reordering, detaching, and merging tabs across windows.
+-  `reorder_index_drag_first_to_second` function L356-362 — `()` — reordering, detaching, and merging tabs across windows.
+-  `reorder_index_drag_last_to_first` function L365-370 — `()` — reordering, detaching, and merging tabs across windows.
+-  `make_window_rect` function L374-403 — `( id_num: u64, x: i32, y: i32, w: u32, h: u32, tab_bar_h: f32, num_tabs: usize, ...` — reordering, detaching, and merging tabs across windows.
+-  `resolve_outside_all_windows_is_detach` function L406-419 — `()` — reordering, detaching, and merging tabs across windows.
+-  `resolve_over_source_tab_bar_is_reorder` function L422-435 — `()` — reordering, detaching, and merging tabs across windows.
+-  `resolve_over_window_body_is_detach` function L438-451 — `()` — reordering, detaching, and merging tabs across windows.
+-  `resolve_empty_windows_is_detach` function L459-469 — `()` — reordering, detaching, and merging tabs across windows.
+-  `reorder_index_stays_in_place` function L472-479 — `()` — reordering, detaching, and merging tabs across windows.
+-  `drag_state_transitions_pending_to_active` function L484-498 — `()` — reordering, detaching, and merging tabs across windows.
+-  `drag_state_target_updates_continuously` function L501-517 — `()` — reordering, detaching, and merging tabs across windows.
+-  `window_screen_rect_contains` function L522-532 — `()` — reordering, detaching, and merging tabs across windows.
+-  `window_screen_rect_tab_bar_contains` function L535-543 — `()` — reordering, detaching, and merging tabs across windows.
+-  `window_screen_rect_to_local_x` function L546-550 — `()` — reordering, detaching, and merging tabs across windows.
+-  `reorder_index_single_tab` function L555-560 — `()` — reordering, detaching, and merging tabs across windows.
+-  `reorder_index_cursor_far_right` function L563-568 — `()` — reordering, detaching, and merging tabs across windows.
+-  `reorder_index_cursor_far_left` function L571-576 — `()` — reordering, detaching, and merging tabs across windows.
+-  `resolve_cursor_at_window_edge_is_in_window` function L581-594 — `()` — reordering, detaching, and merging tabs across windows.
+-  `resolve_single_tab_over_source_is_pending` function L597-610 — `()` — reordering, detaching, and merging tabs across windows.
+-  `resolve_single_tab_outside_is_pending` function L613-626 — `()` — reordering, detaching, and merging tabs across windows.
+-  `resolve_cursor_just_below_tab_bar_on_source_is_detach` function L629-642 — `()` — reordering, detaching, and merging tabs across windows.
 
 #### src/input/key_encoder.rs
 
@@ -2056,72 +2190,73 @@
 
 #### src/input/mod.rs
 
-- pub `DetectedUrl` struct L29-40 — `{ url: String, start_col: usize, end_col: usize, line: usize, end_line: usize }` — Detected URL with its position in the terminal (supports multi-line spans)
-- pub `detect_urls_in_line` function L62-79 — `(line_text: &str, line_num: usize) -> Vec<DetectedUrl>` — Scan a line of text for URLs and return their positions
-- pub `find_url_at_position` function L82-84 — `(urls: &[DetectedUrl], col: usize, line: usize) -> Option<&DetectedUrl>` — Check if a position (col, line) is within a detected URL (supports multi-line URLs)
-- pub `find_url_index_at_position` function L87-89 — `(urls: &[DetectedUrl], col: usize, line: usize) -> Option<usize>` — Find the index of a URL at a given position (supports multi-line URLs)
-- pub `merge_wrapped_urls` function L116-150 — `(urls: &mut Vec<DetectedUrl>, line_texts: &BTreeMap<i32, String>, cols: usize)` — Merge URLs that wrap across multiple lines
-- pub `open_url` function L167-178 — `(url: &str)` — Open a URL in the default browser
-- pub `MOUSE_BUTTON_LEFT` variable L186 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
-- pub `MOUSE_BUTTON_MIDDLE` variable L187 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
-- pub `MOUSE_BUTTON_RIGHT` variable L188 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
-- pub `MOUSE_BUTTON_RELEASE` variable L189 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
-- pub `MOUSE_BUTTON_MOTION` variable L190 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
-- pub `MOUSE_BUTTON_SCROLL_UP` variable L191 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
-- pub `MOUSE_BUTTON_SCROLL_DOWN` variable L192 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
-- pub `should_report_mouse` function L195-203 — `(shell: &ShellTerminal) -> bool` — Check if the terminal has mouse reporting enabled
-- pub `should_report_motion` function L206-211 — `(shell: &ShellTerminal, button_pressed: bool) -> bool` — Check if the terminal is tracking mouse motion
-- pub `is_sgr_mouse_mode` function L214-220 — `(shell: &ShellTerminal) -> bool` — Check if SGR extended mouse mode is enabled
-- pub `mouse_report` function L230-245 — `(button: u8, col: usize, line: usize, pressed: bool, sgr_mode: bool) -> Vec<u8>` — Generate mouse escape sequence for terminal
-- pub `TabEditResult` enum L248-253 — `Handled | NotHandled` — Result of handling tab editing input
-- pub `handle_tab_editing` function L256-315 — `(state: &mut WindowState, key: &Key, mod_pressed: bool) -> TabEditResult` — Handle keyboard input for tab title editing
-- pub `handle_shell_input` function L322-433 — `( state: &mut WindowState, key: &Key, text: Option<&str>, mod_pressed: bool, ctr...` — Handle shell input (send to PTY)
-- pub `handle_tab_click` function L436-502 — `(state: &mut WindowState, x: f32, y: f32, now: std::time::Instant) -> bool` — Handle mouse click on tab bar
-- pub `handle_resize` function L505-595 — `( state: &mut WindowState, shared: &crate::gpu::SharedGpuState, new_width: u32, ...` — Handle window resize
-- pub `screen_to_cell` function L599-611 — `(state: &WindowState, x: f32, y: f32) -> Option<(usize, usize)>` — Convert screen coordinates to terminal cell (column, line)
-- pub `handle_terminal_mouse_press` function L616-618 — `(state: &mut WindowState, x: f32, y: f32, now: Instant) -> bool` — Handle mouse press for terminal selection or mouse reporting
-- pub `handle_terminal_mouse_button` function L622-728 — `( state: &mut WindowState, x: f32, y: f32, now: Instant, button: u8, pressed: bo...` — Handle mouse button press/release for any button
-- pub `handle_terminal_mouse_move` function L731-772 — `(state: &mut WindowState, x: f32, y: f32)` — Handle mouse move for terminal selection (dragging) or mouse motion reporting
-- pub `handle_terminal_mouse_release` function L775-805 — `(state: &mut WindowState, x: f32, y: f32)` — Handle mouse release for terminal selection or mouse reporting
-- pub `handle_terminal_scroll` function L809-838 — `(state: &mut WindowState, x: f32, y: f32, delta_y: f32) -> bool` — Handle mouse scroll wheel for terminal scrollback or mouse reporting
-- pub `clear_terminal_selection` function L841-853 — `(state: &mut WindowState)` — Clear terminal selection (e.g., when user types or presses Escape)
-- pub `get_terminal_selection_text` function L856-860 — `(state: &WindowState) -> Option<String>` — Get selected text from terminal (for copy)
-- pub `get_clipboard_content` function L870-907 — `() -> Option<String>` — Get clipboard content from system clipboard
-- pub `set_clipboard_content` function L950-954 — `(text: &str)` — Set clipboard content
-- pub `paste_to_terminal` function L960-1011 — `(state: &mut WindowState, content: &str)` — Paste content to terminal with bracketed paste mode support
-- pub `scroll_to_current_match` function L1014-1056 — `(state: &mut WindowState)` — Scroll terminal to make current search match visible
-- pub `update_search_matches` function L1059-1100 — `(state: &mut WindowState)` — Update search matches based on current query
--  `key_encoder` module L5 — `-` — Keyboard and mouse input processing for terminal and tab bar.
--  `keyboard` module L6 — `-` — Keyboard and mouse input processing for terminal and tab bar.
--  `mouse` module L7 — `-` — Keyboard and mouse input processing for terminal and tab bar.
--  `url_regex` function L43-59 — `() -> &'static Regex` — Get the URL regex (compiled once)
--  `URL_REGEX` variable L44 — `: OnceLock<Regex>` — Keyboard and mouse input processing for terminal and tab bar.
--  `is_position_in_url` function L92-109 — `(url: &DetectedUrl, col: usize, line: usize) -> bool` — Check if a (col, line) position falls within a URL's span
--  `find_url_continuation_end` function L153-164 — `(text: &str) -> usize` — Find where URL-like characters end in a continuation line
--  `MULTI_CLICK_THRESHOLD` variable L181 — `: Duration` — Threshold for multi-click detection
--  `MULTI_CLICK_DISTANCE` variable L183 — `: usize` — Maximum distance (in cells) for multi-click to register
--  `save_clipboard_image_to_temp` function L910-947 — `(image_data: &arboard::ImageData) -> Option<String>` — Save clipboard image data to a temporary file and return the path
--  `tests` module L1103-1322 — `-` — Keyboard and mouse input processing for terminal and tab bar.
--  `test_safe_utf8_truncation` function L1111-1155 — `()` — Test that UTF-8 string truncation handles multi-byte characters safely.
--  `detect_https_url` function L1160-1166 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `detect_http_url` function L1169-1174 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `detect_file_url` function L1177-1181 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `detect_www_prefix` function L1184-1188 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `detect_url_with_query_and_fragment` function L1191-1195 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `detect_multiple_urls_in_line` function L1198-1203 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `detect_no_urls_in_plain_text` function L1206-1209 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `find_url_at_position_hit` function L1212-1215 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `find_url_at_position_miss` function L1218-1224 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `find_url_index_at_position_returns_index` function L1227-1231 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `mouse_report_sgr_press` function L1236-1240 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `mouse_report_sgr_release` function L1243-1247 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `mouse_report_legacy_press` function L1250-1254 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `mouse_report_legacy_release` function L1257-1260 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `mouse_report_scroll_buttons` function L1263-1271 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `mouse_report_legacy_clamps_coordinates` function L1274-1280 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `merge_wrapped_urls_single_line` function L1285-1293 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `merge_wrapped_urls_across_lines` function L1296-1308 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `merge_wrapped_urls_stops_at_new_protocol` function L1311-1321 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+- pub `drag` module L5 — `-` — Keyboard and mouse input processing for terminal and tab bar.
+- pub `DetectedUrl` struct L30-41 — `{ url: String, start_col: usize, end_col: usize, line: usize, end_line: usize }` — Detected URL with its position in the terminal (supports multi-line spans)
+- pub `detect_urls_in_line` function L63-80 — `(line_text: &str, line_num: usize) -> Vec<DetectedUrl>` — Scan a line of text for URLs and return their positions
+- pub `find_url_at_position` function L83-85 — `(urls: &[DetectedUrl], col: usize, line: usize) -> Option<&DetectedUrl>` — Check if a position (col, line) is within a detected URL (supports multi-line URLs)
+- pub `find_url_index_at_position` function L88-90 — `(urls: &[DetectedUrl], col: usize, line: usize) -> Option<usize>` — Find the index of a URL at a given position (supports multi-line URLs)
+- pub `merge_wrapped_urls` function L117-151 — `(urls: &mut Vec<DetectedUrl>, line_texts: &BTreeMap<i32, String>, cols: usize)` — Merge URLs that wrap across multiple lines
+- pub `open_url` function L168-179 — `(url: &str)` — Open a URL in the default browser
+- pub `MOUSE_BUTTON_LEFT` variable L187 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
+- pub `MOUSE_BUTTON_MIDDLE` variable L188 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
+- pub `MOUSE_BUTTON_RIGHT` variable L189 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
+- pub `MOUSE_BUTTON_RELEASE` variable L190 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
+- pub `MOUSE_BUTTON_MOTION` variable L191 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
+- pub `MOUSE_BUTTON_SCROLL_UP` variable L192 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
+- pub `MOUSE_BUTTON_SCROLL_DOWN` variable L193 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
+- pub `should_report_mouse` function L196-204 — `(shell: &ShellTerminal) -> bool` — Check if the terminal has mouse reporting enabled
+- pub `should_report_motion` function L207-212 — `(shell: &ShellTerminal, button_pressed: bool) -> bool` — Check if the terminal is tracking mouse motion
+- pub `is_sgr_mouse_mode` function L215-221 — `(shell: &ShellTerminal) -> bool` — Check if SGR extended mouse mode is enabled
+- pub `mouse_report` function L231-246 — `(button: u8, col: usize, line: usize, pressed: bool, sgr_mode: bool) -> Vec<u8>` — Generate mouse escape sequence for terminal
+- pub `TabEditResult` enum L249-254 — `Handled | NotHandled` — Result of handling tab editing input
+- pub `handle_tab_editing` function L257-316 — `(state: &mut WindowState, key: &Key, mod_pressed: bool) -> TabEditResult` — Handle keyboard input for tab title editing
+- pub `handle_shell_input` function L323-434 — `( state: &mut WindowState, key: &Key, text: Option<&str>, mod_pressed: bool, ctr...` — Handle shell input (send to PTY)
+- pub `handle_tab_click` function L437-503 — `(state: &mut WindowState, x: f32, y: f32, now: std::time::Instant) -> bool` — Handle mouse click on tab bar
+- pub `handle_resize` function L506-596 — `( state: &mut WindowState, shared: &crate::gpu::SharedGpuState, new_width: u32, ...` — Handle window resize
+- pub `screen_to_cell` function L600-612 — `(state: &WindowState, x: f32, y: f32) -> Option<(usize, usize)>` — Convert screen coordinates to terminal cell (column, line)
+- pub `handle_terminal_mouse_press` function L617-619 — `(state: &mut WindowState, x: f32, y: f32, now: Instant) -> bool` — Handle mouse press for terminal selection or mouse reporting
+- pub `handle_terminal_mouse_button` function L623-729 — `( state: &mut WindowState, x: f32, y: f32, now: Instant, button: u8, pressed: bo...` — Handle mouse button press/release for any button
+- pub `handle_terminal_mouse_move` function L732-773 — `(state: &mut WindowState, x: f32, y: f32)` — Handle mouse move for terminal selection (dragging) or mouse motion reporting
+- pub `handle_terminal_mouse_release` function L776-806 — `(state: &mut WindowState, x: f32, y: f32)` — Handle mouse release for terminal selection or mouse reporting
+- pub `handle_terminal_scroll` function L810-839 — `(state: &mut WindowState, x: f32, y: f32, delta_y: f32) -> bool` — Handle mouse scroll wheel for terminal scrollback or mouse reporting
+- pub `clear_terminal_selection` function L842-854 — `(state: &mut WindowState)` — Clear terminal selection (e.g., when user types or presses Escape)
+- pub `get_terminal_selection_text` function L857-861 — `(state: &WindowState) -> Option<String>` — Get selected text from terminal (for copy)
+- pub `get_clipboard_content` function L871-908 — `() -> Option<String>` — Get clipboard content from system clipboard
+- pub `set_clipboard_content` function L951-955 — `(text: &str)` — Set clipboard content
+- pub `paste_to_terminal` function L961-1012 — `(state: &mut WindowState, content: &str)` — Paste content to terminal with bracketed paste mode support
+- pub `scroll_to_current_match` function L1015-1057 — `(state: &mut WindowState)` — Scroll terminal to make current search match visible
+- pub `update_search_matches` function L1060-1101 — `(state: &mut WindowState)` — Update search matches based on current query
+-  `key_encoder` module L6 — `-` — Keyboard and mouse input processing for terminal and tab bar.
+-  `keyboard` module L7 — `-` — Keyboard and mouse input processing for terminal and tab bar.
+-  `mouse` module L8 — `-` — Keyboard and mouse input processing for terminal and tab bar.
+-  `url_regex` function L44-60 — `() -> &'static Regex` — Get the URL regex (compiled once)
+-  `URL_REGEX` variable L45 — `: OnceLock<Regex>` — Keyboard and mouse input processing for terminal and tab bar.
+-  `is_position_in_url` function L93-110 — `(url: &DetectedUrl, col: usize, line: usize) -> bool` — Check if a (col, line) position falls within a URL's span
+-  `find_url_continuation_end` function L154-165 — `(text: &str) -> usize` — Find where URL-like characters end in a continuation line
+-  `MULTI_CLICK_THRESHOLD` variable L182 — `: Duration` — Threshold for multi-click detection
+-  `MULTI_CLICK_DISTANCE` variable L184 — `: usize` — Maximum distance (in cells) for multi-click to register
+-  `save_clipboard_image_to_temp` function L911-948 — `(image_data: &arboard::ImageData) -> Option<String>` — Save clipboard image data to a temporary file and return the path
+-  `tests` module L1104-1323 — `-` — Keyboard and mouse input processing for terminal and tab bar.
+-  `test_safe_utf8_truncation` function L1112-1156 — `()` — Test that UTF-8 string truncation handles multi-byte characters safely.
+-  `detect_https_url` function L1161-1167 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_http_url` function L1170-1175 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_file_url` function L1178-1182 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_www_prefix` function L1185-1189 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_url_with_query_and_fragment` function L1192-1196 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_multiple_urls_in_line` function L1199-1204 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_no_urls_in_plain_text` function L1207-1210 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `find_url_at_position_hit` function L1213-1216 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `find_url_at_position_miss` function L1219-1225 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `find_url_index_at_position_returns_index` function L1228-1232 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `mouse_report_sgr_press` function L1237-1241 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `mouse_report_sgr_release` function L1244-1248 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `mouse_report_legacy_press` function L1251-1255 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `mouse_report_legacy_release` function L1258-1261 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `mouse_report_scroll_buttons` function L1264-1272 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `mouse_report_legacy_clamps_coordinates` function L1275-1281 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `merge_wrapped_urls_single_line` function L1286-1294 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `merge_wrapped_urls_across_lines` function L1297-1309 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `merge_wrapped_urls_stops_at_new_protocol` function L1312-1322 — `()` — Keyboard and mouse input processing for terminal and tab bar.
 
 #### src/input/mouse.rs
 

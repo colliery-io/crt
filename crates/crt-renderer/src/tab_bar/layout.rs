@@ -189,7 +189,7 @@ mod tests {
     fn layout_with_rects(tab_count: usize) -> TabLayout {
         let mut state = TabBarState::new();
         for i in 1..tab_count {
-            state.add_tab(format!("Tab {}", i));
+            state.add_tab(i as u64, format!("Tab {}", i));
         }
         let theme = TabTheme::default();
         let mut layout = TabLayout::new();
@@ -256,7 +256,7 @@ mod tests {
         assert_eq!(layout.tab_rects().len(), 1);
 
         // Add more tabs
-        state.add_tab("A");
+        state.add_tab(1, "A");
         layout.mark_dirty();
         layout.calculate_rects(&state, &theme);
         assert_eq!(layout.tab_rects().len(), 2);
@@ -325,7 +325,7 @@ mod tests {
     #[test]
     fn scale_factor_affects_rects() {
         let mut state = TabBarState::new();
-        state.add_tab("Tab 1");
+        state.add_tab(1, "Tab 1");
         let theme = TabTheme::default();
 
         let mut layout1 = TabLayout::new();

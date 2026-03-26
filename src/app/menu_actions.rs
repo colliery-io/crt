@@ -21,11 +21,13 @@ impl App {
                 let semantic_prompts = self.config.shell.semantic_prompts;
                 let shell_assets_dir = Config::shell_assets_dir();
 
+                let new_tab_id = self.next_tab_id();
                 if let Some(state) = self.focused_window_mut() {
                     // Get current shell's working directory for the new tab
                     let cwd = state.active_shell_cwd();
                     let tab_num = state.gpu.tab_bar.tab_count() + 1;
-                    let tab_id = state.gpu.tab_bar.add_tab(format!("Terminal {}", tab_num));
+                    let tab_id = new_tab_id;
+                    state.gpu.tab_bar.add_tab(tab_id, format!("Terminal {}", tab_num));
                     state
                         .gpu
                         .tab_bar

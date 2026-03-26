@@ -2,6 +2,7 @@
 //!
 //! Keyboard and mouse input processing for terminal and tab bar.
 
+pub mod drag;
 mod key_encoder;
 mod keyboard;
 mod mouse;

@@ -18,6 +18,32 @@ pub use vello_renderer::VelloTabBarRenderer;
 
 use crt_theme::TabTheme;
 
+/// Visual mode for the drag feedback indicator
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DragMode {
+    /// Reordering within the same window
+    Reorder,
+    /// Merging into this window from another
+    Merge,
+    /// Tab will detach into a new window
+    Detach,
+}
+
+/// Visual feedback state for tab dragging.
+///
+/// Set before rendering to indicate what visual cues to show.
+#[derive(Debug, Clone)]
+pub struct DragFeedback {
+    /// The tab being dragged (renders dimmed)
+    pub dragged_tab_id: u64,
+    /// Where to show the insertion caret (if any)
+    pub insertion_index: Option<usize>,
+    /// Cursor position for ghost tab rendering (window-local coords)
+    pub ghost_position: Option<(f32, f32)>,
+    /// Current drag mode (affects visual style)
+    pub mode: DragMode,
+}
+
 /// Tab bar facade - combines state, layout, and rendering
 ///
 /// Rendering architecture:
@@ -29,6 +55,8 @@ pub struct TabBar {
     layout: TabLayout,
     vello_renderer: VelloTabBarRenderer,
     theme: TabTheme,
+    /// Active drag visual feedback (None when no drag in progress)
+    drag_feedback: Option<DragFeedback>,
 }
 
 impl TabBar {
@@ -38,7 +66,24 @@ impl TabBar {
             layout: TabLayout::new(),
             vello_renderer: VelloTabBarRenderer::new(device, format),
             theme: TabTheme::default(),
+            drag_feedback: None,
         }
+    }
+
+    /// Create a tab bar with a specific initial tab ID (for global ID support)
+    pub fn with_initial_id(device: &wgpu::Device, format: wgpu::TextureFormat, id: u64) -> Self {
+        Self {
+            state: TabBarState::with_initial_id(id),
+            layout: TabLayout::new(),
+            vello_renderer: VelloTabBarRenderer::new(device, format),
+            theme: TabTheme::default(),
+            drag_feedback: None,
+        }
+    }
+
+    /// Set drag visual feedback for this frame's rendering
+    pub fn set_drag_feedback(&mut self, feedback: Option<DragFeedback>) {
+        self.drag_feedback = feedback;
     }
 
     // ---- Theme ----
@@ -76,11 +121,42 @@ impl TabBar {
 
     // ---- State delegation ----
 
-    /// Add a new tab
-    pub fn add_tab(&mut self, title: impl Into<String>) -> u64 {
-        let id = self.state.add_tab(title);
+    /// Add a new tab with a caller-provided globally unique ID
+    pub fn add_tab(&mut self, id: u64, title: impl Into<String>) {
+        self.state.add_tab(id, title);
         self.layout.mark_dirty();
-        id
+    }
+
+    /// Move a tab from one index to another
+    pub fn move_tab(&mut self, from: usize, to: usize) {
+        self.state.move_tab(from, to);
+        self.layout.mark_dirty();
+    }
+
+    /// Get the index of a tab by its ID
+    pub fn tab_index(&self, id: u64) -> Option<usize> {
+        self.state.tabs().iter().position(|t| t.id == id)
+    }
+
+    /// Remove a tab by ID and return it (for cross-window transfer)
+    pub fn remove_tab(&mut self, id: u64) -> Option<super::Tab> {
+        let result = self.state.remove_tab(id);
+        if result.is_some() {
+            self.layout.mark_dirty();
+        }
+        result
+    }
+
+    /// Insert a pre-existing tab at the end
+    pub fn add_existing_tab(&mut self, tab: super::Tab) {
+        self.state.add_existing_tab(tab);
+        self.layout.mark_dirty();
+    }
+
+    /// Insert a pre-existing tab at a specific index
+    pub fn insert_existing_tab(&mut self, tab: super::Tab, index: usize) {
+        self.state.insert_existing_tab(tab, index);
+        self.layout.mark_dirty();
     }
 
     /// Close a tab by ID
@@ -125,6 +201,11 @@ impl TabBar {
     /// Get active tab ID
     pub fn active_tab_id(&self) -> Option<u64> {
         self.state.active_tab_id()
+    }
+
+    /// Get tab rectangles for hit testing and drag computations
+    pub fn tab_rects(&self) -> &[TabRect] {
+        self.layout.tab_rects()
     }
 
     /// Get active tab rectangle (for focus indicator rendering)
@@ -396,14 +477,25 @@ impl TabBar {
         let border_color = color_to_array(&self.theme.bar.border_color);
         rect_renderer.push_rect(0.0, bar_height - s, screen_width, s, border_color);
 
+        // Determine which tab is being dragged (if any)
+        let dragged_tab_id = self.drag_feedback.as_ref().map(|f| f.dragged_tab_id);
+
         // Draw individual tabs
         for (i, rect) in tab_rects.iter().enumerate() {
             let is_active = i == active_tab;
-            let bg_color = if is_active {
+            let tab_id = self.state.tabs().get(i).map(|t| t.id);
+            let is_dragged = dragged_tab_id.is_some() && tab_id == dragged_tab_id;
+
+            let mut bg_color = if is_active {
                 color_to_array(&self.theme.active.background)
             } else {
                 color_to_array(&self.theme.tab.background)
             };
+
+            // Dim the dragged tab
+            if is_dragged {
+                bg_color[3] *= 0.4; // Reduce alpha
+            }
 
             // Tab background (sharp corners)
             rect_renderer.push_rect(rect.x, rect.y, rect.width, rect.height, bg_color);
@@ -418,7 +510,7 @@ impl TabBar {
             rect_renderer.push_rect(rect.x + rect.width - s, rect.y, s, rect.height, border);
 
             // Active tab accent line at bottom
-            if is_active {
+            if is_active && !is_dragged {
                 let accent = color_to_array(&self.theme.active.accent);
                 let accent_height = 2.0 * s;
                 rect_renderer.push_rect(
@@ -428,6 +520,74 @@ impl TabBar {
                     accent_height,
                     accent,
                 );
+            }
+        }
+
+        // Draw insertion caret during drag
+        if let Some(ref feedback) = self.drag_feedback {
+            if let Some(insert_idx) = feedback.insertion_index {
+                let accent = color_to_array(&self.theme.active.accent);
+                let caret_width = 2.0 * s;
+                let padding = self.theme.bar.padding * s;
+                let tab_height = bar_height - padding * 2.0;
+
+                // Position caret at the insertion gap
+                let caret_x = if insert_idx == 0 {
+                    // Before first tab
+                    tab_rects.first().map(|r| r.x - 2.0 * s).unwrap_or(padding)
+                } else if insert_idx >= tab_rects.len() {
+                    // After last tab
+                    tab_rects
+                        .last()
+                        .map(|r| r.x + r.width)
+                        .unwrap_or(padding)
+                } else {
+                    // Between tabs: midpoint of the gap
+                    let prev = &tab_rects[insert_idx - 1];
+                    let next = &tab_rects[insert_idx];
+                    (prev.x + prev.width + next.x) / 2.0 - caret_width / 2.0
+                };
+
+                rect_renderer.push_rect(caret_x, padding, caret_width, tab_height, accent);
+            }
+
+            // Ghost tab at cursor position
+            if let Some((gx, gy)) = feedback.ghost_position {
+                if !tab_rects.is_empty() {
+                    let ghost_width = tab_rects[0].width;
+                    let ghost_height = tab_rects[0].height;
+                    let mut ghost_bg = color_to_array(&self.theme.active.background);
+                    ghost_bg[3] = 0.6; // Semi-transparent
+                    rect_renderer.push_rect(
+                        gx - ghost_width / 2.0,
+                        gy - ghost_height / 2.0,
+                        ghost_width,
+                        ghost_height,
+                        ghost_bg,
+                    );
+
+                    // Ghost tab border
+                    let accent = color_to_array(&self.theme.active.accent);
+                    let border_w = 1.0 * s;
+                    let gx_off = gx - ghost_width / 2.0;
+                    let gy_off = gy - ghost_height / 2.0;
+                    rect_renderer.push_rect(gx_off, gy_off, ghost_width, border_w, accent);
+                    rect_renderer.push_rect(
+                        gx_off,
+                        gy_off + ghost_height - border_w,
+                        ghost_width,
+                        border_w,
+                        accent,
+                    );
+                    rect_renderer.push_rect(gx_off, gy_off, border_w, ghost_height, accent);
+                    rect_renderer.push_rect(
+                        gx_off + ghost_width - border_w,
+                        gy_off,
+                        border_w,
+                        ghost_height,
+                        accent,
+                    );
+                }
             }
         }
 

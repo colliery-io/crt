@@ -35,10 +35,12 @@ pub struct EditState {
 }
 
 /// Tab bar state - manages tabs without any GPU concerns
+///
+/// Tab IDs are provided externally (by `App`) to ensure global uniqueness
+/// across all windows — required for cross-window tab moves.
 pub struct TabBarState {
     pub(crate) tabs: Vec<Tab>,
     pub(crate) active_tab: usize,
-    pub(crate) next_id: u64,
     pub(crate) edit_state: EditState,
 }
 
@@ -54,17 +56,96 @@ impl TabBarState {
         Self {
             tabs: vec![initial_tab],
             active_tab: 0,
-            next_id: 1,
             edit_state: EditState::default(),
         }
     }
 
-    /// Add a new tab, returns the new tab's ID
-    pub fn add_tab(&mut self, title: impl Into<String>) -> u64 {
-        let id = self.next_id;
-        self.next_id += 1;
+    /// Create a tab bar with a specific initial tab ID (for global ID support)
+    pub fn with_initial_id(id: u64) -> Self {
+        let initial_tab = Tab::new(id, "Terminal");
+        Self {
+            tabs: vec![initial_tab],
+            active_tab: 0,
+            edit_state: EditState::default(),
+        }
+    }
+
+    /// Create an empty tab bar (no initial tab)
+    pub fn empty() -> Self {
+        Self {
+            tabs: Vec::new(),
+            active_tab: 0,
+            edit_state: EditState::default(),
+        }
+    }
+
+    /// Add a new tab with a caller-provided ID.
+    ///
+    /// IDs must be globally unique across all windows — the caller (typically `App`)
+    /// is responsible for generating them from a global counter.
+    pub fn add_tab(&mut self, id: u64, title: impl Into<String>) {
         self.tabs.push(Tab::new(id, title));
-        id
+    }
+
+    /// Remove a tab by ID and return it (for cross-window transfer).
+    ///
+    /// Adjusts `active_tab` if needed. Returns `None` if the tab doesn't exist.
+    pub fn remove_tab(&mut self, id: u64) -> Option<Tab> {
+        let idx = self.tabs.iter().position(|t| t.id == id)?;
+        let tab = self.tabs.remove(idx);
+        if !self.tabs.is_empty() {
+            if self.active_tab >= self.tabs.len() {
+                self.active_tab = self.tabs.len() - 1;
+            } else if self.active_tab > idx {
+                self.active_tab -= 1;
+            }
+        } else {
+            self.active_tab = 0;
+        }
+        Some(tab)
+    }
+
+    /// Insert a pre-existing tab (preserving its ID) at the end.
+    pub fn add_existing_tab(&mut self, tab: Tab) {
+        self.tabs.push(tab);
+    }
+
+    /// Insert a pre-existing tab at a specific index.
+    pub fn insert_existing_tab(&mut self, tab: Tab, index: usize) {
+        let index = index.min(self.tabs.len());
+        self.tabs.insert(index, tab);
+        // Adjust active_tab if insertion shifted it
+        if self.active_tab >= index {
+            self.active_tab += 1;
+        }
+    }
+
+    /// Move a tab from one index to another, updating active_tab to follow.
+    ///
+    /// If the active tab is the one being moved, it tracks to the new position.
+    /// If the active tab is between `from` and `to`, it shifts by ±1.
+    pub fn move_tab(&mut self, from: usize, to: usize) {
+        if from == to || from >= self.tabs.len() || to >= self.tabs.len() {
+            return;
+        }
+        let tab = self.tabs.remove(from);
+        self.tabs.insert(to, tab);
+
+        // Update active_tab to follow the move
+        if self.active_tab == from {
+            // The active tab was the one moved
+            self.active_tab = to;
+        } else if from < to {
+            // Moved forward: tabs in (from, to] shift left by 1
+            if self.active_tab > from && self.active_tab <= to {
+                self.active_tab -= 1;
+            }
+        } else {
+            // Moved backward: tabs in [to, from) shift right by 1
+            if self.active_tab >= to && self.active_tab < from {
+                self.active_tab += 1;
+            }
+        }
     }
 
     /// Close a tab by ID. Returns true if successful, false if it's the last tab
@@ -338,14 +419,14 @@ mod tests {
     #[test]
     fn test_add_and_close_tabs() {
         let mut state = TabBarState::new();
-        let id1 = state.add_tab("Tab 1");
-        let id2 = state.add_tab("Tab 2");
+        state.add_tab(1, "Tab 1");
+        state.add_tab(2, "Tab 2");
         assert_eq!(state.tab_count(), 3);
 
-        assert!(state.close_tab(id1));
+        assert!(state.close_tab(1));
         assert_eq!(state.tab_count(), 2);
 
-        assert!(state.close_tab(id2));
+        assert!(state.close_tab(2));
         assert_eq!(state.tab_count(), 1);
 
         // Can't close last tab
@@ -356,8 +437,8 @@ mod tests {
     #[test]
     fn test_navigation() {
         let mut state = TabBarState::new();
-        state.add_tab("Tab 1");
-        state.add_tab("Tab 2");
+        state.add_tab(1, "Tab 1");
+        state.add_tab(2, "Tab 2");
 
         assert_eq!(state.active_tab_index(), 0);
 
@@ -375,35 +456,49 @@ mod tests {
     }
 
     #[test]
-    fn add_tab_returns_incrementing_ids() {
+    fn add_tab_uses_caller_provided_ids() {
         let mut state = TabBarState::new();
-        let id1 = state.add_tab("A");
-        let id2 = state.add_tab("B");
-        let id3 = state.add_tab("C");
-        assert_eq!(id1, 1);
-        assert_eq!(id2, 2);
-        assert_eq!(id3, 3);
+        state.add_tab(10, "A");
+        state.add_tab(20, "B");
+        state.add_tab(30, "C");
+        assert_eq!(state.tabs()[1].id, 10);
+        assert_eq!(state.tabs()[2].id, 20);
+        assert_eq!(state.tabs()[3].id, 30);
+    }
+
+    #[test]
+    fn with_initial_id_sets_first_tab_id() {
+        let state = TabBarState::with_initial_id(42);
+        assert_eq!(state.tab_count(), 1);
+        assert_eq!(state.active_tab_id(), Some(42));
+    }
+
+    #[test]
+    fn empty_creates_no_tabs() {
+        let state = TabBarState::empty();
+        assert_eq!(state.tab_count(), 0);
+        assert_eq!(state.active_tab_id(), None);
     }
 
     #[test]
     fn select_tab_by_id() {
         let mut state = TabBarState::new();
-        let id1 = state.add_tab("Tab 1");
-        let _id2 = state.add_tab("Tab 2");
+        state.add_tab(1, "Tab 1");
+        state.add_tab(2, "Tab 2");
 
-        assert!(state.select_tab(id1));
-        assert_eq!(state.active_tab_id(), Some(id1));
+        assert!(state.select_tab(1));
+        assert_eq!(state.active_tab_id(), Some(1));
 
         // Invalid ID
         assert!(!state.select_tab(999));
-        assert_eq!(state.active_tab_id(), Some(id1)); // unchanged
+        assert_eq!(state.active_tab_id(), Some(1)); // unchanged
     }
 
     #[test]
     fn select_tab_by_index() {
         let mut state = TabBarState::new();
-        state.add_tab("Tab 1");
-        state.add_tab("Tab 2");
+        state.add_tab(1, "Tab 1");
+        state.add_tab(2, "Tab 2");
 
         assert!(state.select_tab_index(2));
         assert_eq!(state.active_tab_index(), 2);
@@ -416,26 +511,26 @@ mod tests {
     #[test]
     fn close_active_tab_selects_previous() {
         let mut state = TabBarState::new();
-        let id1 = state.add_tab("Tab 1");
-        let id2 = state.add_tab("Tab 2");
+        state.add_tab(1, "Tab 1");
+        state.add_tab(2, "Tab 2");
 
         // Select last tab then close it
-        state.select_tab(id2);
+        state.select_tab(2);
         assert_eq!(state.active_tab_index(), 2);
-        assert!(state.close_tab(id2));
+        assert!(state.close_tab(2));
         // Active index should clamp to last valid
         assert!(state.active_tab_index() < state.tab_count());
 
         // Close middle tab
-        state.select_tab(id1);
-        assert!(state.close_tab(id1));
+        state.select_tab(1);
+        assert!(state.close_tab(1));
         assert_eq!(state.tab_count(), 1);
     }
 
     #[test]
     fn close_nonexistent_tab_returns_false() {
         let mut state = TabBarState::new();
-        state.add_tab("Tab 1");
+        state.add_tab(1, "Tab 1");
         assert!(!state.close_tab(999));
         assert_eq!(state.tab_count(), 2);
     }
@@ -657,12 +752,201 @@ mod tests {
     #[test]
     fn tabs_slice_reflects_state() {
         let mut state = TabBarState::new();
-        state.add_tab("A");
-        state.add_tab("B");
+        state.add_tab(1, "A");
+        state.add_tab(2, "B");
         let tabs = state.tabs();
         assert_eq!(tabs.len(), 3);
         assert_eq!(tabs[0].title, "Terminal");
         assert_eq!(tabs[1].title, "A");
         assert_eq!(tabs[2].title, "B");
+    }
+
+    // ── move_tab tests ────────────────────────────────────────────
+
+    fn make_state_with_tabs(names: &[&str]) -> TabBarState {
+        let mut state = TabBarState::with_initial_id(0);
+        for (i, name) in names.iter().enumerate().skip(1) {
+            state.add_tab(i as u64, *name);
+        }
+        // Rename the first tab
+        if !names.is_empty() {
+            state.set_tab_title(0, names[0]);
+        }
+        state
+    }
+
+    fn tab_titles(state: &TabBarState) -> Vec<String> {
+        state.tabs().iter().map(|t| t.title.clone()).collect()
+    }
+
+    #[test]
+    fn move_tab_forward() {
+        // [A, B, C, D] → move A(0) to index 2 → [B, C, A, D]
+        let mut state = make_state_with_tabs(&["A", "B", "C", "D"]);
+        state.move_tab(0, 2);
+        assert_eq!(tab_titles(&state), vec!["B", "C", "A", "D"]);
+    }
+
+    #[test]
+    fn move_tab_backward() {
+        // [A, B, C, D] → move C(2) to index 0 → [C, A, B, D]
+        let mut state = make_state_with_tabs(&["A", "B", "C", "D"]);
+        state.move_tab(2, 0);
+        assert_eq!(tab_titles(&state), vec!["C", "A", "B", "D"]);
+    }
+
+    #[test]
+    fn move_tab_same_position_is_noop() {
+        let mut state = make_state_with_tabs(&["A", "B", "C"]);
+        state.move_tab(1, 1);
+        assert_eq!(tab_titles(&state), vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn move_tab_to_start() {
+        let mut state = make_state_with_tabs(&["A", "B", "C"]);
+        state.move_tab(2, 0);
+        assert_eq!(tab_titles(&state), vec!["C", "A", "B"]);
+    }
+
+    #[test]
+    fn move_tab_to_end() {
+        let mut state = make_state_with_tabs(&["A", "B", "C"]);
+        state.move_tab(0, 2);
+        assert_eq!(tab_titles(&state), vec!["B", "C", "A"]);
+    }
+
+    #[test]
+    fn move_tab_active_follows_moved_tab() {
+        let mut state = make_state_with_tabs(&["A", "B", "C", "D"]);
+        state.select_tab_index(1); // B is active
+        assert_eq!(state.active_tab_index(), 1);
+
+        state.move_tab(1, 3); // Move B to end
+        assert_eq!(state.active_tab_index(), 3); // B is still active
+        assert_eq!(tab_titles(&state), vec!["A", "C", "D", "B"]);
+    }
+
+    #[test]
+    fn move_tab_active_shifts_when_between_from_and_to() {
+        let mut state = make_state_with_tabs(&["A", "B", "C", "D"]);
+        state.select_tab_index(2); // C is active (index 2)
+
+        state.move_tab(0, 3); // Move A to end: [B, C, D, A]
+        // C was at index 2, A moved from 0 to 3, so C shifts left to index 1
+        assert_eq!(state.active_tab_index(), 1);
+        assert_eq!(state.tabs()[state.active_tab_index()].title, "C");
+    }
+
+    #[test]
+    fn move_tab_active_shifts_backward_move() {
+        let mut state = make_state_with_tabs(&["A", "B", "C", "D"]);
+        state.select_tab_index(1); // B is active (index 1)
+
+        state.move_tab(3, 0); // Move D to start: [D, A, B, C]
+        // B was at index 1, D moved from 3 to 0, so B shifts right to index 2
+        assert_eq!(state.active_tab_index(), 2);
+        assert_eq!(state.tabs()[state.active_tab_index()].title, "B");
+    }
+
+    #[test]
+    fn move_tab_out_of_bounds_is_noop() {
+        let mut state = make_state_with_tabs(&["A", "B", "C"]);
+        state.move_tab(0, 10); // to out of bounds
+        assert_eq!(tab_titles(&state), vec!["A", "B", "C"]);
+        state.move_tab(10, 0); // from out of bounds
+        assert_eq!(tab_titles(&state), vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn move_tab_adjacent_swap() {
+        let mut state = make_state_with_tabs(&["A", "B", "C"]);
+        state.move_tab(0, 1); // Swap A and B: [B, A, C]
+        assert_eq!(tab_titles(&state), vec!["B", "A", "C"]);
+    }
+
+    // ── remove_tab / add_existing_tab / insert_existing_tab tests ─
+
+    #[test]
+    fn remove_tab_returns_tab() {
+        let mut state = make_state_with_tabs(&["A", "B", "C"]);
+        let tab = state.remove_tab(1).unwrap(); // Remove B
+        assert_eq!(tab.title, "B");
+        assert_eq!(tab_titles(&state), vec!["A", "C"]);
+    }
+
+    #[test]
+    fn remove_tab_nonexistent_returns_none() {
+        let mut state = make_state_with_tabs(&["A", "B"]);
+        assert!(state.remove_tab(999).is_none());
+        assert_eq!(state.tab_count(), 2);
+    }
+
+    #[test]
+    fn remove_tab_adjusts_active_index() {
+        let mut state = make_state_with_tabs(&["A", "B", "C"]);
+        state.select_tab_index(2); // C is active
+        state.remove_tab(0); // Remove A, shifting active from 2→1
+        assert_eq!(state.active_tab_index(), 1);
+        assert_eq!(state.tabs()[state.active_tab_index()].title, "C");
+    }
+
+    #[test]
+    fn remove_tab_active_clamps_when_last() {
+        let mut state = make_state_with_tabs(&["A", "B", "C"]);
+        state.select_tab_index(2); // C active at index 2
+        state.remove_tab(2); // Remove C
+        assert_eq!(state.active_tab_index(), 1); // Clamped to last valid
+    }
+
+    #[test]
+    fn add_existing_tab_appends() {
+        let mut state = make_state_with_tabs(&["A", "B"]);
+        let tab = Tab::new(99, "Moved");
+        state.add_existing_tab(tab);
+        assert_eq!(tab_titles(&state), vec!["A", "B", "Moved"]);
+        assert_eq!(state.tabs()[2].id, 99); // ID preserved
+    }
+
+    #[test]
+    fn insert_existing_tab_at_beginning() {
+        let mut state = make_state_with_tabs(&["A", "B"]);
+        let tab = Tab::new(99, "Front");
+        state.insert_existing_tab(tab, 0);
+        assert_eq!(tab_titles(&state), vec!["Front", "A", "B"]);
+    }
+
+    #[test]
+    fn insert_existing_tab_at_middle() {
+        let mut state = make_state_with_tabs(&["A", "B", "C"]);
+        let tab = Tab::new(99, "Mid");
+        state.insert_existing_tab(tab, 1);
+        assert_eq!(tab_titles(&state), vec!["A", "Mid", "B", "C"]);
+    }
+
+    #[test]
+    fn insert_existing_tab_adjusts_active() {
+        let mut state = make_state_with_tabs(&["A", "B", "C"]);
+        state.select_tab_index(1); // B active at index 1
+        let tab = Tab::new(99, "New");
+        state.insert_existing_tab(tab, 0); // Insert before B
+        // B should shift to index 2
+        assert_eq!(state.active_tab_index(), 2);
+        assert_eq!(state.tabs()[state.active_tab_index()].title, "B");
+    }
+
+    #[test]
+    fn round_trip_remove_and_insert() {
+        let mut source = make_state_with_tabs(&["A", "B", "C"]);
+        let mut target = make_state_with_tabs(&["X", "Y"]);
+
+        // Extract B from source
+        let tab = source.remove_tab(1).unwrap();
+        assert_eq!(tab_titles(&source), vec!["A", "C"]);
+
+        // Insert into target at index 1
+        target.insert_existing_tab(tab, 1);
+        assert_eq!(tab_titles(&target), vec!["X", "B", "Y"]);
+        assert_eq!(target.tabs()[1].id, 1); // ID preserved
     }
 }
