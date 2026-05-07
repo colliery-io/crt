@@ -85,6 +85,43 @@ check_dependencies() {
     done
 }
 
+version_at_least() {
+    local current="$1"
+    local minimum="$2"
+
+    local c_major="${current%%.*}"
+    local c_minor="${current#*.}"
+    local m_major="${minimum%%.*}"
+    local m_minor="${minimum#*.}"
+
+    if [ "$c_major" -gt "$m_major" ]; then
+        return 0
+    fi
+    if [ "$c_major" -lt "$m_major" ]; then
+        return 1
+    fi
+    [ "$c_minor" -ge "$m_minor" ]
+}
+
+check_linux_runtime_compatibility() {
+    # Linux releases are built on Ubuntu 22.04 to keep glibc requirements low.
+    # This implies glibc >= 2.35 for dynamically linked binaries.
+    local min_glibc="2.35"
+    local glibc_version=""
+
+    if command -v getconf >/dev/null 2>&1; then
+        glibc_version=$(getconf GNU_LIBC_VERSION 2>/dev/null | sed -E 's/.* ([0-9]+\.[0-9]+).*/\1/')
+    fi
+
+    if [ -z "$glibc_version" ] && command -v ldd >/dev/null 2>&1; then
+        glibc_version=$(ldd --version 2>/dev/null | sed -n '1s/.* //p' | sed -E 's/^([0-9]+\.[0-9]+).*/\1/')
+    fi
+
+    if [ -n "$glibc_version" ] && ! version_at_least "$glibc_version" "$min_glibc"; then
+        error "Detected glibc ${glibc_version}, but crt Linux builds require glibc >= ${min_glibc}. Please use a newer distribution or build crt from source."
+    fi
+}
+
 # Get latest release version from GitHub (includes prereleases)
 get_latest_version() {
     # Use /releases instead of /releases/latest to include prereleases
@@ -108,7 +145,7 @@ download_release() {
 
     info "Downloading crt v${version} for ${os}-${arch}..."
 
-    if ! curl -sSL -o "${tmp_dir}/${filename}" "$url"; then
+    if ! curl -fsSL -o "${tmp_dir}/${filename}" "$url"; then
         error "Failed to download from: $url"
     fi
 
@@ -280,6 +317,10 @@ main() {
 
     local os=$(detect_os)
     local arch=$(detect_arch)
+    if [ "$os" = "linux" ]; then
+        check_linux_runtime_compatibility
+    fi
+
     local install_dir="${CRT_INSTALL_DIR:-${HOME}/.local/bin}"
     local version="${CRT_VERSION:-$(get_latest_version)}"
 

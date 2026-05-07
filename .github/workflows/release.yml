@@ -14,7 +14,8 @@ jobs:
             arch: aarch64
           - os: macos-15-intel
             arch: x86_64
-          - os: ubuntu-latest
+          # Build Linux x86_64 on Ubuntu 22.04 to maximize glibc compatibility.
+          - os: ubuntu-22.04
             arch: x86_64
           - os: ubuntu-24.04-arm
             arch: aarch64
