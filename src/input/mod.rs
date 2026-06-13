@@ -59,6 +59,40 @@ fn url_regex() -> &'static Regex {
     })
 }
 
+/// Trailing characters that read as prose punctuation rather than part of a URL
+/// (the period ending a sentence, a comma in a list, etc.).
+const URL_TRAILING_PUNCTUATION: &[char] = &['.', ',', ';', ':', '!', '?', '\'', '"', '*'];
+
+/// Strip trailing punctuation that the greedy match swallowed from the
+/// surrounding text.
+///
+/// The regex matches URL characters up to the next whitespace, so a link
+/// written in a sentence (`see https://example.com.`) or wrapped in parens
+/// (`(https://example.com)`) drags the trailing `.`/`)` into the match, and the
+/// browser then fails to open it. We trim those, but keep a closing paren that
+/// balances an opening one inside the URL so links like
+/// `https://en.wikipedia.org/wiki/Rust_(programming_language)` stay intact.
+/// (Only `)` matters here — the regex already excludes `[]{}<>`.)
+fn trim_url_trailing_punctuation(url: &str) -> &str {
+    let mut end = url.len();
+    while let Some(ch) = url[..end].chars().next_back() {
+        let strip = if URL_TRAILING_PUNCTUATION.contains(&ch) {
+            true
+        } else if ch == ')' {
+            // Drop a closing paren only when it's unbalanced (more `)` than `(`).
+            let span = &url[..end];
+            span.matches(')').count() > span.matches('(').count()
+        } else {
+            false
+        };
+        if !strip {
+            break;
+        }
+        end -= ch.len_utf8();
+    }
+    &url[..end]
+}
+
 /// Scan a line of text for URLs and return their positions
 pub fn detect_urls_in_line(line_text: &str, line_num: usize) -> Vec<DetectedUrl> {
     let regex = url_regex();
@@ -66,10 +100,11 @@ pub fn detect_urls_in_line(line_text: &str, line_num: usize) -> Vec<DetectedUrl>
         .find_iter(line_text)
         .map(|m| {
             // Convert byte offsets to character indices for grid column comparison
+            let matched = trim_url_trailing_punctuation(m.as_str());
             let start_col = line_text[..m.start()].chars().count();
-            let end_col = line_text[..m.end()].chars().count();
+            let end_col = start_col + matched.chars().count();
             DetectedUrl {
-                url: m.as_str().to_string(),
+                url: matched.to_string(),
                 start_col,
                 end_col,
                 line: line_num,
@@ -147,6 +182,17 @@ pub fn merge_wrapped_urls(urls: &mut Vec<DetectedUrl>, line_texts: &BTreeMap<i32
             }
         }
         i += 1;
+    }
+
+    // Trailing punctuation may now sit at the end of a merged continuation line,
+    // so re-trim each final URL and fix up end_col on its last line.
+    for url in urls.iter_mut() {
+        let new_len = trim_url_trailing_punctuation(&url.url).len();
+        let removed = url.url[new_len..].chars().count();
+        if removed > 0 {
+            url.url.truncate(new_len);
+            url.end_col = url.end_col.saturating_sub(removed);
+        }
     }
 }
 
@@ -1193,6 +1239,51 @@ mod tests {
         let urls = detect_urls_in_line("https://example.com/path?q=hello&lang=en#section", 0);
         assert_eq!(urls.len(), 1);
         assert_eq!(urls[0].url, "https://example.com/path?q=hello&lang=en#section");
+    }
+
+    #[test]
+    fn detect_url_trims_trailing_sentence_punctuation() {
+        let urls = detect_urls_in_line("see https://example.com/path.", 0);
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].url, "https://example.com/path");
+        // end_col must shrink with the trimmed text so hit-testing still lines up.
+        assert_eq!(urls[0].end_col, urls[0].start_col + "https://example.com/path".len());
+    }
+
+    #[test]
+    fn detect_url_trims_multiple_trailing_punctuation() {
+        // Wrapped in parens and followed by a comma: "(https://example.com),"
+        let urls = detect_urls_in_line("(https://example.com),", 0);
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].url, "https://example.com");
+    }
+
+    #[test]
+    fn detect_url_keeps_balanced_trailing_paren() {
+        let urls = detect_urls_in_line(
+            "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+            0,
+        );
+        assert_eq!(urls.len(), 1);
+        assert_eq!(
+            urls[0].url,
+            "https://en.wikipedia.org/wiki/Rust_(programming_language)"
+        );
+    }
+
+    #[test]
+    fn detect_url_drops_unbalanced_trailing_paren_keeps_inner() {
+        // Inner balanced paren kept; the extra wrapping ')' dropped.
+        let urls = detect_urls_in_line("(https://ex.com/a_(b)_c)", 0);
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].url, "https://ex.com/a_(b)_c");
+    }
+
+    #[test]
+    fn detect_www_trims_trailing_period() {
+        let urls = detect_urls_in_line("go to www.example.com/page.", 0);
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].url, "www.example.com/page");
     }
 
     #[test]
