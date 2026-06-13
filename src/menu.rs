@@ -4,7 +4,7 @@
 
 #[cfg(target_os = "macos")]
 use muda::{
-    AboutMetadata, ContextMenu, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu,
+    AboutMetadata, CheckMenuItem, ContextMenu, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu,
     accelerator::{Accelerator, Code, Modifiers as AccelMods},
 };
 
@@ -87,6 +87,9 @@ pub struct MenuIds {
     pub next_tab: MenuId,
     pub prev_tab: MenuId,
     pub select_tab: [MenuId; 9],
+    /// Theme menu check items, paired with their theme name, so their
+    /// checkmarks can be refreshed when the active theme changes.
+    pub theme_items: Vec<(String, CheckMenuItem)>,
 }
 
 /// Convert a configured key name (e.g. `"t"`, `"equal"`, `"["`, `"f11"`) into a
@@ -196,8 +199,8 @@ fn configured_accelerator(
 
 #[cfg(target_os = "macos")]
 pub fn build_menu_bar(
-    _theme_names: &[&str],
-    _current_theme: &str,
+    theme_names: &[&str],
+    current_theme: &str,
     keybindings: &crate::config::KeybindingsConfig,
 ) -> (Menu, MenuIds, Submenu) {
     use crate::config::KeyAction as KA;
@@ -563,11 +566,29 @@ pub fn build_menu_bar(
     )
     .unwrap();
 
+    // Theme menu — one check item per available theme, checkmarking the
+    // active one. Item IDs use the "theme:<name>" convention that
+    // menu_id_to_action() decodes into MenuAction::SetTheme.
+    let theme_menu = Submenu::new("Theme", true);
+    let mut theme_items: Vec<(String, CheckMenuItem)> = Vec::with_capacity(theme_names.len());
+    for name in theme_names {
+        let item = CheckMenuItem::with_id(
+            format!("theme:{name}"),
+            *name,
+            true,
+            *name == current_theme,
+            None,
+        );
+        theme_menu.append(&item).unwrap();
+        theme_items.push(((*name).to_string(), item));
+    }
+
     // Build the menu bar
     menu.append(&app_menu).unwrap();
     menu.append(&shell_menu).unwrap();
     menu.append(&edit_menu).unwrap();
     menu.append(&view_menu).unwrap();
+    menu.append(&theme_menu).unwrap();
     menu.append(&window_menu).unwrap();
 
     let ids = MenuIds {
@@ -601,6 +622,7 @@ pub fn build_menu_bar(
             select_tab_8.id().clone(),
             select_tab_9.id().clone(),
         ],
+        theme_items,
     };
 
     (menu, ids, window_menu)

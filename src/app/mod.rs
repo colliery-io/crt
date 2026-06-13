@@ -523,6 +523,29 @@ impl App {
         }
     }
 
+    /// Record a user's theme selection: update the in-memory config and persist
+    /// it to `config.toml` so the choice survives a restart.
+    ///
+    /// Updating `config.theme.name` first means the config watcher sees the
+    /// resulting file write as a no-op (the name already matches) rather than a
+    /// theme change to re-apply.
+    pub(crate) fn persist_theme_choice(&mut self, theme_name: &str) {
+        self.config.theme.name = theme_name.to_string();
+        Config::persist_theme(theme_name);
+        #[cfg(target_os = "macos")]
+        self.refresh_theme_checkmarks(theme_name);
+    }
+
+    /// Update the Theme menu's checkmarks to reflect the active theme.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn refresh_theme_checkmarks(&self, current: &str) {
+        if let Some(ids) = self.menu_ids.as_ref() {
+            for (name, item) in &ids.theme_items {
+                item.set_checked(name == current);
+            }
+        }
+    }
+
     /// Toggle borderless fullscreen on the focused window.
     pub(crate) fn toggle_fullscreen_focused(&mut self) {
         if let Some(state) = self.focused_window_mut() {

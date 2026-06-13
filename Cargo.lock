@@ -916,6 +916,7 @@ dependencies = [
  "tempfile",
  "termwiz",
  "toml",
+ "toml_edit 0.20.2",
  "vello",
  "wgpu",
  "winit",

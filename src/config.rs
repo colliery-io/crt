@@ -454,6 +454,52 @@ impl Config {
     pub fn shell_assets_dir() -> Option<PathBuf> {
         ConfigPaths::from_env_or_default().map(|paths| paths.shell_assets_dir())
     }
+
+    /// Persist the selected theme name to the user's config file.
+    ///
+    /// Best-effort and non-destructive: existing formatting and comments are
+    /// preserved (only `[theme] name` is updated), and the file/table are
+    /// created if missing. Errors are logged rather than propagated, since a
+    /// failed persist should never interrupt an in-app theme switch.
+    pub fn persist_theme(theme_name: &str) {
+        let Some(paths) = ConfigPaths::from_env_or_default() else {
+            log::warn!("Could not determine config path; theme choice not persisted");
+            return;
+        };
+        if let Err(e) = Self::persist_theme_at(&paths.config_path(), theme_name) {
+            log::warn!("Failed to persist theme to config: {}", e);
+        }
+    }
+
+    /// Write the theme name into the config file at `path`, preserving the rest
+    /// of the document. Refuses to overwrite a file that doesn't parse as TOML,
+    /// to avoid clobbering a user's (recoverable) config.
+    pub fn persist_theme_at(path: &Path, theme_name: &str) -> std::io::Result<()> {
+        use toml_edit::{Document, Item, Table, value};
+
+        let mut doc = if path.exists() {
+            let contents = std::fs::read_to_string(path)?;
+            contents.parse::<Document>().map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("existing config is not valid TOML: {e}"),
+                )
+            })?
+        } else {
+            Document::new()
+        };
+
+        // Ensure a [theme] table exists, then set its `name` key.
+        if !doc.contains_table("theme") {
+            doc["theme"] = Item::Table(Table::new());
+        }
+        doc["theme"]["name"] = value(theme_name);
+
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, doc.to_string())
+    }
 }
 
 #[cfg(test)]
@@ -551,6 +597,59 @@ columns = 100
         let config = Config::load_from(&config_path);
         // Should return defaults
         assert_eq!(config.window.columns, 80);
+    }
+
+    #[test]
+    fn test_persist_theme_creates_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        Config::persist_theme_at(&config_path, "matrix").unwrap();
+
+        let config = Config::load_from(&config_path);
+        assert_eq!(config.theme.name, "matrix");
+    }
+
+    #[test]
+    fn test_persist_theme_preserves_comments_and_other_settings() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        fs::write(
+            &config_path,
+            r#"# My hand-edited config
+[theme]
+name = "synthwave"  # current theme
+
+[window]
+columns = 123
+"#,
+        )
+        .unwrap();
+
+        Config::persist_theme_at(&config_path, "matrix").unwrap();
+
+        let written = fs::read_to_string(&config_path).unwrap();
+        // Comments and unrelated settings are preserved.
+        assert!(written.contains("# My hand-edited config"));
+        assert!(written.contains("columns = 123"));
+        // Theme name was updated.
+        let config = Config::load_from(&config_path);
+        assert_eq!(config.theme.name, "matrix");
+        assert_eq!(config.window.columns, 123);
+    }
+
+    #[test]
+    fn test_persist_theme_refuses_to_clobber_invalid_toml() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        let original = "this is { not valid toml";
+        fs::write(&config_path, original).unwrap();
+
+        // Should error rather than overwrite a recoverable (if broken) file.
+        assert!(Config::persist_theme_at(&config_path, "matrix").is_err());
+        assert_eq!(fs::read_to_string(&config_path).unwrap(), original);
     }
 
     #[test]

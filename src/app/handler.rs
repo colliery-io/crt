@@ -468,6 +468,8 @@ impl ApplicationHandler for App {
                                 &theme_name,
                                 &theme,
                             );
+                            // Persist so the choice survives a restart.
+                            self.persist_theme_choice(&theme_name);
                         } else {
                             log::warn!("Theme '{}' not found in registry", theme_name);
                         }
