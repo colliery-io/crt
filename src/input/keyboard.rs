@@ -57,6 +57,8 @@ pub enum KeyboardAction {
     ResetFontSize,
     /// Toggle fullscreen mode
     ToggleFullscreen,
+    /// Open the config file in the default editor
+    OpenConfig,
 }
 
 /// Read-only context for keyboard action determination.
@@ -167,6 +169,7 @@ fn normalize_key_token(token: &str) -> String {
         "-" | "_" => "minus".to_string(),
         "{" => "[".to_string(),
         "}" => "]".to_string(),
+        "comma" => ",".to_string(),
         other => other.to_ascii_lowercase(),
     }
 }
@@ -246,6 +249,7 @@ pub fn key_action_to_keyboard_action(action: &KeyAction, ctx: &InputContext) -> 
         KeyAction::DecreaseFontSize => KeyboardAction::DecreaseFontSize,
         KeyAction::ResetFontSize => KeyboardAction::ResetFontSize,
         KeyAction::ToggleFullscreen => KeyboardAction::ToggleFullscreen,
+        KeyAction::OpenConfig => KeyboardAction::OpenConfig,
     }
 }
 

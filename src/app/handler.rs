@@ -206,6 +206,9 @@ impl ApplicationHandler for App {
                     KeyboardAction::ToggleFullscreen => {
                         self.toggle_fullscreen_focused();
                     }
+                    KeyboardAction::OpenConfig => {
+                        self.open_config_file();
+                    }
                     KeyboardAction::Handled
                     | KeyboardAction::NotHandled
                     | KeyboardAction::Scroll(_)

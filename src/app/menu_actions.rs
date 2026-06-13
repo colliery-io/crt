@@ -14,6 +14,7 @@ use super::{App, FONT_SCALE_STEP};
 impl App {
     pub(crate) fn handle_menu_action(&mut self, action: MenuAction, event_loop: &ActiveEventLoop) {
         match action {
+            MenuAction::OpenConfig => self.open_config_file(),
             MenuAction::NewTab => {
                 // Extract config values before borrowing state mutably
                 let shell_program = self.config.shell.program.clone();

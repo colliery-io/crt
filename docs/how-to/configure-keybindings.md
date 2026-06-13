@@ -27,7 +27,9 @@ Use lowercase letter names for letter keys (`"t"`, `"w"`, `"q"`), number strings
 | `"minus"` | `-` / `_` |
 | `"["` | `[` / `{` |
 | `"]"` | `]` / `}` |
+| `"comma"` | `,` |
 | `"space"` | Space bar |
+| `"tab"` | Tab |
 | `"F1"` - `"F12"` | Function keys |
 
 ### Modifier Names
@@ -55,6 +57,7 @@ Use lowercase letter names for letter keys (`"t"`, `"w"`, `"q"`), number strings
 | `copy` | Copy selection to clipboard |
 | `paste` | Paste from clipboard |
 | `quit` | Quit CRT |
+| `open_config` | Open the config file in your default editor |
 
 ## Complete Default Keybindings
 
@@ -160,6 +163,11 @@ action = "paste"
 key = "q"
 mods = ["super"]
 action = "quit"
+
+[[keybindings.bindings]]
+key = "comma"
+mods = ["super"]
+action = "open_config"
 ```
 
 ## Common Customizations

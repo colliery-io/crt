@@ -546,6 +546,21 @@ impl App {
         }
     }
 
+    /// Open the user's config file in the system default editor, creating a
+    /// starter file if none exists. Surfaces failures as a toast.
+    pub(crate) fn open_config_file(&mut self) {
+        let result = Config::ensure_config_file().and_then(|path| open::that(&path));
+        if let Err(e) = result {
+            log::warn!("Failed to open config file: {}", e);
+            if let Some(state) = self.focused_window_mut() {
+                state
+                    .ui
+                    .toast
+                    .show(format!("Couldn't open config: {e}"), crate::window::ToastType::Error);
+            }
+        }
+    }
+
     /// Toggle borderless fullscreen on the focused window.
     pub(crate) fn toggle_fullscreen_focused(&mut self) {
         if let Some(state) = self.focused_window_mut() {

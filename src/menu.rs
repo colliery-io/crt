@@ -11,6 +11,8 @@ use muda::{
 /// Menu action identifiers
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuAction {
+    // App menu
+    OpenConfig,
     // Shell menu
     NewTab,
     NewWindow,
@@ -67,6 +69,7 @@ impl MenuAction {
 /// Menu item IDs stored for event handling
 #[cfg(target_os = "macos")]
 pub struct MenuIds {
+    pub open_config: MenuId,
     pub new_tab: MenuId,
     pub new_window: MenuId,
     pub rename_window: MenuId,
@@ -139,6 +142,7 @@ fn key_string_to_code(key: &str) -> Option<Code> {
         "minus" | "-" | "_" => Minus,
         "[" | "{" => BracketLeft,
         "]" | "}" => BracketRight,
+        "comma" | "," => Comma,
         "space" => Space,
         "tab" => Tab,
         "f1" => F1,
@@ -212,11 +216,23 @@ pub fn build_menu_bar(
         version: Some(env!("CARGO_PKG_VERSION").into()),
         ..Default::default()
     };
+    let open_config = MenuItem::with_id(
+        "open_config",
+        "Settings…",
+        true,
+        Some(configured_accelerator(
+            keybindings,
+            KA::OpenConfig,
+            Accelerator::new(Some(AccelMods::SUPER), Code::Comma),
+        )),
+    );
     let app_menu = Submenu::with_items(
         "CRT",
         true,
         &[
             &PredefinedMenuItem::about(None, Some(about_metadata)),
+            &PredefinedMenuItem::separator(),
+            &open_config,
             &PredefinedMenuItem::separator(),
             &PredefinedMenuItem::services(None),
             &PredefinedMenuItem::separator(),
@@ -592,6 +608,7 @@ pub fn build_menu_bar(
     menu.append(&window_menu).unwrap();
 
     let ids = MenuIds {
+        open_config: open_config.id().clone(),
         new_tab: new_tab.id().clone(),
         new_window: new_window.id().clone(),
         rename_window: rename_window.id().clone(),
@@ -656,6 +673,9 @@ pub fn set_windows_menu(window_submenu: &Submenu) {
 
 #[cfg(target_os = "macos")]
 pub fn menu_id_to_action(id: &MenuId, ids: &MenuIds) -> Option<MenuAction> {
+    if *id == ids.open_config {
+        return Some(MenuAction::OpenConfig);
+    }
     if *id == ids.new_tab {
         return Some(MenuAction::NewTab);
     }

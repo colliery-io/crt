@@ -8,6 +8,38 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+/// Starter config written when a user opens Settings without an existing file.
+/// Intentionally minimal and fully commented so nothing is overridden unless
+/// the user opts in.
+const DEFAULT_CONFIG_TEMPLATE: &str = r#"# CRT configuration
+# Docs: https://github.com/colliery-io/crt/tree/main/docs
+#
+# Uncomment and edit any of the settings below. Saving reloads automatically.
+
+[theme]
+# Built-in themes: matrix, synthwave, dracula, nyancat, minimal, robco, ...
+# name = "synthwave"
+
+[font]
+# family = ["MesloLGS NF"]
+# size = 14.0
+
+[window]
+# columns = 80
+# rows = 24
+
+[cursor]
+# style = "block"   # block | bar | underline
+# blink = true
+
+# Custom keybindings replace the defaults entirely — see
+# docs/how-to/configure-keybindings.md
+# [[keybindings.bindings]]
+# key = "t"
+# mods = ["super"]
+# action = "new_tab"
+"#;
+
 /// Configuration paths that can be overridden for testing
 #[derive(Debug, Clone)]
 pub struct ConfigPaths {
@@ -224,6 +256,7 @@ pub enum KeyAction {
     Copy,
     Paste,
     Quit,
+    OpenConfig,
 }
 
 impl KeyAction {
@@ -367,6 +400,11 @@ impl Default for KeybindingsConfig {
                     mods: vec!["super".to_string()],
                     action: KeyAction::Paste,
                 },
+                Keybinding {
+                    key: "comma".to_string(),
+                    mods: vec!["super".to_string()],
+                    action: KeyAction::OpenConfig,
+                },
             ],
         }
     }
@@ -453,6 +491,31 @@ impl Config {
     /// Get the shell integration assets directory
     pub fn shell_assets_dir() -> Option<PathBuf> {
         ConfigPaths::from_env_or_default().map(|paths| paths.shell_assets_dir())
+    }
+
+    /// Path to the user's config file, if a config directory can be determined.
+    pub fn config_path() -> Option<PathBuf> {
+        ConfigPaths::from_env_or_default().map(|paths| paths.config_path())
+    }
+
+    /// Ensure the config file exists, creating it (and its directory) with a
+    /// commented starter template if missing. Returns the path so callers can
+    /// open it in an editor.
+    pub fn ensure_config_file() -> std::io::Result<PathBuf> {
+        let paths = ConfigPaths::from_env_or_default().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "could not determine config directory",
+            )
+        })?;
+        let path = paths.config_path();
+        if !path.exists() {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&path, DEFAULT_CONFIG_TEMPLATE)?;
+        }
+        Ok(path)
     }
 
     /// Persist the selected theme name to the user's config file.
