@@ -91,10 +91,12 @@ pub fn render_zoom_indicator(
     let pill_x = (screen_width - pill_width) / 2.0;
     let pill_y = (screen_height - pill_height) / 2.0;
 
-    // Background color: dark semi-transparent
-    let bg_color = [0.1, 0.1, 0.1, 0.85 * opacity];
-    // Text color: white
-    let text_color = [1.0, 1.0, 1.0, opacity];
+    // Colors from theme so the pill matches the active theme's UI.
+    let ui = &state.gpu.effect_pipeline.theme().ui;
+    let bg = ui.context_menu.background.to_array();
+    let fg = ui.context_menu.text_color.to_array();
+    let bg_color = [bg[0], bg[1], bg[2], bg[3] * opacity];
+    let text_color = [fg[0], fg[1], fg[2], fg[3] * opacity];
 
     // Render background pill
     state.gpu.rect_renderer.clear();
@@ -207,14 +209,17 @@ pub fn render_copy_indicator(
     let pill_width = text_width + padding_x * 2.0;
     let pill_height = line_height + padding_y * 2.0;
 
-    // Center the pill on screen
+    // Center horizontally; sit one pill-height below the vertical center so
+    // this never overlaps the centered zoom indicator if both are visible.
     let pill_x = (screen_width - pill_width) / 2.0;
-    let pill_y = (screen_height - pill_height) / 2.0;
+    let pill_y = (screen_height - pill_height) / 2.0 + pill_height + line_height;
 
-    // Background color: green-tinted semi-transparent (success feedback)
-    let bg_color = [0.1, 0.3, 0.1, 0.85 * opacity];
-    // Text color: white
-    let text_color = [1.0, 1.0, 1.0, opacity];
+    // Colors from theme so the pill matches the active theme's UI.
+    let ui = &state.gpu.effect_pipeline.theme().ui;
+    let bg = ui.context_menu.background.to_array();
+    let fg = ui.context_menu.text_color.to_array();
+    let bg_color = [bg[0], bg[1], bg[2], bg[3] * opacity];
+    let text_color = [fg[0], fg[1], fg[2], fg[3] * opacity];
 
     // Render background pill
     state.gpu.rect_renderer.clear();

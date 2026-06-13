@@ -104,6 +104,14 @@ impl App {
             }
             MenuAction::ToggleProfiling => {
                 let (enabled, path) = crate::profiling::toggle();
+                // Reflect the new state in the menu item label.
+                if let Some(ids) = self.menu_ids.as_ref() {
+                    ids.toggle_profiling_item.set_text(if enabled {
+                        "Stop Profiling"
+                    } else {
+                        "Start Profiling"
+                    });
+                }
                 if enabled {
                     if let Some(p) = path {
                         log::info!("Profiling started: {}", p.display());

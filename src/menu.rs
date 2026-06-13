@@ -86,6 +86,9 @@ pub struct MenuIds {
     pub decrease_font: MenuId,
     pub reset_font: MenuId,
     pub toggle_profiling: MenuId,
+    /// Handles for items whose labels toggle with state.
+    pub toggle_fullscreen_item: MenuItem,
+    pub toggle_profiling_item: MenuItem,
     pub minimize: MenuId,
     pub next_tab: MenuId,
     pub prev_tab: MenuId,
@@ -562,7 +565,6 @@ pub fn build_menu_bar(
         true,
         &[
             &minimize,
-            &PredefinedMenuItem::fullscreen(None),
             &PredefinedMenuItem::separator(),
             &PredefinedMenuItem::bring_all_to_front(None),
             &PredefinedMenuItem::separator(),
@@ -625,6 +627,8 @@ pub fn build_menu_bar(
         decrease_font: decrease_font.id().clone(),
         reset_font: reset_font.id().clone(),
         toggle_profiling: toggle_profiling.id().clone(),
+        toggle_fullscreen_item: toggle_fullscreen.clone(),
+        toggle_profiling_item: toggle_profiling.clone(),
         minimize: minimize.id().clone(),
         next_tab: next_tab.id().clone(),
         prev_tab: prev_tab.id().clone(),

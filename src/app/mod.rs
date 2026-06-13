@@ -595,12 +595,24 @@ impl App {
 
     /// Toggle borderless fullscreen on the focused window.
     pub(crate) fn toggle_fullscreen_focused(&mut self) {
+        let mut now_fullscreen = false;
         if let Some(state) = self.focused_window_mut() {
             let is_fullscreen = state.window.fullscreen().is_some();
+            now_fullscreen = !is_fullscreen;
             state.window.set_fullscreen(if is_fullscreen {
                 None
             } else {
                 Some(winit::window::Fullscreen::Borderless(None))
+            });
+        }
+
+        // Keep the menu item label in sync with the new state.
+        #[cfg(target_os = "macos")]
+        if let Some(ids) = self.menu_ids.as_ref() {
+            ids.toggle_fullscreen_item.set_text(if now_fullscreen {
+                "Exit Full Screen"
+            } else {
+                "Enter Full Screen"
             });
         }
     }
