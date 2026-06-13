@@ -2,10 +2,8 @@
 //!
 //! Processes macOS menu bar actions (new tab, close, theme switching, etc.).
 
-use crate::config::Config;
 use crate::input::{get_clipboard_content, get_terminal_selection_text, paste_to_terminal, set_clipboard_content};
 use crate::menu::MenuAction;
-use crt_core::SpawnOptions;
 use winit::event_loop::ActiveEventLoop;
 
 use super::{App, FONT_SCALE_STEP};
@@ -15,34 +13,7 @@ impl App {
     pub(crate) fn handle_menu_action(&mut self, action: MenuAction, event_loop: &ActiveEventLoop) {
         match action {
             MenuAction::OpenConfig => self.open_config_file(),
-            MenuAction::NewTab => {
-                // Extract config values before borrowing state mutably
-                let shell_program = self.config.shell.program.clone();
-                let semantic_prompts = self.config.shell.semantic_prompts;
-                let shell_assets_dir = Config::shell_assets_dir();
-
-                let new_tab_id = self.next_tab_id();
-                if let Some(state) = self.focused_window_mut() {
-                    // Get current shell's working directory for the new tab
-                    let cwd = state.active_shell_cwd();
-                    let tab_num = state.gpu.tab_bar.tab_count() + 1;
-                    let tab_id = new_tab_id;
-                    state.gpu.tab_bar.add_tab(tab_id, format!("Terminal {}", tab_num));
-                    state
-                        .gpu
-                        .tab_bar
-                        .select_tab_index(state.gpu.tab_bar.tab_count() - 1);
-                    let spawn_options = SpawnOptions {
-                        shell: shell_program,
-                        cwd,
-                        semantic_prompts,
-                        shell_assets_dir,
-                    };
-                    state.create_shell_for_tab(tab_id, spawn_options);
-                    state.render.dirty = true;
-                    state.window.request_redraw();
-                }
-            }
+            MenuAction::NewTab => self.open_new_tab(),
             MenuAction::NewWindow => {
                 self.pending_new_window = true;
             }

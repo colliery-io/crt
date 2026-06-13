@@ -12,7 +12,6 @@ use crate::input::{
 use super::initialization::{DetachPayload, MergePayload};
 use crate::render::render_frame;
 use crate::window;
-use crt_core::SpawnOptions;
 use winit::{
     application::ApplicationHandler,
     event::{ElementState, WindowEvent},
@@ -23,7 +22,6 @@ use winit::{
 use super::initialization::handle_scale_factor_change;
 use super::App;
 use super::FONT_SCALE_STEP;
-use crate::config::Config;
 
 #[cfg(target_os = "macos")]
 use crate::menu::{build_menu_bar, menu_id_to_action, set_windows_menu};
@@ -168,31 +166,7 @@ impl ApplicationHandler for App {
                         self.pending_new_window = true;
                     }
                     KeyboardAction::NewTab => {
-                        // Extract config values before borrowing state mutably
-                        let shell_program = self.config.shell.program.clone();
-                        let semantic_prompts = self.config.shell.semantic_prompts;
-                        let shell_assets_dir = Config::shell_assets_dir();
-                        let new_tab_id = self.next_tab_id();
-
-                        if let Some(state) = self.windows.get_mut(&id) {
-                            let cwd = state.active_shell_cwd();
-                            let tab_num = state.gpu.tab_bar.tab_count() + 1;
-                            let tab_id = new_tab_id;
-                            state.gpu.tab_bar.add_tab(tab_id, format!("Terminal {}", tab_num));
-                            state
-                                .gpu
-                                .tab_bar
-                                .select_tab_index(state.gpu.tab_bar.tab_count() - 1);
-                            let spawn_options = SpawnOptions {
-                                shell: shell_program,
-                                cwd,
-                                semantic_prompts,
-                                shell_assets_dir,
-                            };
-                            state.create_shell_for_tab(tab_id, spawn_options);
-                            state.render.dirty = true;
-                            state.window.request_redraw();
-                        }
+                        self.open_new_tab();
                     }
                     KeyboardAction::IncreaseFontSize => {
                         self.adjust_font_scale(FONT_SCALE_STEP);
@@ -459,22 +433,32 @@ impl ApplicationHandler for App {
                 }
 
                 if !handled_by_drag {
-                    handle_mouse_input(state, button, button_state, &self.modifiers);
-                    // Check for pending theme change from context menu
-                    if let Some(theme_name) = state.ui.pending_theme.take() {
-                        if let Some(theme) =
-                            self.theme_registry.get_theme(&theme_name).cloned()
-                        {
-                            super::apply_theme_to_window(
-                                state,
-                                self.shared_gpu.as_ref(),
-                                &theme_name,
-                                &theme,
-                            );
-                            // Persist so the choice survives a restart.
-                            self.persist_theme_choice(&theme_name);
-                        } else {
-                            log::warn!("Theme '{}' not found in registry", theme_name);
+                    // A left-click on the tab bar "+" button opens a new tab.
+                    let (cursor_x, cursor_y) = state.interaction.cursor_position;
+                    let new_tab_clicked = button == MouseButton::Left
+                        && button_state == ElementState::Pressed
+                        && state.gpu.tab_bar.hit_test_new_tab_button(cursor_x, cursor_y);
+
+                    if new_tab_clicked {
+                        self.open_new_tab();
+                    } else {
+                        handle_mouse_input(state, button, button_state, &self.modifiers);
+                        // Check for pending theme change from context menu
+                        if let Some(theme_name) = state.ui.pending_theme.take() {
+                            if let Some(theme) =
+                                self.theme_registry.get_theme(&theme_name).cloned()
+                            {
+                                super::apply_theme_to_window(
+                                    state,
+                                    self.shared_gpu.as_ref(),
+                                    &theme_name,
+                                    &theme,
+                                );
+                                // Persist so the choice survives a restart.
+                                self.persist_theme_choice(&theme_name);
+                            } else {
+                                log::warn!("Theme '{}' not found in registry", theme_name);
+                            }
                         }
                     }
                 }

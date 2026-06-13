@@ -34,6 +34,8 @@ impl TabRect {
 /// Tab bar is always at the top of the window.
 pub struct TabLayout {
     pub(crate) tab_rects: Vec<TabRect>,
+    /// "+" new-tab button, placed after the last tab when there's room.
+    pub(crate) new_tab_button: Option<TabRect>,
     pub(crate) bar_height: f32,
     pub(crate) content_padding: f32,
     pub(crate) screen_width: f32,
@@ -52,6 +54,7 @@ impl TabLayout {
     pub fn new() -> Self {
         Self {
             tab_rects: Vec::new(),
+            new_tab_button: None,
             bar_height: 36.0,
             content_padding: 4.0,
             screen_width: 800.0,
@@ -127,6 +130,16 @@ impl TabLayout {
         &self.tab_rects
     }
 
+    /// Get the "+" new-tab button rect, if currently visible
+    pub fn new_tab_button_rect(&self) -> Option<TabRect> {
+        self.new_tab_button
+    }
+
+    /// Returns true if the point is inside the "+" new-tab button
+    pub fn hit_test_new_tab_button(&self, x: f32, y: f32) -> bool {
+        self.new_tab_button.is_some_and(|r| r.contains(x, y))
+    }
+
     /// Hit test - returns (tab_index, is_close_button) if hit
     pub fn hit_test(&self, x: f32, y: f32) -> Option<(usize, bool)> {
         for (i, rect) in self.tab_rects.iter().enumerate() {
@@ -142,6 +155,7 @@ impl TabLayout {
     /// Tab bar is always at the top
     pub fn calculate_rects(&mut self, state: &TabBarState, theme: &TabTheme) {
         self.tab_rects.clear();
+        self.new_tab_button = None;
 
         let s = self.scale_factor;
         let padding = theme.bar.padding * s;
@@ -175,6 +189,21 @@ impl TabLayout {
                 close_width,
             });
             x += width_per_tab + tab_gap;
+        }
+
+        // Place a square "+" button after the last tab if it fits within the
+        // bar. When tabs are shrunk to fill the whole width, the button is
+        // omitted (Cmd+T / the menu still create tabs).
+        let button_size = tab_height;
+        if x + button_size <= self.screen_width - padding {
+            self.new_tab_button = Some(TabRect {
+                x,
+                y: padding,
+                width: button_size,
+                height: tab_height,
+                close_x: 0.0,
+                close_width: 0.0,
+            });
         }
 
         self.dirty = false;
@@ -281,6 +310,34 @@ mod tests {
         for rect in rects {
             assert!(rect.width >= theme.tab.min_width);
         }
+    }
+
+    #[test]
+    fn new_tab_button_present_with_room() {
+        // A few tabs on a wide screen leave room for the "+" button.
+        let layout = layout_with_rects(3);
+        let button = layout.new_tab_button_rect().expect("button should be present");
+        let last_tab = layout.tab_rects().last().unwrap();
+        // Button sits to the right of the last tab.
+        assert!(button.x >= last_tab.x + last_tab.width);
+        // Hit testing the button center succeeds.
+        assert!(layout.hit_test_new_tab_button(
+            button.x + button.width / 2.0,
+            button.y + button.height / 2.0
+        ));
+        // The button is not mistaken for a tab.
+        assert_eq!(
+            layout.hit_test(button.x + button.width / 2.0, button.y + button.height / 2.0),
+            None
+        );
+    }
+
+    #[test]
+    fn new_tab_button_hidden_when_bar_full() {
+        // Many tabs shrink to fill the bar, leaving no room for the button.
+        let layout = layout_with_rects(20);
+        assert!(layout.new_tab_button_rect().is_none());
+        assert!(!layout.hit_test_new_tab_button(400.0, 10.0));
     }
 
     #[test]

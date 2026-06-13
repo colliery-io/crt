@@ -1271,6 +1271,16 @@ fn render_tab_titles(
         }
     }
 
+    // Render the "+" new-tab button glyph
+    if let Some((x, y)) = state.gpu.tab_bar.get_new_tab_button_label()
+        && let Some(glyph) = state.gpu.tab_glyph_cache.position_char('+', x, y)
+    {
+        state
+            .gpu
+            .tab_title_renderer
+            .push_glyphs(&[glyph], inactive_color);
+    }
+
     state.gpu.tab_glyph_cache.flush(&shared.queue);
 
     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

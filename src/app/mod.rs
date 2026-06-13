@@ -546,6 +546,38 @@ impl App {
         }
     }
 
+    /// Open a new tab in the focused window, spawning a shell in the active
+    /// tab's working directory and selecting the new tab. Shared by the
+    /// keyboard shortcut, the macOS menu, and the tab bar "+" button.
+    pub(crate) fn open_new_tab(&mut self) {
+        let shell_program = self.config.shell.program.clone();
+        let semantic_prompts = self.config.shell.semantic_prompts;
+        let shell_assets_dir = Config::shell_assets_dir();
+        let new_tab_id = self.next_tab_id();
+
+        if let Some(state) = self.focused_window_mut() {
+            let cwd = state.active_shell_cwd();
+            let tab_num = state.gpu.tab_bar.tab_count() + 1;
+            state
+                .gpu
+                .tab_bar
+                .add_tab(new_tab_id, format!("Terminal {}", tab_num));
+            state
+                .gpu
+                .tab_bar
+                .select_tab_index(state.gpu.tab_bar.tab_count() - 1);
+            let spawn_options = crt_core::SpawnOptions {
+                shell: shell_program,
+                cwd,
+                semantic_prompts,
+                shell_assets_dir,
+            };
+            state.create_shell_for_tab(new_tab_id, spawn_options);
+            state.render.dirty = true;
+            state.window.request_redraw();
+        }
+    }
+
     /// Open the user's config file in the system default editor, creating a
     /// starter file if none exists. Surfaces failures as a toast.
     pub(crate) fn open_config_file(&mut self) {
