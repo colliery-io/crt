@@ -22,6 +22,7 @@ use winit::{
 
 use super::initialization::handle_scale_factor_change;
 use super::App;
+use super::FONT_SCALE_STEP;
 use crate::config::Config;
 
 #[cfg(target_os = "macos")]
@@ -148,6 +149,7 @@ impl ApplicationHandler for App {
                     &event.logical_key,
                     event.text.as_ref().map(|s| s.as_str()),
                     &self.modifiers,
+                    &self.config.keybindings,
                 );
 
                 // Handle actions that require App-level access
@@ -190,6 +192,18 @@ impl ApplicationHandler for App {
                             state.render.dirty = true;
                             state.window.request_redraw();
                         }
+                    }
+                    KeyboardAction::IncreaseFontSize => {
+                        self.adjust_font_scale(FONT_SCALE_STEP);
+                    }
+                    KeyboardAction::DecreaseFontSize => {
+                        self.adjust_font_scale(-FONT_SCALE_STEP);
+                    }
+                    KeyboardAction::ResetFontSize => {
+                        self.reset_font_scale();
+                    }
+                    KeyboardAction::ToggleFullscreen => {
+                        self.toggle_fullscreen_focused();
                     }
                     KeyboardAction::Handled
                     | KeyboardAction::NotHandled

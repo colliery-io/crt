@@ -226,6 +226,24 @@ pub enum KeyAction {
     Quit,
 }
 
+impl KeyAction {
+    /// Returns the 0-based tab index for `SelectTabN` variants, or `None` otherwise.
+    pub fn tab_index(&self) -> Option<usize> {
+        match self {
+            KeyAction::SelectTab1 => Some(0),
+            KeyAction::SelectTab2 => Some(1),
+            KeyAction::SelectTab3 => Some(2),
+            KeyAction::SelectTab4 => Some(3),
+            KeyAction::SelectTab5 => Some(4),
+            KeyAction::SelectTab6 => Some(5),
+            KeyAction::SelectTab7 => Some(6),
+            KeyAction::SelectTab8 => Some(7),
+            KeyAction::SelectTab9 => Some(8),
+            _ => None,
+        }
+    }
+}
+
 /// Single keybinding
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Keybinding {

@@ -430,6 +430,110 @@ impl App {
         log::debug!("Themes reloaded for {} windows", self.windows.len());
     }
 
+    /// Adjust the focused window's font scale by `delta`, reflowing the grid and
+    /// showing the zoom indicator. Cross-platform (used by both the macOS menu
+    /// and configurable keybindings).
+    pub(crate) fn adjust_font_scale(&mut self, delta: f32) {
+        use crt_core::Size;
+
+        let base_font_size = self.config.font.size;
+        let focused_id = match self.focused_window {
+            Some(id) => id,
+            None => return,
+        };
+
+        let shared = match self.shared_gpu.as_ref() {
+            Some(s) => s,
+            None => return,
+        };
+
+        let state = match self.windows.get_mut(&focused_id) {
+            Some(s) => s,
+            None => return,
+        };
+
+        let new_scale = (state.font_scale + delta).clamp(MIN_FONT_SCALE, MAX_FONT_SCALE);
+        if (new_scale - state.font_scale).abs() > 0.001 {
+            state.font_scale = new_scale;
+
+            // Update glyph cache with new font size
+            let new_font_size = base_font_size * new_scale * state.scale_factor;
+            state
+                .gpu
+                .glyph_cache
+                .set_font_size(&shared.queue, new_font_size);
+            state.gpu.glyph_cache.precache_ascii();
+            state.gpu.glyph_cache.flush(&shared.queue);
+
+            // Update grid renderers with new glyph cache
+            state
+                .gpu
+                .grid_renderer
+                .set_glyph_cache(&shared.device, &state.gpu.glyph_cache);
+            state
+                .gpu
+                .output_grid_renderer
+                .set_glyph_cache(&shared.device, &state.gpu.glyph_cache);
+
+            // Recalculate terminal grid size (like resize does)
+            let cell_width = state.gpu.glyph_cache.cell_width();
+            let line_height = state.gpu.glyph_cache.line_height();
+            let tab_bar_height = state.gpu.tab_bar.height();
+
+            let padding_physical = 20.0 * state.scale_factor;
+            let tab_bar_physical = tab_bar_height * state.scale_factor;
+
+            let content_width = (state.gpu.config.width as f32 - padding_physical).max(60.0);
+            let content_height =
+                (state.gpu.config.height as f32 - padding_physical - tab_bar_physical).max(40.0);
+
+            let new_cols = ((content_width / cell_width) as usize).max(10);
+            let new_rows = ((content_height / line_height) as usize).max(4);
+
+            state.cols = new_cols;
+            state.rows = new_rows;
+
+            // Resize all shells to match new grid size
+            for shell in state.shells.values_mut() {
+                shell.resize(Size::new(new_cols, new_rows));
+            }
+
+            // Trigger zoom indicator
+            state.ui.zoom_indicator.trigger(new_scale);
+
+            // Force full redraw
+            state.render.dirty = true;
+            for hash in state.content_hashes.values_mut() {
+                *hash = 0;
+            }
+            state.window.request_redraw();
+        }
+    }
+
+    /// Reset the focused window's font scale back to 100%.
+    pub(crate) fn reset_font_scale(&mut self) {
+        let Some(focused_id) = self.focused_window else {
+            return;
+        };
+        if let Some(state) = self.windows.get(&focused_id) {
+            let delta = 1.0 - state.font_scale;
+            if delta.abs() > 0.001 {
+                self.adjust_font_scale(delta);
+            }
+        }
+    }
+
+    /// Toggle borderless fullscreen on the focused window.
+    pub(crate) fn toggle_fullscreen_focused(&mut self) {
+        if let Some(state) = self.focused_window_mut() {
+            let is_fullscreen = state.window.fullscreen().is_some();
+            state.window.set_fullscreen(if is_fullscreen {
+                None
+            } else {
+                Some(winit::window::Fullscreen::Borderless(None))
+            });
+        }
+    }
 }
 
 /// Apply a theme switch to a specific window state.

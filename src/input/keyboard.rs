@@ -7,6 +7,7 @@ use crt_core::Scroll;
 use winit::event::Modifiers;
 use winit::keyboard::{Key, NamedKey};
 
+use crate::config::{KeyAction, KeybindingsConfig};
 use crate::window::{TabId, WindowState};
 
 use super::{
@@ -48,6 +49,14 @@ pub enum KeyboardAction {
     NextTab,
     /// Select a specific tab by index (0-based)
     SelectTab(usize),
+    /// Increase font size
+    IncreaseFontSize,
+    /// Decrease font size
+    DecreaseFontSize,
+    /// Reset font size to default
+    ResetFontSize,
+    /// Toggle fullscreen mode
+    ToggleFullscreen,
 }
 
 /// Read-only context for keyboard action determination.
@@ -86,29 +95,173 @@ impl InputContext {
     }
 }
 
-/// Determine the keyboard action for a command shortcut (Cmd/Ctrl + key).
+/// Normalized modifier signature used to match key events against configured
+/// bindings. `primary` is the platform's command modifier (Cmd on macOS,
+/// Ctrl on other platforms); `ctrl_extra` is a Control press distinct from the
+/// primary modifier (only meaningful on macOS, where Cmd and Ctrl differ).
+#[derive(Debug, Default, PartialEq, Eq)]
+struct ModSignature {
+    primary: bool,
+    shift: bool,
+    alt: bool,
+    ctrl_extra: bool,
+}
+
+/// Build the modifier signature for an incoming key event.
+fn event_mod_signature(modifiers: &Modifiers) -> ModSignature {
+    let s = modifiers.state();
+    #[cfg(target_os = "macos")]
+    {
+        ModSignature {
+            primary: s.super_key(),
+            shift: s.shift_key(),
+            alt: s.alt_key(),
+            ctrl_extra: s.control_key(),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        ModSignature {
+            primary: s.control_key(),
+            shift: s.shift_key(),
+            alt: s.alt_key(),
+            ctrl_extra: false,
+        }
+    }
+}
+
+/// Build the modifier signature a configured binding requires.
 ///
-/// Pure function — no side effects, no state mutation. Returns `None` if the
-/// key combination is not a recognized shortcut.
+/// `"super"` maps to the platform command modifier. On non-macOS platforms a
+/// literal `"ctrl"` is treated as the primary modifier too (Ctrl *is* the
+/// command key there), so the default `super`-based bindings and explicit
+/// `ctrl` bindings both resolve naturally.
+fn binding_mod_signature(mods: &[String]) -> ModSignature {
+    let mut sig = ModSignature::default();
+    for m in mods {
+        match m.to_ascii_lowercase().as_str() {
+            "super" | "cmd" | "command" | "meta" | "win" => sig.primary = true,
+            "ctrl" | "control" => {
+                #[cfg(target_os = "macos")]
+                {
+                    sig.ctrl_extra = true;
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    sig.primary = true;
+                }
+            }
+            "shift" => sig.shift = true,
+            "alt" | "option" | "opt" => sig.alt = true,
+            _ => {}
+        }
+    }
+    sig
+}
+
+/// Normalize a key token to a canonical lowercase form so that, e.g., `"="`,
+/// `"+"` and `"equal"` all compare equal.
+fn normalize_key_token(token: &str) -> String {
+    match token {
+        "=" | "+" => "equal".to_string(),
+        "-" | "_" => "minus".to_string(),
+        "{" => "[".to_string(),
+        "}" => "]".to_string(),
+        other => other.to_ascii_lowercase(),
+    }
+}
+
+/// Extract a normalized key token from a winit key, or `None` for keys that
+/// can't be bound (e.g. plain modifier presses).
+fn event_key_token(key: &Key) -> Option<String> {
+    match key {
+        Key::Character(c) => Some(normalize_key_token(c.as_str())),
+        Key::Named(NamedKey::Space) => Some("space".to_string()),
+        Key::Named(NamedKey::Tab) => Some("tab".to_string()),
+        Key::Named(NamedKey::Enter) => Some("enter".to_string()),
+        Key::Named(named) => {
+            // Function keys (F1..F35) serialize as "F1", "F2", ... via Debug.
+            let s = format!("{named:?}");
+            if let Some(num) = s.strip_prefix('F')
+                && num.chars().all(|ch| ch.is_ascii_digit())
+                && !num.is_empty()
+            {
+                Some(format!("f{num}"))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Resolve an incoming key event to a configured [`KeyAction`], if any binding
+/// matches both the key and the exact modifier combination.
+pub fn resolve_keybinding(
+    keybindings: &KeybindingsConfig,
+    key: &Key,
+    modifiers: &Modifiers,
+) -> Option<KeyAction> {
+    let token = event_key_token(key)?;
+    let event_sig = event_mod_signature(modifiers);
+    keybindings
+        .bindings
+        .iter()
+        .find(|b| {
+            normalize_key_token(&b.key) == token && binding_mod_signature(&b.mods) == event_sig
+        })
+        .map(|b| b.action.clone())
+}
+
+/// Translate a configured [`KeyAction`] into a [`KeyboardAction`], given the
+/// current input context (used to decide close-tab vs. close-window).
+pub fn key_action_to_keyboard_action(action: &KeyAction, ctx: &InputContext) -> KeyboardAction {
+    match action {
+        KeyAction::Copy => KeyboardAction::Copy,
+        KeyAction::Paste => KeyboardAction::Paste,
+        KeyAction::Quit => KeyboardAction::Quit,
+        KeyAction::NewTab => KeyboardAction::NewTab,
+        KeyAction::CloseTab => {
+            if ctx.tab_count > 1 {
+                if let Some(tab_id) = ctx.active_tab_id {
+                    return KeyboardAction::CloseTab(tab_id);
+                }
+            }
+            KeyboardAction::CloseWindow
+        }
+        KeyAction::NextTab => KeyboardAction::NextTab,
+        KeyAction::PrevTab => KeyboardAction::PrevTab,
+        KeyAction::SelectTab1
+        | KeyAction::SelectTab2
+        | KeyAction::SelectTab3
+        | KeyAction::SelectTab4
+        | KeyAction::SelectTab5
+        | KeyAction::SelectTab6
+        | KeyAction::SelectTab7
+        | KeyAction::SelectTab8
+        | KeyAction::SelectTab9 => {
+            KeyboardAction::SelectTab(action.tab_index().unwrap_or(0))
+        }
+        KeyAction::IncreaseFontSize => KeyboardAction::IncreaseFontSize,
+        KeyAction::DecreaseFontSize => KeyboardAction::DecreaseFontSize,
+        KeyAction::ResetFontSize => KeyboardAction::ResetFontSize,
+        KeyAction::ToggleFullscreen => KeyboardAction::ToggleFullscreen,
+    }
+}
+
+/// Determine a hardcoded, non-configurable command shortcut (Cmd/Ctrl + key).
+///
+/// These actions have no [`KeyAction`] equivalent and are always available
+/// regardless of the user's keybindings: new window, search, and search
+/// navigation. Configurable shortcuts are resolved separately via
+/// [`resolve_keybinding`]. Pure function — no side effects.
 pub fn determine_command_shortcut(
     key: &Key,
     shift_pressed: bool,
     ctx: &InputContext,
 ) -> Option<KeyboardAction> {
     match key {
-        Key::Character(c) if c.as_str() == "c" => Some(KeyboardAction::Copy),
-        Key::Character(c) if c.as_str() == "v" => Some(KeyboardAction::Paste),
-        Key::Character(c) if c.as_str() == "q" => Some(KeyboardAction::Quit),
-        Key::Character(c) if c.as_str() == "w" => {
-            if ctx.tab_count > 1 {
-                if let Some(tab_id) = ctx.active_tab_id {
-                    return Some(KeyboardAction::CloseTab(tab_id));
-                }
-            }
-            Some(KeyboardAction::CloseWindow)
-        }
         Key::Character(c) if c.as_str() == "n" => Some(KeyboardAction::NewWindow),
-        Key::Character(c) if c.as_str() == "t" => Some(KeyboardAction::NewTab),
         Key::Character(c) if c.as_str() == "f" => Some(KeyboardAction::ToggleSearch),
         Key::Character(c) if c.as_str() == "g" => {
             if ctx.search_active && ctx.search_match_count > 0 {
@@ -118,16 +271,6 @@ pub fn determine_command_shortcut(
             } else {
                 Some(KeyboardAction::Handled)
             }
-        }
-        Key::Character(c) if c.as_str() == "[" && shift_pressed => Some(KeyboardAction::PrevTab),
-        Key::Character(c) if c.as_str() == "]" && shift_pressed => Some(KeyboardAction::NextTab),
-        Key::Character(c) if c.len() == 1 => {
-            if let Some(digit) = c.chars().next().and_then(|ch| ch.to_digit(10))
-                && (1..=9).contains(&digit)
-            {
-                return Some(KeyboardAction::SelectTab((digit - 1) as usize));
-            }
-            None
         }
         _ => None,
     }
@@ -166,6 +309,7 @@ pub fn handle_keyboard_input(
     key: &Key,
     text: Option<&str>,
     modifiers: &Modifiers,
+    keybindings: &KeybindingsConfig,
 ) -> KeyboardAction {
     #[cfg(target_os = "macos")]
     let mod_pressed = modifiers.state().super_key();
@@ -273,7 +417,13 @@ pub fn handle_keyboard_input(
         return action;
     }
 
-    // Handle keyboard shortcuts (Cmd/Ctrl + key)
+    // Resolve user-configurable keybindings first (these may include
+    // no-modifier bindings such as F11 for fullscreen).
+    if let Some(action) = handle_configured_keybinding(state, key, modifiers, keybindings) {
+        return action;
+    }
+
+    // Handle hardcoded, non-configurable shortcuts (Cmd/Ctrl + key)
     if mod_pressed && let Some(action) = handle_command_shortcuts(state, key, shift_pressed) {
         return action;
     }
@@ -367,7 +517,30 @@ fn handle_search_input(
     }
 }
 
-/// Handle command shortcuts (Cmd/Ctrl + key)
+/// Resolve and dispatch a user-configurable keybinding.
+///
+/// Returns `Some` if a binding matched the key event (applying any local side
+/// effects), or `None` if no binding matched.
+fn handle_configured_keybinding(
+    state: &mut WindowState,
+    key: &Key,
+    modifiers: &Modifiers,
+    keybindings: &KeybindingsConfig,
+) -> Option<KeyboardAction> {
+    let key_action = resolve_keybinding(keybindings, key, modifiers)?;
+
+    // Confirm any tab editing in progress before acting on the shortcut.
+    if state.gpu.tab_bar.is_editing() {
+        state.gpu.tab_bar.confirm_editing();
+        state.render.dirty = true;
+    }
+
+    let ctx = InputContext::from_state(state);
+    let action = key_action_to_keyboard_action(&key_action, &ctx);
+    Some(apply_keyboard_action(state, action))
+}
+
+/// Handle hardcoded, non-configurable command shortcuts (Cmd/Ctrl + key).
 fn handle_command_shortcuts(
     state: &mut WindowState,
     key: &Key,
@@ -381,29 +554,34 @@ fn handle_command_shortcuts(
 
     let ctx = InputContext::from_state(state);
     let action = determine_command_shortcut(key, shift_pressed, &ctx)?;
+    Some(apply_keyboard_action(state, action))
+}
 
-    // Apply side effects for actions that need them
-    match &action {
+/// Apply any local (window-scoped) side effects for an action and return the
+/// resulting [`KeyboardAction`]. Actions that require app-level access (quit,
+/// new window/tab, font size, fullscreen) are returned unchanged for the
+/// caller in `handler.rs` to process.
+fn apply_keyboard_action(state: &mut WindowState, action: KeyboardAction) -> KeyboardAction {
+    match action {
         KeyboardAction::Copy => {
             if let Some(text) = get_terminal_selection_text(state) {
                 set_clipboard_content(&text);
                 state.ui.copy_indicator.trigger();
             }
-            return Some(KeyboardAction::Handled);
+            KeyboardAction::Handled
         }
         KeyboardAction::Paste => {
             if let Some(content) = get_clipboard_content() {
                 paste_to_terminal(state, &content);
             }
-            return Some(KeyboardAction::Handled);
+            KeyboardAction::Handled
         }
         KeyboardAction::CloseTab(tab_id) => {
-            let tab_id = *tab_id;
             state.gpu.tab_bar.close_tab(tab_id);
             state.remove_shell_for_tab(tab_id);
             state.force_active_tab_redraw();
             state.window.request_redraw();
-            return Some(KeyboardAction::Handled);
+            KeyboardAction::Handled
         }
         KeyboardAction::ToggleSearch => {
             state.ui.search.active = !state.ui.search.active;
@@ -414,11 +592,11 @@ fn handle_command_shortcuts(
             }
             state.force_active_tab_redraw();
             state.window.request_redraw();
-            return Some(KeyboardAction::Handled);
+            KeyboardAction::Handled
         }
         KeyboardAction::SearchNavigate { reverse } => {
             if !state.ui.search.matches.is_empty() {
-                if *reverse {
+                if reverse {
                     if state.ui.search.current_match == 0 {
                         state.ui.search.current_match = state.ui.search.matches.len() - 1;
                     } else {
@@ -432,31 +610,29 @@ fn handle_command_shortcuts(
                 state.force_active_tab_redraw();
                 state.window.request_redraw();
             }
-            return Some(KeyboardAction::Handled);
+            KeyboardAction::Handled
         }
         KeyboardAction::PrevTab => {
             state.gpu.tab_bar.prev_tab();
             state.force_active_tab_redraw();
             state.window.request_redraw();
-            return Some(KeyboardAction::Handled);
+            KeyboardAction::Handled
         }
         KeyboardAction::NextTab => {
             state.gpu.tab_bar.next_tab();
             state.force_active_tab_redraw();
             state.window.request_redraw();
-            return Some(KeyboardAction::Handled);
+            KeyboardAction::Handled
         }
         KeyboardAction::SelectTab(index) => {
-            state.gpu.tab_bar.select_tab_index(*index);
+            state.gpu.tab_bar.select_tab_index(index);
             state.force_active_tab_redraw();
             state.window.request_redraw();
-            return Some(KeyboardAction::Handled);
+            KeyboardAction::Handled
         }
         // Actions that don't need local side effects (handled by caller)
-        _ => {}
+        other => other,
     }
-
-    Some(action)
 }
 
 #[cfg(test)]
@@ -475,24 +651,138 @@ mod tests {
         }
     }
 
+    /// Build a `Modifiers` with only the platform primary command modifier held.
+    fn primary_mods() -> Modifiers {
+        use winit::keyboard::ModifiersState;
+        #[cfg(target_os = "macos")]
+        let state = ModifiersState::SUPER;
+        #[cfg(not(target_os = "macos"))]
+        let state = ModifiersState::CONTROL;
+        Modifiers::from(state)
+    }
+
+    /// Build a `Modifiers` with the primary command modifier plus shift.
+    fn primary_shift_mods() -> Modifiers {
+        use winit::keyboard::ModifiersState;
+        #[cfg(target_os = "macos")]
+        let state = ModifiersState::SUPER | ModifiersState::SHIFT;
+        #[cfg(not(target_os = "macos"))]
+        let state = ModifiersState::CONTROL | ModifiersState::SHIFT;
+        Modifiers::from(state)
+    }
+
     #[test]
-    fn test_cmd_q_returns_quit() {
-        let ctx = default_ctx();
+    fn test_default_binding_quit() {
+        let kb = KeybindingsConfig::default();
         let key = Key::Character("q".into());
-        let result = determine_command_shortcut(&key, false, &ctx);
-        assert!(matches!(result, Some(KeyboardAction::Quit)));
+        assert_eq!(
+            resolve_keybinding(&kb, &key, &primary_mods()),
+            Some(KeyAction::Quit)
+        );
     }
 
     #[test]
-    fn test_cmd_t_returns_new_tab() {
-        let ctx = default_ctx();
+    fn test_default_binding_new_tab() {
+        let kb = KeybindingsConfig::default();
         let key = Key::Character("t".into());
-        let result = determine_command_shortcut(&key, false, &ctx);
-        assert!(matches!(result, Some(KeyboardAction::NewTab)));
+        assert_eq!(
+            resolve_keybinding(&kb, &key, &primary_mods()),
+            Some(KeyAction::NewTab)
+        );
     }
 
     #[test]
-    fn test_cmd_n_returns_new_window() {
+    fn test_default_binding_copy() {
+        let kb = KeybindingsConfig::default();
+        let key = Key::Character("c".into());
+        assert_eq!(
+            resolve_keybinding(&kb, &key, &primary_mods()),
+            Some(KeyAction::Copy)
+        );
+    }
+
+    #[test]
+    fn test_default_binding_select_tab1() {
+        let kb = KeybindingsConfig::default();
+        let key = Key::Character("1".into());
+        assert_eq!(
+            resolve_keybinding(&kb, &key, &primary_mods()),
+            Some(KeyAction::SelectTab1)
+        );
+    }
+
+    #[test]
+    fn test_default_binding_prev_tab_needs_shift() {
+        let kb = KeybindingsConfig::default();
+        let key = Key::Character("[".into());
+        // Shift is required for prev/next tab.
+        assert_eq!(
+            resolve_keybinding(&kb, &key, &primary_shift_mods()),
+            Some(KeyAction::PrevTab)
+        );
+        // Without shift, no binding matches.
+        assert_eq!(resolve_keybinding(&kb, &key, &primary_mods()), None);
+    }
+
+    #[test]
+    fn test_no_modifier_does_not_match_primary_binding() {
+        let kb = KeybindingsConfig::default();
+        let key = Key::Character("t".into());
+        assert_eq!(resolve_keybinding(&kb, &key, &Modifiers::default()), None);
+    }
+
+    #[test]
+    fn test_equal_token_normalization() {
+        // A binding on "equal" matches the "=" character event.
+        let kb = KeybindingsConfig::default();
+        let key = Key::Character("=".into());
+        assert_eq!(
+            resolve_keybinding(&kb, &key, &primary_mods()),
+            Some(KeyAction::IncreaseFontSize)
+        );
+    }
+
+    #[test]
+    fn test_custom_binding_resolves() {
+        use crate::config::Keybinding;
+        let kb = KeybindingsConfig {
+            bindings: vec![Keybinding {
+                key: "F11".to_string(),
+                mods: vec![],
+                action: KeyAction::ToggleFullscreen,
+            }],
+        };
+        let key = Key::Named(NamedKey::F11);
+        assert_eq!(
+            resolve_keybinding(&kb, &key, &Modifiers::default()),
+            Some(KeyAction::ToggleFullscreen)
+        );
+    }
+
+    #[test]
+    fn test_key_action_close_tab_single_tab_closes_window() {
+        let ctx = InputContext {
+            tab_count: 1,
+            active_tab_id: Some(1),
+            ..default_ctx()
+        };
+        let action = key_action_to_keyboard_action(&KeyAction::CloseTab, &ctx);
+        assert!(matches!(action, KeyboardAction::CloseWindow));
+    }
+
+    #[test]
+    fn test_key_action_close_tab_multiple_tabs_closes_tab() {
+        let ctx = InputContext {
+            tab_count: 3,
+            active_tab_id: Some(42),
+            ..default_ctx()
+        };
+        let action = key_action_to_keyboard_action(&KeyAction::CloseTab, &ctx);
+        assert!(matches!(action, KeyboardAction::CloseTab(42)));
+    }
+
+    #[test]
+    fn test_hardcoded_cmd_n_returns_new_window() {
         let ctx = default_ctx();
         let key = Key::Character("n".into());
         let result = determine_command_shortcut(&key, false, &ctx);
@@ -500,59 +790,11 @@ mod tests {
     }
 
     #[test]
-    fn test_cmd_w_single_tab_returns_close_window() {
-        let ctx = InputContext {
-            tab_count: 1,
-            active_tab_id: Some(1),
-            ..default_ctx()
-        };
-        let key = Key::Character("w".into());
-        let result = determine_command_shortcut(&key, false, &ctx);
-        assert!(matches!(result, Some(KeyboardAction::CloseWindow)));
-    }
-
-    #[test]
-    fn test_cmd_w_multiple_tabs_returns_close_tab() {
-        let ctx = InputContext {
-            tab_count: 3,
-            active_tab_id: Some(42),
-            ..default_ctx()
-        };
-        let key = Key::Character("w".into());
-        let result = determine_command_shortcut(&key, false, &ctx);
-        assert!(matches!(result, Some(KeyboardAction::CloseTab(42))));
-    }
-
-    #[test]
-    fn test_cmd_c_returns_copy() {
-        let ctx = default_ctx();
-        let key = Key::Character("c".into());
-        let result = determine_command_shortcut(&key, false, &ctx);
-        assert!(matches!(result, Some(KeyboardAction::Copy)));
-    }
-
-    #[test]
-    fn test_cmd_f_returns_toggle_search() {
+    fn test_hardcoded_cmd_f_returns_toggle_search() {
         let ctx = default_ctx();
         let key = Key::Character("f".into());
         let result = determine_command_shortcut(&key, false, &ctx);
         assert!(matches!(result, Some(KeyboardAction::ToggleSearch)));
-    }
-
-    #[test]
-    fn test_cmd_1_returns_select_tab_0() {
-        let ctx = default_ctx();
-        let key = Key::Character("1".into());
-        let result = determine_command_shortcut(&key, false, &ctx);
-        assert!(matches!(result, Some(KeyboardAction::SelectTab(0))));
-    }
-
-    #[test]
-    fn test_cmd_shift_bracket_prev_tab() {
-        let ctx = default_ctx();
-        let key = Key::Character("[".into());
-        let result = determine_command_shortcut(&key, true, &ctx);
-        assert!(matches!(result, Some(KeyboardAction::PrevTab)));
     }
 
     #[test]

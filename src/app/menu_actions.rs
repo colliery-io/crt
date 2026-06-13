@@ -7,9 +7,8 @@ use crate::input::{get_clipboard_content, get_terminal_selection_text, paste_to_
 use crate::menu::MenuAction;
 use crt_core::SpawnOptions;
 use winit::event_loop::ActiveEventLoop;
-use winit::window::WindowId;
 
-use super::{App, FONT_SCALE_STEP, MAX_FONT_SCALE, MIN_FONT_SCALE};
+use super::{App, FONT_SCALE_STEP};
 
 #[cfg(target_os = "macos")]
 impl App {
@@ -88,30 +87,10 @@ impl App {
                 }
             }
             MenuAction::Quit => event_loop.exit(),
-            MenuAction::ToggleFullScreen => {
-                if let Some(state) = self.focused_window_mut() {
-                    let fs = state.window.fullscreen().is_some();
-                    state.window.set_fullscreen(if fs {
-                        None
-                    } else {
-                        Some(winit::window::Fullscreen::Borderless(None))
-                    });
-                }
-            }
+            MenuAction::ToggleFullScreen => self.toggle_fullscreen_focused(),
             MenuAction::IncreaseFontSize => self.adjust_font_scale(FONT_SCALE_STEP),
             MenuAction::DecreaseFontSize => self.adjust_font_scale(-FONT_SCALE_STEP),
-            MenuAction::ResetFontSize => {
-                // Compute delta to get back to scale 1.0
-                if let Some(state) = self
-                    .windows
-                    .get(&self.focused_window.unwrap_or(WindowId::dummy()))
-                {
-                    let delta = 1.0 - state.font_scale;
-                    if delta.abs() > 0.001 {
-                        self.adjust_font_scale(delta);
-                    }
-                }
-            }
+            MenuAction::ResetFontSize => self.reset_font_scale(),
             MenuAction::Minimize => {
                 if let Some(state) = self.focused_window_mut() {
                     state.window.set_minimized(true);
@@ -178,83 +157,6 @@ impl App {
                 }
             }
             _ => log::info!("{:?} not yet implemented", action),
-        }
-    }
-
-    pub(crate) fn adjust_font_scale(&mut self, delta: f32) {
-        use crt_core::Size;
-
-        let base_font_size = self.config.font.size;
-        let focused_id = match self.focused_window {
-            Some(id) => id,
-            None => return,
-        };
-
-        let shared = match self.shared_gpu.as_ref() {
-            Some(s) => s,
-            None => return,
-        };
-
-        let state = match self.windows.get_mut(&focused_id) {
-            Some(s) => s,
-            None => return,
-        };
-
-        let new_scale = (state.font_scale + delta).clamp(MIN_FONT_SCALE, MAX_FONT_SCALE);
-        if (new_scale - state.font_scale).abs() > 0.001 {
-            state.font_scale = new_scale;
-
-            // Update glyph cache with new font size
-            let new_font_size = base_font_size * new_scale * state.scale_factor;
-            state
-                .gpu
-                .glyph_cache
-                .set_font_size(&shared.queue, new_font_size);
-            state.gpu.glyph_cache.precache_ascii();
-            state.gpu.glyph_cache.flush(&shared.queue);
-
-            // Update grid renderers with new glyph cache
-            state
-                .gpu
-                .grid_renderer
-                .set_glyph_cache(&shared.device, &state.gpu.glyph_cache);
-            state
-                .gpu
-                .output_grid_renderer
-                .set_glyph_cache(&shared.device, &state.gpu.glyph_cache);
-
-            // Recalculate terminal grid size (like resize does)
-            let cell_width = state.gpu.glyph_cache.cell_width();
-            let line_height = state.gpu.glyph_cache.line_height();
-            let tab_bar_height = state.gpu.tab_bar.height();
-
-            let padding_physical = 20.0 * state.scale_factor;
-            let tab_bar_physical = tab_bar_height * state.scale_factor;
-
-            let content_width = (state.gpu.config.width as f32 - padding_physical).max(60.0);
-            let content_height =
-                (state.gpu.config.height as f32 - padding_physical - tab_bar_physical).max(40.0);
-
-            let new_cols = ((content_width / cell_width) as usize).max(10);
-            let new_rows = ((content_height / line_height) as usize).max(4);
-
-            state.cols = new_cols;
-            state.rows = new_rows;
-
-            // Resize all shells to match new grid size
-            for shell in state.shells.values_mut() {
-                shell.resize(Size::new(new_cols, new_rows));
-            }
-
-            // Trigger zoom indicator
-            state.ui.zoom_indicator.trigger(new_scale);
-
-            // Force full redraw
-            state.render.dirty = true;
-            for hash in state.content_hashes.values_mut() {
-                *hash = 0;
-            }
-            state.window.request_redraw();
         }
     }
 
