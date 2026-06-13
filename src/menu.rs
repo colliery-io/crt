@@ -89,8 +89,118 @@ pub struct MenuIds {
     pub select_tab: [MenuId; 9],
 }
 
+/// Convert a configured key name (e.g. `"t"`, `"equal"`, `"["`, `"f11"`) into a
+/// muda physical [`Code`]. Returns `None` for names we can't map, in which case
+/// the caller falls back to the item's default accelerator.
 #[cfg(target_os = "macos")]
-pub fn build_menu_bar(_theme_names: &[&str], _current_theme: &str) -> (Menu, MenuIds, Submenu) {
+fn key_string_to_code(key: &str) -> Option<Code> {
+    use Code::*;
+    Some(match key.to_ascii_lowercase().as_str() {
+        "a" => KeyA,
+        "b" => KeyB,
+        "c" => KeyC,
+        "d" => KeyD,
+        "e" => KeyE,
+        "f" => KeyF,
+        "g" => KeyG,
+        "h" => KeyH,
+        "i" => KeyI,
+        "j" => KeyJ,
+        "k" => KeyK,
+        "l" => KeyL,
+        "m" => KeyM,
+        "n" => KeyN,
+        "o" => KeyO,
+        "p" => KeyP,
+        "q" => KeyQ,
+        "r" => KeyR,
+        "s" => KeyS,
+        "t" => KeyT,
+        "u" => KeyU,
+        "v" => KeyV,
+        "w" => KeyW,
+        "x" => KeyX,
+        "y" => KeyY,
+        "z" => KeyZ,
+        "0" => Digit0,
+        "1" => Digit1,
+        "2" => Digit2,
+        "3" => Digit3,
+        "4" => Digit4,
+        "5" => Digit5,
+        "6" => Digit6,
+        "7" => Digit7,
+        "8" => Digit8,
+        "9" => Digit9,
+        "equal" | "=" | "+" => Equal,
+        "minus" | "-" | "_" => Minus,
+        "[" | "{" => BracketLeft,
+        "]" | "}" => BracketRight,
+        "space" => Space,
+        "tab" => Tab,
+        "f1" => F1,
+        "f2" => F2,
+        "f3" => F3,
+        "f4" => F4,
+        "f5" => F5,
+        "f6" => F6,
+        "f7" => F7,
+        "f8" => F8,
+        "f9" => F9,
+        "f10" => F10,
+        "f11" => F11,
+        "f12" => F12,
+        _ => return None,
+    })
+}
+
+/// Convert configured modifier names into muda [`AccelMods`], or `None` for an
+/// empty/unrecognized modifier set (a bare key accelerator).
+#[cfg(target_os = "macos")]
+fn mods_to_accel(mods: &[String]) -> Option<AccelMods> {
+    let mut out: Option<AccelMods> = None;
+    for m in mods {
+        let bit = match m.to_ascii_lowercase().as_str() {
+            "super" | "cmd" | "command" | "meta" | "win" => AccelMods::SUPER,
+            "ctrl" | "control" => AccelMods::CONTROL,
+            "shift" => AccelMods::SHIFT,
+            "alt" | "option" | "opt" => AccelMods::ALT,
+            _ => continue,
+        };
+        out = Some(out.map_or(bit, |o| o | bit));
+    }
+    out
+}
+
+/// Resolve the accelerator for a menu item from the user's keybindings.
+///
+/// Returns the first configured binding for `action`, or `fallback` if none is
+/// configured (or its key can't be mapped). This keeps the macOS menu and the
+/// in-app keybinding handler reading from the same source of truth, so custom
+/// bindings take effect on the native menu too.
+#[cfg(target_os = "macos")]
+fn configured_accelerator(
+    keybindings: &crate::config::KeybindingsConfig,
+    action: crate::config::KeyAction,
+    fallback: Accelerator,
+) -> Accelerator {
+    for binding in &keybindings.bindings {
+        if binding.action == action
+            && let Some(code) = key_string_to_code(&binding.key)
+        {
+            return Accelerator::new(mods_to_accel(&binding.mods), code);
+        }
+    }
+    fallback
+}
+
+#[cfg(target_os = "macos")]
+pub fn build_menu_bar(
+    _theme_names: &[&str],
+    _current_theme: &str,
+    keybindings: &crate::config::KeybindingsConfig,
+) -> (Menu, MenuIds, Submenu) {
+    use crate::config::KeyAction as KA;
     let menu = Menu::new();
 
     // App menu (CRT)
@@ -119,7 +229,11 @@ pub fn build_menu_bar(_theme_names: &[&str], _current_theme: &str) -> (Menu, Men
         "new_tab",
         "New Tab",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::KeyT)),
+        Some(configured_accelerator(
+            keybindings,
+            KA::NewTab,
+            Accelerator::new(Some(AccelMods::SUPER), Code::KeyT),
+        )),
     );
     let new_window = MenuItem::with_id(
         "new_window",
@@ -140,7 +254,11 @@ pub fn build_menu_bar(_theme_names: &[&str], _current_theme: &str) -> (Menu, Men
         "close_tab",
         "Close Tab",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::KeyW)),
+        Some(configured_accelerator(
+            keybindings,
+            KA::CloseTab,
+            Accelerator::new(Some(AccelMods::SUPER), Code::KeyW),
+        )),
     );
     let close_window = MenuItem::with_id(
         "close_window",
@@ -155,7 +273,11 @@ pub fn build_menu_bar(_theme_names: &[&str], _current_theme: &str) -> (Menu, Men
         "quit",
         "Quit CRT",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::KeyQ)),
+        Some(configured_accelerator(
+            keybindings,
+            KA::Quit,
+            Accelerator::new(Some(AccelMods::SUPER), Code::KeyQ),
+        )),
     );
 
     let shell_menu = Submenu::with_items(
@@ -180,13 +302,21 @@ pub fn build_menu_bar(_theme_names: &[&str], _current_theme: &str) -> (Menu, Men
         "copy",
         "Copy",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::KeyC)),
+        Some(configured_accelerator(
+            keybindings,
+            KA::Copy,
+            Accelerator::new(Some(AccelMods::SUPER), Code::KeyC),
+        )),
     );
     let paste = MenuItem::with_id(
         "paste",
         "Paste",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::KeyV)),
+        Some(configured_accelerator(
+            keybindings,
+            KA::Paste,
+            Accelerator::new(Some(AccelMods::SUPER), Code::KeyV),
+        )),
     );
     let select_all = MenuItem::with_id(
         "select_all",
@@ -227,28 +357,41 @@ pub fn build_menu_bar(_theme_names: &[&str], _current_theme: &str) -> (Menu, Men
         "toggle_fullscreen",
         "Enter Full Screen",
         true,
-        Some(Accelerator::new(
-            Some(AccelMods::SUPER | AccelMods::CONTROL),
-            Code::KeyF,
+        Some(configured_accelerator(
+            keybindings,
+            KA::ToggleFullscreen,
+            Accelerator::new(Some(AccelMods::SUPER | AccelMods::CONTROL), Code::KeyF),
         )),
     );
     let increase_font = MenuItem::with_id(
         "increase_font",
         "Increase Font Size",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Equal)),
+        Some(configured_accelerator(
+            keybindings,
+            KA::IncreaseFontSize,
+            Accelerator::new(Some(AccelMods::SUPER), Code::Equal),
+        )),
     );
     let decrease_font = MenuItem::with_id(
         "decrease_font",
         "Decrease Font Size",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Minus)),
+        Some(configured_accelerator(
+            keybindings,
+            KA::DecreaseFontSize,
+            Accelerator::new(Some(AccelMods::SUPER), Code::Minus),
+        )),
     );
     let reset_font = MenuItem::with_id(
         "reset_font",
         "Reset Font Size",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit0)),
+        Some(configured_accelerator(
+            keybindings,
+            KA::ResetFontSize,
+            Accelerator::new(Some(AccelMods::SUPER), Code::Digit0),
+        )),
     );
     let toggle_profiling = MenuItem::with_id(
         "toggle_profiling",
@@ -286,18 +429,20 @@ pub fn build_menu_bar(_theme_names: &[&str], _current_theme: &str) -> (Menu, Men
         "next_tab",
         "Show Next Tab",
         true,
-        Some(Accelerator::new(
-            Some(AccelMods::SUPER | AccelMods::SHIFT),
-            Code::BracketRight,
+        Some(configured_accelerator(
+            keybindings,
+            KA::NextTab,
+            Accelerator::new(Some(AccelMods::SUPER | AccelMods::SHIFT), Code::BracketRight),
         )),
     );
     let prev_tab = MenuItem::with_id(
         "prev_tab",
         "Show Previous Tab",
         true,
-        Some(Accelerator::new(
-            Some(AccelMods::SUPER | AccelMods::SHIFT),
-            Code::BracketLeft,
+        Some(configured_accelerator(
+            keybindings,
+            KA::PrevTab,
+            Accelerator::new(Some(AccelMods::SUPER | AccelMods::SHIFT), Code::BracketLeft),
         )),
     );
 
@@ -306,55 +451,91 @@ pub fn build_menu_bar(_theme_names: &[&str], _current_theme: &str) -> (Menu, Men
         "select_tab_1",
         "Select Tab 1",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit1)),
+        Some(configured_accelerator(
+            keybindings,
+            KA::SelectTab1,
+            Accelerator::new(Some(AccelMods::SUPER), Code::Digit1),
+        )),
     );
     let select_tab_2 = MenuItem::with_id(
         "select_tab_2",
         "Select Tab 2",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit2)),
+        Some(configured_accelerator(
+            keybindings,
+            KA::SelectTab2,
+            Accelerator::new(Some(AccelMods::SUPER), Code::Digit2),
+        )),
     );
     let select_tab_3 = MenuItem::with_id(
         "select_tab_3",
         "Select Tab 3",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit3)),
+        Some(configured_accelerator(
+            keybindings,
+            KA::SelectTab3,
+            Accelerator::new(Some(AccelMods::SUPER), Code::Digit3),
+        )),
     );
     let select_tab_4 = MenuItem::with_id(
         "select_tab_4",
         "Select Tab 4",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit4)),
+        Some(configured_accelerator(
+            keybindings,
+            KA::SelectTab4,
+            Accelerator::new(Some(AccelMods::SUPER), Code::Digit4),
+        )),
     );
     let select_tab_5 = MenuItem::with_id(
         "select_tab_5",
         "Select Tab 5",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit5)),
+        Some(configured_accelerator(
+            keybindings,
+            KA::SelectTab5,
+            Accelerator::new(Some(AccelMods::SUPER), Code::Digit5),
+        )),
     );
     let select_tab_6 = MenuItem::with_id(
         "select_tab_6",
         "Select Tab 6",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit6)),
+        Some(configured_accelerator(
+            keybindings,
+            KA::SelectTab6,
+            Accelerator::new(Some(AccelMods::SUPER), Code::Digit6),
+        )),
     );
     let select_tab_7 = MenuItem::with_id(
         "select_tab_7",
         "Select Tab 7",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit7)),
+        Some(configured_accelerator(
+            keybindings,
+            KA::SelectTab7,
+            Accelerator::new(Some(AccelMods::SUPER), Code::Digit7),
+        )),
     );
     let select_tab_8 = MenuItem::with_id(
         "select_tab_8",
         "Select Tab 8",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit8)),
+        Some(configured_accelerator(
+            keybindings,
+            KA::SelectTab8,
+            Accelerator::new(Some(AccelMods::SUPER), Code::Digit8),
+        )),
     );
     let select_tab_9 = MenuItem::with_id(
         "select_tab_9",
         "Select Tab 9",
         true,
-        Some(Accelerator::new(Some(AccelMods::SUPER), Code::Digit9)),
+        Some(configured_accelerator(
+            keybindings,
+            KA::SelectTab9,
+            Accelerator::new(Some(AccelMods::SUPER), Code::Digit9),
+        )),
     );
 
     let window_menu = Submenu::with_items(

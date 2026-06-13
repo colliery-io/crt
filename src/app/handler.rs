@@ -40,7 +40,8 @@ impl ApplicationHandler for App {
             if self.menu.is_none() {
                 let theme_names = self.theme_registry.list_themes();
                 let current_theme = self.theme_registry.default_theme_name();
-                let (menu, ids, window_submenu) = build_menu_bar(&theme_names, current_theme);
+                let (menu, ids, window_submenu) =
+                    build_menu_bar(&theme_names, current_theme, &self.config.keybindings);
                 menu.init_for_nsapp();
                 // Register the Window menu with macOS so it automatically lists windows
                 set_windows_menu(&window_submenu);
