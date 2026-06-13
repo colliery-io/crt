@@ -102,6 +102,7 @@ Create your own at `~/.config/crt/themes/mytheme.css` and set `name = "mytheme"`
 | Cmd+Shift+[ | Previous tab |
 | Cmd+Shift+] | Next tab |
 | Double-click tab | Rename tab |
+| Click **+** | New tab |
 
 </details>
 
@@ -141,6 +142,7 @@ Create your own at `~/.config/crt/themes/mytheme.css` and set `name = "mytheme"`
 | Cmd+V | Paste |
 | Cmd+A | Select all |
 | Cmd+K | Clear scrollback |
+| Cmd+, | Open settings (config file) |
 | Cmd+Option+P | Toggle profiling |
 | Ctrl+Cmd+F | Toggle fullscreen |
 

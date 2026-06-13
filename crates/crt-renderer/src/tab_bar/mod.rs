@@ -406,6 +406,22 @@ impl TabBar {
             .collect()
     }
 
+    /// Hit test the "+" new-tab button.
+    pub fn hit_test_new_tab_button(&self, x: f32, y: f32) -> bool {
+        self.layout.hit_test_new_tab_button(x, y)
+    }
+
+    /// Position for the "+" glyph in the new-tab button, if it's visible.
+    pub fn get_new_tab_button_label(&self) -> Option<(f32, f32)> {
+        let s = self.layout.scale_factor();
+        let font_height = 14.0 * s;
+        self.layout.new_tab_button_rect().map(|rect| {
+            let x = rect.x + (rect.width - font_height * 0.5) / 2.0;
+            let y = rect.y + (rect.height - font_height) / 2.0;
+            (x, y)
+        })
+    }
+
     /// Get close button positions for text rendering (returns x, y position for 'x' glyph)
     pub fn get_close_button_labels(&self) -> Vec<(f32, f32)> {
         let s = self.layout.scale_factor();
@@ -589,6 +605,17 @@ impl TabBar {
                     );
                 }
             }
+        }
+
+        // New-tab "+" button background (its glyph is drawn in render_tab_titles)
+        if let Some(rect) = self.layout.new_tab_button_rect() {
+            let bg = color_to_array(&self.theme.tab.background);
+            rect_renderer.push_rect(rect.x, rect.y, rect.width, rect.height, bg);
+            let border = color_to_array(&self.theme.bar.border_color);
+            // Top / left / right border (bottom aligns with the bar border)
+            rect_renderer.push_rect(rect.x, rect.y, rect.width, s, border);
+            rect_renderer.push_rect(rect.x, rect.y, s, rect.height, border);
+            rect_renderer.push_rect(rect.x + rect.width - s, rect.y, s, rect.height, border);
         }
 
         // Close buttons are rendered as text glyphs in render_tab_titles

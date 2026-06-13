@@ -8,6 +8,38 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+/// Starter config written when a user opens Settings without an existing file.
+/// Intentionally minimal and fully commented so nothing is overridden unless
+/// the user opts in.
+const DEFAULT_CONFIG_TEMPLATE: &str = r#"# CRT configuration
+# Docs: https://github.com/colliery-io/crt/tree/main/docs
+#
+# Uncomment and edit any of the settings below. Saving reloads automatically.
+
+[theme]
+# Built-in themes: matrix, synthwave, dracula, nyancat, minimal, robco, ...
+# name = "synthwave"
+
+[font]
+# family = ["MesloLGS NF"]
+# size = 14.0
+
+[window]
+# columns = 80
+# rows = 24
+
+[cursor]
+# style = "block"   # block | bar | underline
+# blink = true
+
+# Custom keybindings replace the defaults entirely — see
+# docs/how-to/configure-keybindings.md
+# [[keybindings.bindings]]
+# key = "t"
+# mods = ["super"]
+# action = "new_tab"
+"#;
+
 /// Configuration paths that can be overridden for testing
 #[derive(Debug, Clone)]
 pub struct ConfigPaths {
@@ -224,6 +256,25 @@ pub enum KeyAction {
     Copy,
     Paste,
     Quit,
+    OpenConfig,
+}
+
+impl KeyAction {
+    /// Returns the 0-based tab index for `SelectTabN` variants, or `None` otherwise.
+    pub fn tab_index(&self) -> Option<usize> {
+        match self {
+            KeyAction::SelectTab1 => Some(0),
+            KeyAction::SelectTab2 => Some(1),
+            KeyAction::SelectTab3 => Some(2),
+            KeyAction::SelectTab4 => Some(3),
+            KeyAction::SelectTab5 => Some(4),
+            KeyAction::SelectTab6 => Some(5),
+            KeyAction::SelectTab7 => Some(6),
+            KeyAction::SelectTab8 => Some(7),
+            KeyAction::SelectTab9 => Some(8),
+            _ => None,
+        }
+    }
 }
 
 /// Single keybinding
@@ -349,6 +400,11 @@ impl Default for KeybindingsConfig {
                     mods: vec!["super".to_string()],
                     action: KeyAction::Paste,
                 },
+                Keybinding {
+                    key: "comma".to_string(),
+                    mods: vec!["super".to_string()],
+                    action: KeyAction::OpenConfig,
+                },
             ],
         }
     }
@@ -435,6 +491,77 @@ impl Config {
     /// Get the shell integration assets directory
     pub fn shell_assets_dir() -> Option<PathBuf> {
         ConfigPaths::from_env_or_default().map(|paths| paths.shell_assets_dir())
+    }
+
+    /// Path to the user's config file, if a config directory can be determined.
+    pub fn config_path() -> Option<PathBuf> {
+        ConfigPaths::from_env_or_default().map(|paths| paths.config_path())
+    }
+
+    /// Ensure the config file exists, creating it (and its directory) with a
+    /// commented starter template if missing. Returns the path so callers can
+    /// open it in an editor.
+    pub fn ensure_config_file() -> std::io::Result<PathBuf> {
+        let paths = ConfigPaths::from_env_or_default().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "could not determine config directory",
+            )
+        })?;
+        let path = paths.config_path();
+        if !path.exists() {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&path, DEFAULT_CONFIG_TEMPLATE)?;
+        }
+        Ok(path)
+    }
+
+    /// Persist the selected theme name to the user's config file.
+    ///
+    /// Best-effort and non-destructive: existing formatting and comments are
+    /// preserved (only `[theme] name` is updated), and the file/table are
+    /// created if missing. Errors are logged rather than propagated, since a
+    /// failed persist should never interrupt an in-app theme switch.
+    pub fn persist_theme(theme_name: &str) {
+        let Some(paths) = ConfigPaths::from_env_or_default() else {
+            log::warn!("Could not determine config path; theme choice not persisted");
+            return;
+        };
+        if let Err(e) = Self::persist_theme_at(&paths.config_path(), theme_name) {
+            log::warn!("Failed to persist theme to config: {}", e);
+        }
+    }
+
+    /// Write the theme name into the config file at `path`, preserving the rest
+    /// of the document. Refuses to overwrite a file that doesn't parse as TOML,
+    /// to avoid clobbering a user's (recoverable) config.
+    pub fn persist_theme_at(path: &Path, theme_name: &str) -> std::io::Result<()> {
+        use toml_edit::{Document, Item, Table, value};
+
+        let mut doc = if path.exists() {
+            let contents = std::fs::read_to_string(path)?;
+            contents.parse::<Document>().map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("existing config is not valid TOML: {e}"),
+                )
+            })?
+        } else {
+            Document::new()
+        };
+
+        // Ensure a [theme] table exists, then set its `name` key.
+        if !doc.contains_table("theme") {
+            doc["theme"] = Item::Table(Table::new());
+        }
+        doc["theme"]["name"] = value(theme_name);
+
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, doc.to_string())
     }
 }
 
@@ -533,6 +660,59 @@ columns = 100
         let config = Config::load_from(&config_path);
         // Should return defaults
         assert_eq!(config.window.columns, 80);
+    }
+
+    #[test]
+    fn test_persist_theme_creates_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        Config::persist_theme_at(&config_path, "matrix").unwrap();
+
+        let config = Config::load_from(&config_path);
+        assert_eq!(config.theme.name, "matrix");
+    }
+
+    #[test]
+    fn test_persist_theme_preserves_comments_and_other_settings() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        fs::write(
+            &config_path,
+            r#"# My hand-edited config
+[theme]
+name = "synthwave"  # current theme
+
+[window]
+columns = 123
+"#,
+        )
+        .unwrap();
+
+        Config::persist_theme_at(&config_path, "matrix").unwrap();
+
+        let written = fs::read_to_string(&config_path).unwrap();
+        // Comments and unrelated settings are preserved.
+        assert!(written.contains("# My hand-edited config"));
+        assert!(written.contains("columns = 123"));
+        // Theme name was updated.
+        let config = Config::load_from(&config_path);
+        assert_eq!(config.theme.name, "matrix");
+        assert_eq!(config.window.columns, 123);
+    }
+
+    #[test]
+    fn test_persist_theme_refuses_to_clobber_invalid_toml() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        let original = "this is { not valid toml";
+        fs::write(&config_path, original).unwrap();
+
+        // Should error rather than overwrite a recoverable (if broken) file.
+        assert!(Config::persist_theme_at(&config_path, "matrix").is_err());
+        assert_eq!(fs::read_to_string(&config_path).unwrap(), original);
     }
 
     #[test]
