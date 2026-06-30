@@ -442,7 +442,13 @@ impl ApplicationHandler for App {
                     if new_tab_clicked {
                         self.open_new_tab();
                     } else {
-                        handle_mouse_input(state, button, button_state, &self.modifiers);
+                        handle_mouse_input(
+                            state,
+                            button,
+                            button_state,
+                            &self.modifiers,
+                            self.config.open_file_command.as_deref(),
+                        );
                         // Check for pending theme change from context menu
                         if let Some(theme_name) = state.ui.pending_theme.take() {
                             if let Some(theme) =

@@ -15,7 +15,8 @@ pub use mouse::{
     screen_to_grid_position,
 };
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -126,20 +127,36 @@ pub fn find_url_index_at_position(urls: &[DetectedUrl], col: usize, line: usize)
 
 /// Check if a (col, line) position falls within a URL's span
 fn is_position_in_url(url: &DetectedUrl, col: usize, line: usize) -> bool {
-    if line < url.line || line > url.end_line {
+    is_position_in_span(url.start_col, url.end_col, url.line, url.end_line, col, line)
+}
+
+/// Check if a (col, line) position falls within a (possibly multi-line) span.
+///
+/// Shared by URL and file-path hit testing (and the render layer's hover
+/// underline). `start_col`/`end_col` are the 0-indexed inclusive-start /
+/// exclusive-end columns on the start/end lines.
+pub fn is_position_in_span(
+    start_col: usize,
+    end_col: usize,
+    start_line: usize,
+    end_line: usize,
+    col: usize,
+    line: usize,
+) -> bool {
+    if line < start_line || line > end_line {
         return false;
     }
-    if url.line == url.end_line {
-        // Single-line URL
-        col >= url.start_col && col < url.end_col
-    } else if line == url.line {
-        // First line of multi-line URL
-        col >= url.start_col
-    } else if line == url.end_line {
-        // Last line of multi-line URL
-        col < url.end_col
+    if start_line == end_line {
+        // Single-line span
+        col >= start_col && col < end_col
+    } else if line == start_line {
+        // First line of a multi-line span
+        col >= start_col
+    } else if line == end_line {
+        // Last line of a multi-line span
+        col < end_col
     } else {
-        // Middle line of multi-line URL - entire line is part of URL
+        // Middle line - entirely within the span
         true
     }
 }
@@ -210,6 +227,266 @@ fn find_url_continuation_end(text: &str) -> usize {
     end
 }
 
+/// Detected file path with its position in the terminal grid.
+///
+/// Parallel to [`DetectedUrl`] but for local filesystem paths. Detection (the
+/// producer of this struct) is pure and does no I/O: `exists` is always `false`
+/// from detection and is set later by resolution/validation (CRT-T-0203). The
+/// column span covers the whole clickable token *including* any `:line[:col]`
+/// suffix, while [`DetectedPath::path`] holds only the path portion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DetectedPath {
+    /// The path string, with any trailing `:line[:col]` suffix removed.
+    pub path: String,
+    /// 1-based line number parsed from a trailing `:N` / `:N:M` suffix.
+    pub target_line: Option<usize>,
+    /// 1-based column parsed from a trailing `:N:M` suffix.
+    pub target_col: Option<usize>,
+    /// Whether the resolved path exists on disk. Always `false` from detection;
+    /// set by resolution/validation (see CRT-T-0203).
+    pub exists: bool,
+    /// Starting column on the start line (0-indexed).
+    pub start_col: usize,
+    /// Ending column (exclusive, 0-indexed) on the end line.
+    pub end_col: usize,
+    /// Start line number (0-indexed viewport line).
+    pub line: usize,
+    /// End line number (same as `line` for single-line paths).
+    pub end_line: usize,
+}
+
+/// Get the file-path candidate regex (compiled once).
+fn path_regex() -> &'static Regex {
+    static PATH_REGEX: OnceLock<Regex> = OnceLock::new();
+    PATH_REGEX.get_or_init(|| {
+        // Three candidate forms (tried in order at each position):
+        //   1. a double-quoted run  "…"   — may contain spaces
+        //   2. a single-quoted run  '…'   — may contain spaces
+        //   3. a bare run of path characters, where a backslash-escaped space
+        //      (`\ `) is also allowed so shell-style escaped paths stay whole.
+        // Non-path candidates (no `/`, or URLs) are filtered in
+        // `detect_paths_in_line`; on-disk existence is the final gate.
+        Regex::new(r#""[^"\n]*"|'[^'\n]*'|(?:[A-Za-z0-9._/~+@%#:-]|\\ )+"#)
+            .expect("Invalid path regex")
+    })
+}
+
+/// Strip one matching pair of surrounding quotes, returning the inner text.
+/// Returns `None` if the token isn't quoted.
+fn unquote(token: &str) -> Option<&str> {
+    let bytes = token.as_bytes();
+    if bytes.len() >= 2
+        && (bytes[0] == b'"' || bytes[0] == b'\'')
+        && bytes[bytes.len() - 1] == bytes[0]
+    {
+        // Quotes are ASCII, so these byte indices are char boundaries.
+        Some(&token[1..token.len() - 1])
+    } else {
+        None
+    }
+}
+
+/// Split a trailing `:line` or `:line:col` suffix off a path token.
+///
+/// Only a *trailing* run of `:<digits>` (optionally twice) counts, so a `:` that
+/// is part of a filename with non-numeric neighbours is left in the path. Returns
+/// `(path, line, col)` with 1-based line/col when present.
+fn parse_path_suffix(token: &str) -> (&str, Option<usize>, Option<usize>) {
+    if let Some((rest, last)) = token.rsplit_once(':')
+        && let Ok(last_num) = last.parse::<usize>()
+    {
+        // `last` is numeric: either `path:line` or `path:line:col`.
+        if let Some((rest2, mid)) = rest.rsplit_once(':')
+            && let Ok(mid_num) = mid.parse::<usize>()
+        {
+            return (rest2, Some(mid_num), Some(last_num));
+        }
+        return (rest, Some(last_num), None);
+    }
+    (token, None, None)
+}
+
+/// Whether a token (suffix already stripped) looks like a path worth offering.
+///
+/// Requires at least one `/` so bare single words (`README`) are excluded; the
+/// on-disk existence check (CRT-T-0203) is the backstop against false positives
+/// like `and/or`.
+fn is_path_like(path: &str) -> bool {
+    path.contains('/')
+}
+
+/// Scan a line of text for file-path candidates and return their positions.
+///
+/// Pure: performs no filesystem access. `exists` is left `false`; callers
+/// resolve and validate paths separately.
+pub fn detect_paths_in_line(line_text: &str, line_num: usize) -> Vec<DetectedPath> {
+    let regex = path_regex();
+    let mut paths = Vec::new();
+    for m in regex.find_iter(line_text) {
+        let raw = m.as_str();
+
+        // The on-screen token (what gets underlined) and the logical path text
+        // (used for resolution) differ for quoted / escaped paths.
+        let (on_screen, candidate) = if let Some(inner) = unquote(raw) {
+            // Quoted: the quotes delimit exactly; spaces inside are literal.
+            (raw, inner.to_string())
+        } else {
+            // Bare: trim trailing prose punctuation, then unescape `\ ` → ` `.
+            let trimmed = trim_url_trailing_punctuation(raw);
+            (trimmed, trimmed.replace("\\ ", " "))
+        };
+
+        // URLs (including `file://`) are the URL detector's job.
+        if candidate.contains("://") || on_screen.is_empty() {
+            continue;
+        }
+
+        let (path_str, target_line, target_col) = parse_path_suffix(&candidate);
+        if !is_path_like(path_str) {
+            continue;
+        }
+
+        let start_col = line_text[..m.start()].chars().count();
+        let end_col = start_col + on_screen.chars().count();
+        paths.push(DetectedPath {
+            path: path_str.to_string(),
+            target_line,
+            target_col,
+            exists: false,
+            start_col,
+            end_col,
+            line: line_num,
+            end_line: line_num,
+        });
+    }
+    paths
+}
+
+/// Find the path at a given position (supports multi-line paths).
+pub fn find_path_at_position(
+    paths: &[DetectedPath],
+    col: usize,
+    line: usize,
+) -> Option<&DetectedPath> {
+    paths.iter().find(|p| is_position_in_path(p, col, line))
+}
+
+/// Find the index of the path at a given position (supports multi-line paths).
+pub fn find_path_index_at_position(
+    paths: &[DetectedPath],
+    col: usize,
+    line: usize,
+) -> Option<usize> {
+    paths.iter().position(|p| is_position_in_path(p, col, line))
+}
+
+/// Check if a (col, line) position falls within a path's span.
+fn is_position_in_path(path: &DetectedPath, col: usize, line: usize) -> bool {
+    is_position_in_span(path.start_col, path.end_col, path.line, path.end_line, col, line)
+}
+
+/// Resolve a detected path token to an absolute [`PathBuf`].
+///
+/// - `~` / `~/...` expand against `home` (returns `None` if `home` is unknown
+///   or the token is a `~user` form we don't expand).
+/// - Absolute tokens (`/...`) are used as-is.
+/// - Anything else is treated as relative and joined onto `cwd` (returns `None`
+///   if `cwd` is unknown).
+///
+/// Pure: no filesystem access. The caller decides existence.
+pub fn resolve_path(token: &str, cwd: Option<&Path>, home: Option<&Path>) -> Option<PathBuf> {
+    if token == "~" {
+        return home.map(Path::to_path_buf);
+    }
+    if let Some(rest) = token.strip_prefix("~/") {
+        return home.map(|h| h.join(rest));
+    }
+    if token.starts_with('~') {
+        // `~user/...` — not supported.
+        return None;
+    }
+    if token.starts_with('/') {
+        return Some(PathBuf::from(token));
+    }
+    cwd.map(|c| c.join(token))
+}
+
+/// Maximum number of filesystem existence checks performed in a single
+/// validation pass (one frame). Beyond this, further candidates are treated as
+/// non-existent rather than stalling the render loop. See NFR-001 (CRT-I-0033).
+const MAX_STAT_PER_PASS: usize = 256;
+
+/// Validates detected paths against the filesystem, caching results so a frame
+/// does not re-`stat` paths it has already seen.
+///
+/// The cache is keyed by the *resolved* absolute path and persists across frames
+/// while the working directory is unchanged; it is cleared when the cwd changes
+/// (relative tokens would otherwise resolve differently). A per-pass budget
+/// (`MAX_STAT_PER_PASS`) bounds the number of `stat` calls per frame.
+#[derive(Debug, Default)]
+pub struct PathValidator {
+    cwd: Option<PathBuf>,
+    home: Option<PathBuf>,
+    cache: HashMap<PathBuf, bool>,
+    stats_this_pass: usize,
+    budget_warned: bool,
+}
+
+impl PathValidator {
+    /// Begin a validation pass with the given resolution context. Clears the
+    /// existence cache if the working directory changed, and resets the per-pass
+    /// `stat` budget.
+    pub fn begin_pass(&mut self, cwd: Option<PathBuf>, home: Option<PathBuf>) {
+        if self.cwd != cwd {
+            self.cache.clear();
+            self.cwd = cwd;
+        }
+        self.home = home;
+        self.stats_this_pass = 0;
+        self.budget_warned = false;
+    }
+
+    /// Resolve and validate a single path, setting [`DetectedPath::exists`].
+    pub fn validate(&mut self, path: &mut DetectedPath) {
+        let Some(resolved) =
+            resolve_path(&path.path, self.cwd.as_deref(), self.home.as_deref())
+        else {
+            path.exists = false;
+            return;
+        };
+
+        if let Some(&exists) = self.cache.get(&resolved) {
+            path.exists = exists;
+            return;
+        }
+
+        if self.stats_this_pass >= MAX_STAT_PER_PASS {
+            if !self.budget_warned {
+                log::warn!(
+                    "Path existence-check budget ({}) reached this frame; \
+                     remaining candidates treated as non-existent",
+                    MAX_STAT_PER_PASS
+                );
+                self.budget_warned = true;
+            }
+            path.exists = false;
+            return;
+        }
+
+        self.stats_this_pass += 1;
+        let exists = resolved.try_exists().unwrap_or(false);
+        self.cache.insert(resolved, exists);
+        path.exists = exists;
+    }
+
+    /// Resolve and validate every path in `paths`.
+    pub fn validate_all(&mut self, paths: &mut [DetectedPath]) {
+        for path in paths.iter_mut() {
+            self.validate(path);
+        }
+    }
+}
+
 /// Open a URL in the default browser
 pub fn open_url(url: &str) {
     // Ensure URL has a protocol
@@ -221,6 +498,62 @@ pub fn open_url(url: &str) {
 
     if let Err(e) = open::that(&full_url) {
         log::error!("Failed to open URL '{}': {}", full_url, e);
+    }
+}
+
+/// Build the program + args for an editor `open_file_command` template.
+///
+/// The template is split on whitespace; in each token the placeholders `{file}`,
+/// `{line}`, `{col}` are substituted (missing line/col default to `1`). Because
+/// substitution happens after splitting, a `{file}` token expands to a single
+/// argument even when the path contains spaces. Returns `None` for an
+/// empty/whitespace-only template.
+fn build_open_command(
+    template: &str,
+    file: &str,
+    line: Option<usize>,
+    col: Option<usize>,
+) -> Option<(String, Vec<String>)> {
+    let line_s = line.unwrap_or(1).to_string();
+    let col_s = col.unwrap_or(1).to_string();
+    let mut parts = template.split_whitespace().map(|tok| {
+        tok.replace("{file}", file)
+            .replace("{line}", &line_s)
+            .replace("{col}", &col_s)
+    });
+    let program = parts.next()?;
+    let args = parts.collect();
+    Some((program, args))
+}
+
+/// Open a file path.
+///
+/// If `command_template` is set (the `open_file_command` config), the file is
+/// opened with that command (with `{file}`/`{line}`/`{col}` substituted);
+/// otherwise the OS default application is used and line/col are ignored.
+pub fn open_file(
+    path: &Path,
+    line: Option<usize>,
+    col: Option<usize>,
+    command_template: Option<&str>,
+) {
+    let file = path.to_string_lossy();
+    if let Some(template) = command_template
+        && let Some((program, args)) = build_open_command(template, file.as_ref(), line, col)
+    {
+        if let Err(e) = std::process::Command::new(&program).args(&args).spawn() {
+            log::error!(
+                "Failed to open file '{}' with command '{}': {}",
+                file,
+                template,
+                e
+            );
+        }
+        return;
+    }
+
+    if let Err(e) = open::that(path) {
+        log::error!("Failed to open file '{}': {}", file, e);
     }
 }
 
@@ -1320,6 +1653,477 @@ mod tests {
         let urls = detect_urls_in_line("https://a.com https://b.com", 0);
         assert_eq!(find_url_index_at_position(&urls, 0, 0), Some(0));
         assert_eq!(find_url_index_at_position(&urls, 15, 0), Some(1));
+    }
+
+    // ── File path detection tests ──────────────────────────────────
+
+    #[test]
+    fn detect_absolute_path() {
+        let paths = detect_paths_in_line("see /etc/hosts for config", 0);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "/etc/hosts");
+        assert_eq!(paths[0].target_line, None);
+        assert!(!paths[0].exists);
+    }
+
+    #[test]
+    fn detect_home_path() {
+        let paths = detect_paths_in_line("edit ~/.config/crt/config.toml", 0);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "~/.config/crt/config.toml");
+    }
+
+    #[test]
+    fn detect_relative_dot_path() {
+        let paths = detect_paths_in_line("run ./scripts/build.sh now", 0);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "./scripts/build.sh");
+    }
+
+    #[test]
+    fn detect_relative_parent_path() {
+        let paths = detect_paths_in_line("../sibling/file.rs", 0);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "../sibling/file.rs");
+    }
+
+    #[test]
+    fn detect_bare_multi_segment_path() {
+        let paths = detect_paths_in_line("open src/window/mod.rs please", 0);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "src/window/mod.rs");
+    }
+
+    #[test]
+    fn detect_ignores_single_segment_word() {
+        let paths = detect_paths_in_line("just README and Cargo.toml words", 0);
+        assert_eq!(paths.len(), 0);
+    }
+
+    #[test]
+    fn detect_ignores_urls() {
+        let paths = detect_paths_in_line("go to https://example.com/path now", 0);
+        assert_eq!(paths.len(), 0);
+        let paths = detect_paths_in_line("file:///home/user/doc.txt", 0);
+        assert_eq!(paths.len(), 0);
+    }
+
+    #[test]
+    fn detect_path_with_line_suffix() {
+        let paths = detect_paths_in_line("error at src/main.rs:42 here", 0);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "src/main.rs");
+        assert_eq!(paths[0].target_line, Some(42));
+        assert_eq!(paths[0].target_col, None);
+    }
+
+    #[test]
+    fn detect_path_with_line_and_col_suffix() {
+        let paths = detect_paths_in_line("at src/main.rs:42:7", 0);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "src/main.rs");
+        assert_eq!(paths[0].target_line, Some(42));
+        assert_eq!(paths[0].target_col, Some(7));
+    }
+
+    #[test]
+    fn detect_path_colon_in_name_not_a_suffix() {
+        // A trailing `:word` (non-numeric) is part of the path, not a suffix.
+        let paths = detect_paths_in_line("foo/bar:baz", 0);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "foo/bar:baz");
+        assert_eq!(paths[0].target_line, None);
+    }
+
+    #[test]
+    fn detect_path_trims_trailing_sentence_punctuation() {
+        let paths = detect_paths_in_line("see /etc/hosts.", 0);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "/etc/hosts");
+    }
+
+    #[test]
+    fn detect_path_span_includes_suffix() {
+        // The clickable span covers the whole `src/main.rs:42` token.
+        let paths = detect_paths_in_line("src/main.rs:42", 0);
+        assert_eq!(paths[0].start_col, 0);
+        assert_eq!(paths[0].end_col, "src/main.rs:42".chars().count());
+    }
+
+    #[test]
+    fn detect_multiple_paths_in_line() {
+        let paths = detect_paths_in_line("diff a/src/x.rs b/src/y.rs", 0);
+        assert_eq!(paths.len(), 2);
+        assert_eq!(paths[0].path, "a/src/x.rs");
+        assert_eq!(paths[1].path, "b/src/y.rs");
+    }
+
+    #[test]
+    fn detect_double_quoted_path_with_spaces() {
+        let paths = detect_paths_in_line(r#"open "/Users/me/My Docs/file.txt" now"#, 0);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "/Users/me/My Docs/file.txt");
+    }
+
+    #[test]
+    fn detect_single_quoted_path_with_spaces() {
+        let paths = detect_paths_in_line("edit '~/My Folder/a.rs' please", 0);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "~/My Folder/a.rs");
+    }
+
+    #[test]
+    fn detect_backslash_escaped_spaces() {
+        let paths = detect_paths_in_line(r"cat /Users/me/My\ Docs/file.txt", 0);
+        assert_eq!(paths.len(), 1);
+        // The escaped spaces are unescaped in the resolved path...
+        assert_eq!(paths[0].path, "/Users/me/My Docs/file.txt");
+        // ...but the underline span covers the on-screen token (with backslashes).
+        let on_screen = r"/Users/me/My\ Docs/file.txt";
+        assert_eq!(paths[0].end_col - paths[0].start_col, on_screen.chars().count());
+    }
+
+    #[test]
+    fn detect_quoted_path_span_includes_quotes() {
+        let paths = detect_paths_in_line(r#""a/b c.rs""#, 0);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].start_col, 0);
+        // Span covers both quotes.
+        assert_eq!(paths[0].end_col, r#""a/b c.rs""#.chars().count());
+    }
+
+    #[test]
+    fn detect_quoted_path_with_line_suffix() {
+        let paths = detect_paths_in_line(r#""my docs/main.rs:42""#, 0);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "my docs/main.rs");
+        assert_eq!(paths[0].target_line, Some(42));
+    }
+
+    #[test]
+    fn detect_two_quoted_paths_in_line() {
+        let paths = detect_paths_in_line(r#"diff "a/x y.rs" "b/z w.rs""#, 0);
+        assert_eq!(paths.len(), 2);
+        assert_eq!(paths[0].path, "a/x y.rs");
+        assert_eq!(paths[1].path, "b/z w.rs");
+    }
+
+    #[test]
+    fn validate_spaced_path_is_clickable() {
+        // End-to-end: a real file whose name contains a space resolves + validates.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("My Docs")).unwrap();
+        std::fs::write(dir.path().join("My Docs/file.txt"), b"x").unwrap();
+
+        let mut p = detect_paths_in_line(r#"see "My Docs/file.txt""#, 0)
+            .into_iter()
+            .next()
+            .unwrap();
+        assert_eq!(p.path, "My Docs/file.txt");
+
+        let mut validator = PathValidator::default();
+        validator.begin_pass(Some(dir.path().to_path_buf()), None);
+        validator.validate(&mut p);
+        assert!(p.exists);
+    }
+
+    #[test]
+    fn parse_path_suffix_variants() {
+        assert_eq!(parse_path_suffix("src/a.rs"), ("src/a.rs", None, None));
+        assert_eq!(parse_path_suffix("src/a.rs:5"), ("src/a.rs", Some(5), None));
+        assert_eq!(parse_path_suffix("src/a.rs:5:9"), ("src/a.rs", Some(5), Some(9)));
+        assert_eq!(parse_path_suffix("a:b"), ("a:b", None, None));
+    }
+
+    #[test]
+    fn find_path_at_position_hit_and_miss() {
+        let paths = detect_paths_in_line("open src/main.rs now", 0);
+        // "open " is 5 chars, so the path starts at col 5.
+        assert!(find_path_at_position(&paths, 5, 0).is_some());
+        assert!(find_path_at_position(&paths, 0, 0).is_none());
+        assert!(find_path_at_position(&paths, 5, 1).is_none());
+    }
+
+    #[test]
+    fn find_path_index_at_position_returns_index() {
+        let paths = detect_paths_in_line("a/x.rs b/y.rs", 0);
+        assert_eq!(find_path_index_at_position(&paths, 0, 0), Some(0));
+        assert_eq!(find_path_index_at_position(&paths, 7, 0), Some(1));
+    }
+
+    // ── Path resolution & validation tests ─────────────────────────
+
+    #[test]
+    fn resolve_path_absolute() {
+        assert_eq!(
+            resolve_path("/etc/hosts", None, None),
+            Some(PathBuf::from("/etc/hosts"))
+        );
+    }
+
+    #[test]
+    fn resolve_path_home() {
+        let home = PathBuf::from("/home/me");
+        assert_eq!(resolve_path("~", None, Some(&home)), Some(home.clone()));
+        assert_eq!(
+            resolve_path("~/.config/x", None, Some(&home)),
+            Some(PathBuf::from("/home/me/.config/x"))
+        );
+        // No home available → cannot resolve.
+        assert_eq!(resolve_path("~/x", None, None), None);
+        // ~user form unsupported.
+        assert_eq!(resolve_path("~other/x", None, Some(&home)), None);
+    }
+
+    #[test]
+    fn resolve_path_relative_needs_cwd() {
+        let cwd = PathBuf::from("/work/project");
+        assert_eq!(
+            resolve_path("src/main.rs", Some(&cwd), None),
+            Some(PathBuf::from("/work/project/src/main.rs"))
+        );
+        // No cwd → cannot resolve a relative path.
+        assert_eq!(resolve_path("src/main.rs", None, None), None);
+    }
+
+    #[test]
+    fn validate_marks_existing_and_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("real.txt"), b"hi").unwrap();
+
+        let mut existing = DetectedPath {
+            path: "real.txt".to_string(),
+            target_line: None,
+            target_col: None,
+            exists: false,
+            start_col: 0,
+            end_col: 8,
+            line: 0,
+            end_line: 0,
+        };
+        let mut missing = DetectedPath {
+            path: "nope.txt".to_string(),
+            ..existing.clone()
+        };
+
+        let mut validator = PathValidator::default();
+        validator.begin_pass(Some(dir.path().to_path_buf()), None);
+        validator.validate(&mut existing);
+        validator.validate(&mut missing);
+
+        assert!(existing.exists);
+        assert!(!missing.exists);
+    }
+
+    #[test]
+    fn validate_expands_home() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("cfg"), b"x").unwrap();
+
+        let mut p = DetectedPath {
+            path: "~/cfg".to_string(),
+            target_line: None,
+            target_col: None,
+            exists: false,
+            start_col: 0,
+            end_col: 5,
+            line: 0,
+            end_line: 0,
+        };
+
+        let mut validator = PathValidator::default();
+        validator.begin_pass(None, Some(dir.path().to_path_buf()));
+        validator.validate(&mut p);
+        assert!(p.exists);
+    }
+
+    #[test]
+    fn validate_caches_repeated_checks() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), b"x").unwrap();
+
+        let mk = || DetectedPath {
+            path: "a.txt".to_string(),
+            target_line: None,
+            target_col: None,
+            exists: false,
+            start_col: 0,
+            end_col: 5,
+            line: 0,
+            end_line: 0,
+        };
+
+        let mut validator = PathValidator::default();
+        validator.begin_pass(Some(dir.path().to_path_buf()), None);
+        let mut p1 = mk();
+        let mut p2 = mk();
+        validator.validate(&mut p1);
+        validator.validate(&mut p2);
+
+        // Second check hit the cache → only one filesystem stat performed.
+        assert_eq!(validator.stats_this_pass, 1);
+        assert!(p1.exists && p2.exists);
+    }
+
+    #[test]
+    fn validate_cache_invalidates_on_cwd_change() {
+        let dir_a = tempfile::tempdir().unwrap();
+        let dir_b = tempfile::tempdir().unwrap();
+        // "file" exists only under dir_a.
+        std::fs::write(dir_a.path().join("file"), b"x").unwrap();
+
+        let mk = || DetectedPath {
+            path: "file".to_string(),
+            target_line: None,
+            target_col: None,
+            exists: false,
+            start_col: 0,
+            end_col: 4,
+            line: 0,
+            end_line: 0,
+        };
+
+        let mut validator = PathValidator::default();
+
+        validator.begin_pass(Some(dir_a.path().to_path_buf()), None);
+        let mut pa = mk();
+        validator.validate(&mut pa);
+        assert!(pa.exists);
+
+        // Switch cwd → cache cleared, "file" resolves under dir_b where it is absent.
+        validator.begin_pass(Some(dir_b.path().to_path_buf()), None);
+        let mut pb = mk();
+        validator.validate(&mut pb);
+        assert!(!pb.exists);
+        assert_eq!(validator.stats_this_pass, 1);
+    }
+
+    /// Build a single-line `DetectedPath` for a token (test helper).
+    fn dp(path: &str) -> DetectedPath {
+        DetectedPath {
+            path: path.to_string(),
+            target_line: None,
+            target_col: None,
+            exists: false,
+            start_col: 0,
+            end_col: path.chars().count(),
+            line: 0,
+            end_line: 0,
+        }
+    }
+
+    #[test]
+    fn validate_directory_is_clickable() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("subdir")).unwrap();
+        let mut p = dp("subdir");
+        let mut validator = PathValidator::default();
+        validator.begin_pass(Some(dir.path().to_path_buf()), None);
+        validator.validate(&mut p);
+        // Directories exist → clickable (opened via the OS default handler).
+        assert!(p.exists);
+    }
+
+    #[test]
+    fn validate_line_suffix_on_missing_file_not_clickable() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = detect_paths_in_line("see src/nope.rs:42 here", 0)
+            .into_iter()
+            .next()
+            .unwrap();
+        assert_eq!(p.path, "src/nope.rs");
+        assert_eq!(p.target_line, Some(42));
+        let mut validator = PathValidator::default();
+        validator.begin_pass(Some(dir.path().to_path_buf()), None);
+        validator.validate(&mut p);
+        assert!(!p.exists);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validate_follows_valid_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("target.txt"), b"x").unwrap();
+        std::os::unix::fs::symlink(
+            dir.path().join("target.txt"),
+            dir.path().join("link.txt"),
+        )
+        .unwrap();
+        let mut p = dp("link.txt");
+        let mut validator = PathValidator::default();
+        validator.begin_pass(Some(dir.path().to_path_buf()), None);
+        validator.validate(&mut p);
+        assert!(p.exists);
+    }
+
+    #[test]
+    fn validate_caches_full_screen_of_duplicates() {
+        // A screenful of the same path → exactly one filesystem check (NFR-001).
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), b"x").unwrap();
+        let mut paths: Vec<DetectedPath> = (0..200).map(|_| dp("a.rs")).collect();
+        let mut validator = PathValidator::default();
+        validator.begin_pass(Some(dir.path().to_path_buf()), None);
+        validator.validate_all(&mut paths);
+        assert_eq!(validator.stats_this_pass, 1);
+        assert!(paths.iter().all(|p| p.exists));
+    }
+
+    #[test]
+    fn validate_respects_per_pass_budget() {
+        // More distinct (missing) tokens than the budget → checks are capped and
+        // the overflow is treated as non-existent rather than stalling.
+        let dir = tempfile::tempdir().unwrap();
+        let mut paths: Vec<DetectedPath> = (0..MAX_STAT_PER_PASS + 10)
+            .map(|i| dp(&format!("missing/{i}.rs")))
+            .collect();
+        let mut validator = PathValidator::default();
+        validator.begin_pass(Some(dir.path().to_path_buf()), None);
+        validator.validate_all(&mut paths);
+        assert_eq!(validator.stats_this_pass, MAX_STAT_PER_PASS);
+        assert!(paths.iter().all(|p| !p.exists));
+    }
+
+    // ── open_file command builder tests ────────────────────────────
+
+    #[test]
+    fn build_open_command_file_only() {
+        let (prog, args) = build_open_command("subl {file}", "/a/b.rs", None, None).unwrap();
+        assert_eq!(prog, "subl");
+        assert_eq!(args, vec!["/a/b.rs".to_string()]);
+    }
+
+    #[test]
+    fn build_open_command_with_line() {
+        let (prog, args) =
+            build_open_command("code -g {file}:{line}", "/a/b.rs", Some(42), None).unwrap();
+        assert_eq!(prog, "code");
+        assert_eq!(args, vec!["-g".to_string(), "/a/b.rs:42".to_string()]);
+    }
+
+    #[test]
+    fn build_open_command_with_line_and_col() {
+        let (_prog, args) =
+            build_open_command("code -g {file}:{line}:{col}", "/a/b.rs", Some(42), Some(7)).unwrap();
+        assert_eq!(args, vec!["-g".to_string(), "/a/b.rs:42:7".to_string()]);
+    }
+
+    #[test]
+    fn build_open_command_defaults_missing_line_col() {
+        let (_prog, args) =
+            build_open_command("e {file}:{line}:{col}", "/a/b.rs", None, None).unwrap();
+        assert_eq!(args, vec!["/a/b.rs:1:1".to_string()]);
+    }
+
+    #[test]
+    fn build_open_command_path_with_spaces_stays_one_arg() {
+        let (_prog, args) = build_open_command("code -g {file}", "/a b/c d.rs", None, None).unwrap();
+        assert_eq!(args, vec!["-g".to_string(), "/a b/c d.rs".to_string()]);
+    }
+
+    #[test]
+    fn build_open_command_empty_template_is_none() {
+        assert!(build_open_command("   ", "/a", None, None).is_none());
     }
 
     // ── Mouse report protocol tests ────────────────────────────────

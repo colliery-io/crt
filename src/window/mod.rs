@@ -31,7 +31,7 @@ use crt_theme::Theme;
 use winit::window::Window;
 
 use crate::gpu::{SharedGpuState, WindowGpuState};
-use crate::input::{detect_urls_in_line, merge_wrapped_urls};
+use crate::input::{detect_paths_in_line, detect_urls_in_line, merge_wrapped_urls};
 
 /// Per-window state containing window handle, GPU state, shells, and interaction state
 pub struct WindowState {
@@ -312,6 +312,24 @@ impl WindowState {
             self.cols,
         );
 
+        // Detect file paths the same way, then validate them against the
+        // filesystem so only existing paths become clickable. Resolution uses
+        // the shell's current working directory and $HOME; existence checks are
+        // cached across frames (see PathValidator / NFR-001).
+        let path_cwd = self.active_shell_cwd();
+        let path_home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+        self.interaction.detected_paths.clear();
+        for (viewport_line, line_text) in &self.render.cached.line_texts {
+            let paths = detect_paths_in_line(line_text, *viewport_line as usize);
+            self.interaction.detected_paths.extend(paths);
+        }
+        let interaction = &mut self.interaction;
+        interaction.path_validator.begin_pass(path_cwd, path_home);
+        interaction
+            .path_validator
+            .validate_all(&mut interaction.detected_paths);
+        interaction.detected_paths.retain(|p| p.exists);
+
         // Flatten the Option<Option<Vec>> from the early damage query
         let damaged_lines = damaged_lines.flatten();
 
@@ -333,6 +351,8 @@ impl WindowState {
             default_bg: theme.background.bottom.to_array(),
             hovered_url_index: self.interaction.hovered_url_index,
             detected_urls: &self.interaction.detected_urls,
+            hovered_path_index: self.interaction.hovered_path_index,
+            detected_paths: &self.interaction.detected_paths,
             search_active: self.ui.search.active,
             search_matches: &self.ui.search.matches,
             current_match: self.ui.search.current_match,

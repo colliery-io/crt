@@ -124,6 +124,12 @@ pub struct InteractionState {
     pub detected_urls: Vec<crate::input::DetectedUrl>,
     /// Index of currently hovered URL (for hover underline effect)
     pub hovered_url_index: Option<usize>,
+    /// Detected (and existence-validated) file paths in current viewport
+    pub detected_paths: Vec<crate::input::DetectedPath>,
+    /// Index of currently hovered file path (for hover underline effect)
+    pub hovered_path_index: Option<usize>,
+    /// Caches path existence checks across frames (NFR-001)
+    pub path_validator: crate::input::PathValidator,
 }
 
 /// Context menu state

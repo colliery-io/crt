@@ -32,6 +32,10 @@ const DEFAULT_CONFIG_TEMPLATE: &str = r#"# CRT configuration
 # style = "block"   # block | bar | underline
 # blink = true
 
+# Command used to open a Cmd/Ctrl-clicked file path. Leave unset to use the OS
+# default app. Placeholders: {file}, {line}, {col}.
+# open_file_command = "code -g {file}:{line}:{col}"
+
 # Custom keybindings replace the defaults entirely — see
 # docs/how-to/configure-keybindings.md
 # [[keybindings.bindings]]
@@ -421,6 +425,11 @@ pub struct Config {
     pub cursor: CursorConfig,
     pub bell: BellConfig,
     pub keybindings: KeybindingsConfig,
+    /// Command used to open a Cmd/Ctrl-clicked file path. When `None`, the OS
+    /// default application is used (`open`/`xdg-open`). When set, the string is
+    /// split on whitespace and the placeholders `{file}`, `{line}`, `{col}` are
+    /// substituted, e.g. `code -g {file}:{line}:{col}` or `vim +{line} {file}`.
+    pub open_file_command: Option<String>,
 }
 
 impl Config {

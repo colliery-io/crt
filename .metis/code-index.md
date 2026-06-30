@@ -1,6 +1,6 @@
 # Code Index
 
-> Generated: 2026-03-26T17:46:03Z | 72 files | Rust
+> Generated: 2026-06-30T17:02:05Z | 72 files | Rust
 
 ## Project Structure
 
@@ -1116,44 +1116,48 @@
 - pub `TabRect` struct L11-18 — `{ x: f32, y: f32, width: f32, height: f32, close_x: f32, close_width: f32 }` — Rectangle for a tab (for hit testing and rendering)
 - pub `contains` function L21-23 — `(&self, x: f32, y: f32) -> bool` — Tab bar is always positioned at the top of the window.
 - pub `close_contains` function L25-30 — `(&self, x: f32, y: f32) -> bool` — Tab bar is always positioned at the top of the window.
-- pub `TabLayout` struct L35-43 — `{ tab_rects: Vec<TabRect>, bar_height: f32, content_padding: f32, screen_width: ...` — Tab bar layout - manages dimensions and positioning
-- pub `new` function L52-62 — `() -> Self` — Tab bar is always positioned at the top of the window.
-- pub `set_scale_factor` function L65-68 — `(&mut self, scale_factor: f32)` — Set scale factor for HiDPI displays
-- pub `scale_factor` function L71-73 — `(&self) -> f32` — Get scale factor
-- pub `height` function L76-78 — `(&self) -> f32` — Get current tab bar height (in logical pixels)
-- pub `content_offset` function L82-84 — `(&self) -> (f32, f32)` — Get the content offset (x, y) in logical pixels
-- pub `set_content_padding` function L87-90 — `(&mut self, padding: f32)` — Set content padding from theme
-- pub `resize` function L93-97 — `(&mut self, width: f32, height: f32)` — Update screen size (in physical pixels)
-- pub `screen_size` function L100-102 — `(&self) -> (f32, f32)` — Get screen dimensions
-- pub `set_bar_height` function L105-108 — `(&mut self, height: f32)` — Set bar height from theme
-- pub `mark_dirty` function L111-113 — `(&mut self)` — Mark layout as dirty (needs rebuild)
-- pub `is_dirty` function L116-118 — `(&self) -> bool` — Check if layout needs rebuild
-- pub `clear_dirty` function L121-123 — `(&mut self)` — Clear dirty flag
-- pub `tab_rects` function L126-128 — `(&self) -> &[TabRect]` — Get tab rectangles
-- pub `hit_test` function L131-139 — `(&self, x: f32, y: f32) -> Option<(usize, bool)>` — Hit test - returns (tab_index, is_close_button) if hit
-- pub `calculate_rects` function L143-181 — `(&mut self, state: &TabBarState, theme: &TabTheme)` — Calculate tab rectangles based on current state and theme
+- pub `TabLayout` struct L35-45 — `{ tab_rects: Vec<TabRect>, new_tab_button: Option<TabRect>, bar_height: f32, con...` — Tab bar layout - manages dimensions and positioning
+- pub `new` function L54-65 — `() -> Self` — Tab bar is always positioned at the top of the window.
+- pub `set_scale_factor` function L68-71 — `(&mut self, scale_factor: f32)` — Set scale factor for HiDPI displays
+- pub `scale_factor` function L74-76 — `(&self) -> f32` — Get scale factor
+- pub `height` function L79-81 — `(&self) -> f32` — Get current tab bar height (in logical pixels)
+- pub `content_offset` function L85-87 — `(&self) -> (f32, f32)` — Get the content offset (x, y) in logical pixels
+- pub `set_content_padding` function L90-93 — `(&mut self, padding: f32)` — Set content padding from theme
+- pub `resize` function L96-100 — `(&mut self, width: f32, height: f32)` — Update screen size (in physical pixels)
+- pub `screen_size` function L103-105 — `(&self) -> (f32, f32)` — Get screen dimensions
+- pub `set_bar_height` function L108-111 — `(&mut self, height: f32)` — Set bar height from theme
+- pub `mark_dirty` function L114-116 — `(&mut self)` — Mark layout as dirty (needs rebuild)
+- pub `is_dirty` function L119-121 — `(&self) -> bool` — Check if layout needs rebuild
+- pub `clear_dirty` function L124-126 — `(&mut self)` — Clear dirty flag
+- pub `tab_rects` function L129-131 — `(&self) -> &[TabRect]` — Get tab rectangles
+- pub `new_tab_button_rect` function L134-136 — `(&self) -> Option<TabRect>` — Get the "+" new-tab button rect, if currently visible
+- pub `hit_test_new_tab_button` function L139-141 — `(&self, x: f32, y: f32) -> bool` — Returns true if the point is inside the "+" new-tab button
+- pub `hit_test` function L144-152 — `(&self, x: f32, y: f32) -> Option<(usize, bool)>` — Hit test - returns (tab_index, is_close_button) if hit
+- pub `calculate_rects` function L156-210 — `(&mut self, state: &TabBarState, theme: &TabTheme)` — Calculate tab rectangles based on current state and theme
 -  `TabRect` type L20-31 — `= TabRect` — Tab bar is always positioned at the top of the window.
--  `TabLayout` type L45-49 — `impl Default for TabLayout` — Tab bar is always positioned at the top of the window.
--  `default` function L46-48 — `() -> Self` — Tab bar is always positioned at the top of the window.
--  `TabLayout` type L51-182 — `= TabLayout` — Tab bar is always positioned at the top of the window.
--  `tests` module L185-387 — `-` — Tab bar is always positioned at the top of the window.
--  `layout_with_rects` function L189-199 — `(tab_count: usize) -> TabLayout` — Tab bar is always positioned at the top of the window.
--  `new_layout_defaults` function L202-208 — `()` — Tab bar is always positioned at the top of the window.
--  `content_offset_respects_padding` function L211-215 — `()` — Tab bar is always positioned at the top of the window.
--  `resize_updates_screen_size` function L218-223 — `()` — Tab bar is always positioned at the top of the window.
--  `calculate_rects_produces_correct_count` function L226-230 — `()` — Tab bar is always positioned at the top of the window.
--  `calculate_rects_tabs_are_contiguous` function L233-245 — `()` — Tab bar is always positioned at the top of the window.
--  `calculate_rects_zero_tabs` function L248-263 — `()` — Tab bar is always positioned at the top of the window.
--  `tab_width_clamped_to_max` function L266-272 — `()` — Tab bar is always positioned at the top of the window.
--  `many_tabs_shrink_to_fit` function L275-284 — `()` — Tab bar is always positioned at the top of the window.
--  `hit_test_first_tab` function L287-293 — `()` — Tab bar is always positioned at the top of the window.
--  `hit_test_close_button` function L296-305 — `()` — Tab bar is always positioned at the top of the window.
--  `hit_test_outside_returns_none` function L308-314 — `()` — Tab bar is always positioned at the top of the window.
--  `hit_test_second_tab` function L317-323 — `()` — Tab bar is always positioned at the top of the window.
--  `scale_factor_affects_rects` function L326-343 — `()` — Tab bar is always positioned at the top of the window.
--  `tab_rect_contains` function L346-361 — `()` — Tab bar is always positioned at the top of the window.
--  `tab_rect_close_contains` function L364-376 — `()` — Tab bar is always positioned at the top of the window.
--  `dirty_flag_lifecycle` function L379-386 — `()` — Tab bar is always positioned at the top of the window.
+-  `TabLayout` type L47-51 — `impl Default for TabLayout` — Tab bar is always positioned at the top of the window.
+-  `default` function L48-50 — `() -> Self` — Tab bar is always positioned at the top of the window.
+-  `TabLayout` type L53-211 — `= TabLayout` — Tab bar is always positioned at the top of the window.
+-  `tests` module L214-444 — `-` — Tab bar is always positioned at the top of the window.
+-  `layout_with_rects` function L218-228 — `(tab_count: usize) -> TabLayout` — Tab bar is always positioned at the top of the window.
+-  `new_layout_defaults` function L231-237 — `()` — Tab bar is always positioned at the top of the window.
+-  `content_offset_respects_padding` function L240-244 — `()` — Tab bar is always positioned at the top of the window.
+-  `resize_updates_screen_size` function L247-252 — `()` — Tab bar is always positioned at the top of the window.
+-  `calculate_rects_produces_correct_count` function L255-259 — `()` — Tab bar is always positioned at the top of the window.
+-  `calculate_rects_tabs_are_contiguous` function L262-274 — `()` — Tab bar is always positioned at the top of the window.
+-  `calculate_rects_zero_tabs` function L277-292 — `()` — Tab bar is always positioned at the top of the window.
+-  `tab_width_clamped_to_max` function L295-301 — `()` — Tab bar is always positioned at the top of the window.
+-  `many_tabs_shrink_to_fit` function L304-313 — `()` — Tab bar is always positioned at the top of the window.
+-  `new_tab_button_present_with_room` function L316-333 — `()` — Tab bar is always positioned at the top of the window.
+-  `new_tab_button_hidden_when_bar_full` function L336-341 — `()` — Tab bar is always positioned at the top of the window.
+-  `hit_test_first_tab` function L344-350 — `()` — Tab bar is always positioned at the top of the window.
+-  `hit_test_close_button` function L353-362 — `()` — Tab bar is always positioned at the top of the window.
+-  `hit_test_outside_returns_none` function L365-371 — `()` — Tab bar is always positioned at the top of the window.
+-  `hit_test_second_tab` function L374-380 — `()` — Tab bar is always positioned at the top of the window.
+-  `scale_factor_affects_rects` function L383-400 — `()` — Tab bar is always positioned at the top of the window.
+-  `tab_rect_contains` function L403-418 — `()` — Tab bar is always positioned at the top of the window.
+-  `tab_rect_close_contains` function L421-433 — `()` — Tab bar is always positioned at the top of the window.
+-  `dirty_flag_lifecycle` function L436-443 — `()` — Tab bar is always positioned at the top of the window.
 
 #### crates/crt-renderer/src/tab_bar/mod.rs
 
@@ -1206,17 +1210,19 @@
 - pub `inactive_tab_text_shadow` function L356-361 — `(&self) -> Option<(f32, [f32; 4])>` — Get text shadow for inactive tabs (if any)
 - pub `active_tab_text_shadow` function L364-369 — `(&self) -> Option<(f32, [f32; 4])>` — Get text shadow for active tabs (if any)
 - pub `get_tab_labels` function L374-407 — `(&self) -> Vec<(f32, f32, String, bool, bool)>` — Get tab titles for text rendering (returns position and title in physical pixels)
-- pub `get_close_button_labels` function L410-424 — `(&self) -> Vec<(f32, f32)>` — Get close button positions for text rendering (returns x, y position for 'x' glyph)
-- pub `prepare` function L427-436 — `(&mut self, device: &wgpu::Device, _queue: &wgpu::Queue)` — Prepare the tab bar for rendering (builds vello scene)
-- pub `render_vello` function L439-447 — `( &mut self, renderer: &mut vello::Renderer, device: &wgpu::Device, queue: &wgpu...` — Render vello scene to internal texture using shared renderer
-- pub `vello_texture_view` function L450-452 — `(&self) -> Option<&wgpu::TextureView>` — Get vello texture view for compositing
-- pub `render_shapes_to_rects` function L464-595 — `(&self, rect_renderer: &mut crate::RectRenderer)` — Render tab bar shapes using RectRenderer (sharp corners, no Vello needed)
+- pub `hit_test_new_tab_button` function L410-412 — `(&self, x: f32, y: f32) -> bool` — Hit test the "+" new-tab button.
+- pub `get_new_tab_button_label` function L415-423 — `(&self) -> Option<(f32, f32)>` — Position for the "+" glyph in the new-tab button, if it's visible.
+- pub `get_close_button_labels` function L426-440 — `(&self) -> Vec<(f32, f32)>` — Get close button positions for text rendering (returns x, y position for 'x' glyph)
+- pub `prepare` function L443-452 — `(&mut self, device: &wgpu::Device, _queue: &wgpu::Queue)` — Prepare the tab bar for rendering (builds vello scene)
+- pub `render_vello` function L455-463 — `( &mut self, renderer: &mut vello::Renderer, device: &wgpu::Device, queue: &wgpu...` — Render vello scene to internal texture using shared renderer
+- pub `vello_texture_view` function L466-468 — `(&self) -> Option<&wgpu::TextureView>` — Get vello texture view for compositing
+- pub `render_shapes_to_rects` function L480-622 — `(&self, rect_renderer: &mut crate::RectRenderer)` — Render tab bar shapes using RectRenderer (sharp corners, no Vello needed)
 -  `layout` module L11 — `-` — GPU-accelerated tab bar with theme support, separated into:
 -  `state` module L12 — `-` — triggered by CSS properties like `text-shadow`.
 -  `vello_renderer` module L13 — `-` — triggered by CSS properties like `text-shadow`.
--  `TabBar` type L62-453 — `= TabBar` — triggered by CSS properties like `text-shadow`.
--  `color_to_array` function L455-457 — `(color: &crt_theme::Color) -> [f32; 4]` — triggered by CSS properties like `text-shadow`.
--  `TabBar` type L459-596 — `= TabBar` — triggered by CSS properties like `text-shadow`.
+-  `TabBar` type L62-469 — `= TabBar` — triggered by CSS properties like `text-shadow`.
+-  `color_to_array` function L471-473 — `(color: &crt_theme::Color) -> [f32; 4]` — triggered by CSS properties like `text-shadow`.
+-  `TabBar` type L475-623 — `= TabBar` — triggered by CSS properties like `text-shadow`.
 
 #### crates/crt-renderer/src/tab_bar/state.rs
 
@@ -1680,12 +1686,12 @@
 
 #### src/app/handler.rs
 
--  `App` type L33-638 — `impl ApplicationHandler for App` — Handles window events, keyboard/mouse input, and frame timing.
--  `resumed` function L34-50 — `(&mut self, event_loop: &ActiveEventLoop)` — Handles window events, keyboard/mouse input, and frame timing.
--  `window_event` function L52-515 — `(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent)` — Handles window events, keyboard/mouse input, and frame timing.
--  `about_to_wait` function L517-637 — `(&mut self, event_loop: &ActiveEventLoop)` — Handles window events, keyboard/mouse input, and frame timing.
--  `TARGET_FRAME_TIME` variable L606-607 — `: std::time::Duration` — Handles window events, keyboard/mouse input, and frame timing.
--  `UNFOCUSED_FRAME_TIME` variable L623-624 — `: std::time::Duration` — Handles window events, keyboard/mouse input, and frame timing.
+-  `App` type L32-648 — `impl ApplicationHandler for App` — Handles window events, keyboard/mouse input, and frame timing.
+-  `resumed` function L33-50 — `(&mut self, event_loop: &ActiveEventLoop)` — Handles window events, keyboard/mouse input, and frame timing.
+-  `window_event` function L52-525 — `(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent)` — Handles window events, keyboard/mouse input, and frame timing.
+-  `about_to_wait` function L527-647 — `(&mut self, event_loop: &ActiveEventLoop)` — Handles window events, keyboard/mouse input, and frame timing.
+-  `TARGET_FRAME_TIME` variable L616-617 — `: std::time::Duration` — Handles window events, keyboard/mouse input, and frame timing.
+-  `UNFOCUSED_FRAME_TIME` variable L633-634 — `: std::time::Duration` — Handles window events, keyboard/mouse input, and frame timing.
 
 #### src/app/initialization.rs
 
@@ -1698,11 +1704,10 @@
 
 #### src/app/menu_actions.rs
 
--  `App` type L15-280 — `= App` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
--  `handle_menu_action` function L16-182 — `(&mut self, action: MenuAction, event_loop: &ActiveEventLoop)` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
--  `adjust_font_scale` function L184-259 — `(&mut self, delta: f32)` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
--  `navigate_tab` function L261-271 — `(&mut self, next: bool)` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
--  `select_tab_index` function L273-279 — `(&mut self, index: usize)` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
+-  `App` type L12-164 — `= App` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
+-  `handle_menu_action` function L13-143 — `(&mut self, action: MenuAction, event_loop: &ActiveEventLoop)` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
+-  `navigate_tab` function L145-155 — `(&mut self, next: bool)` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
+-  `select_tab_index` function L157-163 — `(&mut self, index: usize)` — Processes macOS menu bar actions (new tab, close, theme switching, etc.).
 
 #### src/app/mod.rs
 
@@ -1714,7 +1719,7 @@
 -  `MAX_FONT_SCALE` variable L34 — `: f32` — GPU state, config, and theme resources.
 -  `FONT_SCALE_STEP` variable L35 — `: f32` — GPU state, config, and theme resources.
 -  `App` struct L37-69 — `{ windows: HashMap<WindowId, WindowState>, shared_gpu: Option<SharedGpuState>, f...` — GPU state, config, and theme resources.
--  `App` type L71-433 — `= App` — GPU state, config, and theme resources.
+-  `App` type L71-619 — `= App` — GPU state, config, and theme resources.
 -  `new` function L72-107 — `() -> Self` — GPU state, config, and theme resources.
 -  `next_tab_id` function L110-114 — `(&mut self) -> u64` — Allocate the next globally unique tab ID.
 -  `create_drag_overlay` function L120-155 — `( &mut self, event_loop: &winit::event_loop::ActiveEventLoop, title: &str, scree...` — Create a small floating overlay window for drag feedback.
@@ -1726,7 +1731,14 @@
 -  `close_window` function L294-333 — `(&mut self, window_id: WindowId)` — GPU state, config, and theme resources.
 -  `reload_config` function L336-380 — `(&mut self)` — Reload config from disk and apply changes
 -  `reload_theme` function L383-431 — `(&mut self)` — Reload themes from disk and apply to all windows
--  `apply_theme_to_window` function L440-463 — `( state: &mut WindowState, shared_gpu: Option<&SharedGpuState>, theme_name: &str...` — Apply a theme switch to a specific window state.
+-  `adjust_font_scale` function L436-511 — `(&mut self, delta: f32)` — Adjust the focused window's font scale by `delta`, reflowing the grid and
+-  `reset_font_scale` function L514-524 — `(&mut self)` — Reset the focused window's font scale back to 100%.
+-  `persist_theme_choice` function L532-537 — `(&mut self, theme_name: &str)` — Record a user's theme selection: update the in-memory config and persist
+-  `refresh_theme_checkmarks` function L541-547 — `(&self, current: &str)` — Update the Theme menu's checkmarks to reflect the active theme.
+-  `open_new_tab` function L552-579 — `(&mut self)` — Open a new tab in the focused window, spawning a shell in the active
+-  `open_config_file` function L583-594 — `(&mut self)` — Open the user's config file in the system default editor, creating a
+-  `toggle_fullscreen_focused` function L597-618 — `(&mut self)` — Toggle borderless fullscreen on the focused window.
+-  `apply_theme_to_window` function L626-649 — `( state: &mut WindowState, shared_gpu: Option<&SharedGpuState>, theme_name: &str...` — Apply a theme switch to a specific window state.
 
 ### src/bin
 
@@ -1785,86 +1797,96 @@
 
 #### src/config.rs
 
-- pub `ConfigPaths` struct L13-16 — `{ config_dir: PathBuf }` — Configuration paths that can be overridden for testing
-- pub `new` function L20-22 — `(config_dir: PathBuf) -> Self` — Create from a specific directory
-- pub `from_env_or_default` function L25-40 — `() -> Option<Self>` — Get paths from environment or default
-- pub `config_path` function L43-45 — `(&self) -> PathBuf` — Get the config file path
-- pub `themes_dir` function L48-50 — `(&self) -> PathBuf` — Get the themes directory path
-- pub `shell_assets_dir` function L53-55 — `(&self) -> PathBuf` — Get the shell integration assets directory path
-- pub `ShellConfig` struct L62-73 — `{ program: Option<String>, args: Vec<String>, working_directory: Option<PathBuf>...` — Shell configuration
-- pub `FontConfig` struct L78-86 — `{ family: Vec<String>, size: f32, line_height: f32 }` — Font configuration
-- pub `WindowConfig` struct L107-116 — `{ columns: usize, rows: usize, title: String, fullscreen: bool }` — Window configuration
-- pub `ThemeConfig` struct L132-135 — `{ name: String }` — Theme configuration
-- pub `CursorStyle` enum L152-157 — `Block | Bar | Underline` — Cursor shape style
-- pub `CursorConfig` struct L162-169 — `{ style: CursorStyle, blink: bool, blink_interval_ms: u64 }` — Cursor configuration
-- pub `BellConfig` struct L184-191 — `{ visual: bool, flash_duration_ms: u64, flash_intensity: f32 }` — Bell configuration
-- pub `KeyAction` enum L206-227 — `NewTab | CloseTab | NextTab | PrevTab | SelectTab1 | SelectTab2 | SelectTab3 | S...` — Keybinding action
-- pub `Keybinding` struct L231-239 — `{ key: String, mods: Vec<String>, action: KeyAction }` — Single keybinding
-- pub `KeybindingsConfig` struct L244-247 — `{ bindings: Vec<Keybinding> }` — Keybindings configuration
-- pub `Config` struct L360-368 — `{ shell: ShellConfig, font: FontConfig, window: WindowConfig, theme: ThemeConfig...` — Complete configuration
-- pub `config_dir` function L372-374 — `() -> Option<PathBuf>` — Get the config directory path (~/.config/crt or from CRT_CONFIG_DIR)
-- pub `load` function L377-379 — `() -> Self` — Load config from default path (respects CRT_CONFIG_DIR env var)
-- pub `load_with_error` function L382-393 — `() -> (Self, Option<String>)` — Load config from default path, returning any error message
-- pub `load_from` function L397-399 — `(path: &Path) -> Self` — Load config from a specific file path
-- pub `load_from_with_error` function L402-426 — `(path: &Path) -> (Self, Option<String>)` — Load config from a specific file path, returning any error message
-- pub `load_with_paths` function L430-433 — `(paths: &ConfigPaths) -> Self` — Load config using specified paths
-- pub `shell_assets_dir` function L436-438 — `() -> Option<PathBuf>` — Get the shell integration assets directory
--  `ConfigPaths` type L18-56 — `= ConfigPaths` — - `ConfigPaths` for programmatic control (useful for testing)
--  `FontConfig` type L88-102 — `impl Default for FontConfig` — - `ConfigPaths` for programmatic control (useful for testing)
--  `default` function L89-101 — `() -> Self` — - `ConfigPaths` for programmatic control (useful for testing)
--  `WindowConfig` type L118-127 — `impl Default for WindowConfig` — - `ConfigPaths` for programmatic control (useful for testing)
--  `default` function L119-126 — `() -> Self` — - `ConfigPaths` for programmatic control (useful for testing)
--  `ThemeConfig` type L137-147 — `impl Default for ThemeConfig` — - `ConfigPaths` for programmatic control (useful for testing)
--  `default` function L138-146 — `() -> Self` — - `ConfigPaths` for programmatic control (useful for testing)
--  `CursorConfig` type L171-179 — `impl Default for CursorConfig` — - `ConfigPaths` for programmatic control (useful for testing)
--  `default` function L172-178 — `() -> Self` — - `ConfigPaths` for programmatic control (useful for testing)
--  `BellConfig` type L193-201 — `impl Default for BellConfig` — - `ConfigPaths` for programmatic control (useful for testing)
--  `default` function L194-200 — `() -> Self` — - `ConfigPaths` for programmatic control (useful for testing)
--  `KeybindingsConfig` type L249-355 — `impl Default for KeybindingsConfig` — - `ConfigPaths` for programmatic control (useful for testing)
--  `default` function L250-354 — `() -> Self` — - `ConfigPaths` for programmatic control (useful for testing)
--  `Config` type L370-439 — `= Config` — - `ConfigPaths` for programmatic control (useful for testing)
--  `tests` module L442-1083 — `-` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_config_paths_new` function L448-456 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_config_default` function L459-469 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_load_from_missing_file` function L472-476 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_load_from_valid_file` function L479-506 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_load_with_paths` function L509-524 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_load_invalid_toml` function L527-536 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_partial_config_uses_defaults` function L539-555 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_cursor_style_default` function L560-565 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_cursor_style_serde` function L568-580 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_cursor_blink_config` function L583-593 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_bell_config_default` function L598-603 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_bell_config_serde` function L606-618 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_font_config_default` function L623-629 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_font_config_serde` function L632-644 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_font_config_empty_family` function L647-650 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_shell_config_default` function L655-660 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_shell_config_serde` function L663-675 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_window_config_default` function L680-686 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_window_config_serde` function L689-703 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_theme_config_default` function L708-714 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_theme_config_serde` function L717-720 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_key_action_serde` function L725-756 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_keybinding_with_multiple_mods` function L759-771 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_keybinding_no_mods` function L774-785 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_keybindings_config_default` function L788-804 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_load_with_error_returns_error_message` function L809-824 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_load_with_error_no_error_on_valid` function L827-837 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_load_with_error_missing_file` function L840-847 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_full_config_serde` function L852-909 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_config_unknown_fields_ignored` function L912-929 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_config_type_mismatch_uses_default` function L932-944 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_keybinding_invalid_action_rejected` function L949-958 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_keybinding_empty_mods_list` function L961-972 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_keybindings_config_custom_replaces_defaults` function L975-994 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_cursor_invalid_style_rejected` function L997-1000 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_partial_nested_config_preserves_sibling_defaults` function L1003-1015 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_empty_config_file_uses_all_defaults` function L1018-1027 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_config_paths_shell_assets_dir` function L1030-1036 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_shell_config_semantic_prompts_default_false` function L1039-1042 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_shell_config_semantic_prompts_serde` function L1045-1048 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
--  `test_all_key_actions_deserialize` function L1051-1082 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+- pub `ConfigPaths` struct L49-52 — `{ config_dir: PathBuf }` — Configuration paths that can be overridden for testing
+- pub `new` function L56-58 — `(config_dir: PathBuf) -> Self` — Create from a specific directory
+- pub `from_env_or_default` function L61-76 — `() -> Option<Self>` — Get paths from environment or default
+- pub `config_path` function L79-81 — `(&self) -> PathBuf` — Get the config file path
+- pub `themes_dir` function L84-86 — `(&self) -> PathBuf` — Get the themes directory path
+- pub `shell_assets_dir` function L89-91 — `(&self) -> PathBuf` — Get the shell integration assets directory path
+- pub `ShellConfig` struct L98-109 — `{ program: Option<String>, args: Vec<String>, working_directory: Option<PathBuf>...` — Shell configuration
+- pub `FontConfig` struct L114-122 — `{ family: Vec<String>, size: f32, line_height: f32 }` — Font configuration
+- pub `WindowConfig` struct L143-152 — `{ columns: usize, rows: usize, title: String, fullscreen: bool }` — Window configuration
+- pub `ThemeConfig` struct L168-171 — `{ name: String }` — Theme configuration
+- pub `CursorStyle` enum L188-193 — `Block | Bar | Underline` — Cursor shape style
+- pub `CursorConfig` struct L198-205 — `{ style: CursorStyle, blink: bool, blink_interval_ms: u64 }` — Cursor configuration
+- pub `BellConfig` struct L220-227 — `{ visual: bool, flash_duration_ms: u64, flash_intensity: f32 }` — Bell configuration
+- pub `KeyAction` enum L242-264 — `NewTab | CloseTab | NextTab | PrevTab | SelectTab1 | SelectTab2 | SelectTab3 | S...` — Keybinding action
+- pub `tab_index` function L268-281 — `(&self) -> Option<usize>` — Returns the 0-based tab index for `SelectTabN` variants, or `None` otherwise.
+- pub `Keybinding` struct L286-294 — `{ key: String, mods: Vec<String>, action: KeyAction }` — Single keybinding
+- pub `KeybindingsConfig` struct L299-302 — `{ bindings: Vec<Keybinding> }` — Keybindings configuration
+- pub `Config` struct L420-433 — `{ shell: ShellConfig, font: FontConfig, window: WindowConfig, theme: ThemeConfig...` — Complete configuration
+- pub `config_dir` function L437-439 — `() -> Option<PathBuf>` — Get the config directory path (~/.config/crt or from CRT_CONFIG_DIR)
+- pub `load` function L442-444 — `() -> Self` — Load config from default path (respects CRT_CONFIG_DIR env var)
+- pub `load_with_error` function L447-458 — `() -> (Self, Option<String>)` — Load config from default path, returning any error message
+- pub `load_from` function L462-464 — `(path: &Path) -> Self` — Load config from a specific file path
+- pub `load_from_with_error` function L467-491 — `(path: &Path) -> (Self, Option<String>)` — Load config from a specific file path, returning any error message
+- pub `load_with_paths` function L495-498 — `(paths: &ConfigPaths) -> Self` — Load config using specified paths
+- pub `shell_assets_dir` function L501-503 — `() -> Option<PathBuf>` — Get the shell integration assets directory
+- pub `config_path` function L506-508 — `() -> Option<PathBuf>` — Path to the user's config file, if a config directory can be determined.
+- pub `ensure_config_file` function L513-528 — `() -> std::io::Result<PathBuf>` — Ensure the config file exists, creating it (and its directory) with a
+- pub `persist_theme` function L536-544 — `(theme_name: &str)` — Persist the selected theme name to the user's config file.
+- pub `persist_theme_at` function L549-574 — `(path: &Path, theme_name: &str) -> std::io::Result<()>` — Write the theme name into the config file at `path`, preserving the rest
+-  `DEFAULT_CONFIG_TEMPLATE` variable L14-45 — `: &str` — Starter config written when a user opens Settings without an existing file.
+-  `ConfigPaths` type L54-92 — `= ConfigPaths` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `FontConfig` type L124-138 — `impl Default for FontConfig` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `default` function L125-137 — `() -> Self` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `WindowConfig` type L154-163 — `impl Default for WindowConfig` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `default` function L155-162 — `() -> Self` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `ThemeConfig` type L173-183 — `impl Default for ThemeConfig` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `default` function L174-182 — `() -> Self` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `CursorConfig` type L207-215 — `impl Default for CursorConfig` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `default` function L208-214 — `() -> Self` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `BellConfig` type L229-237 — `impl Default for BellConfig` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `default` function L230-236 — `() -> Self` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `KeyAction` type L266-282 — `= KeyAction` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `KeybindingsConfig` type L304-415 — `impl Default for KeybindingsConfig` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `default` function L305-414 — `() -> Self` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `Config` type L435-575 — `= Config` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `tests` module L578-1272 — `-` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_config_paths_new` function L584-592 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_config_default` function L595-605 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_load_from_missing_file` function L608-612 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_load_from_valid_file` function L615-642 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_load_with_paths` function L645-660 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_load_invalid_toml` function L663-672 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_persist_theme_creates_file` function L675-683 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_persist_theme_preserves_comments_and_other_settings` function L686-712 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_persist_theme_refuses_to_clobber_invalid_toml` function L715-725 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_partial_config_uses_defaults` function L728-744 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_cursor_style_default` function L749-754 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_cursor_style_serde` function L757-769 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_cursor_blink_config` function L772-782 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_bell_config_default` function L787-792 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_bell_config_serde` function L795-807 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_font_config_default` function L812-818 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_font_config_serde` function L821-833 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_font_config_empty_family` function L836-839 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_shell_config_default` function L844-849 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_shell_config_serde` function L852-864 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_window_config_default` function L869-875 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_window_config_serde` function L878-892 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_theme_config_default` function L897-903 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_theme_config_serde` function L906-909 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_key_action_serde` function L914-945 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_keybinding_with_multiple_mods` function L948-960 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_keybinding_no_mods` function L963-974 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_keybindings_config_default` function L977-993 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_load_with_error_returns_error_message` function L998-1013 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_load_with_error_no_error_on_valid` function L1016-1026 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_load_with_error_missing_file` function L1029-1036 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_full_config_serde` function L1041-1098 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_config_unknown_fields_ignored` function L1101-1118 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_config_type_mismatch_uses_default` function L1121-1133 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_keybinding_invalid_action_rejected` function L1138-1147 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_keybinding_empty_mods_list` function L1150-1161 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_keybindings_config_custom_replaces_defaults` function L1164-1183 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_cursor_invalid_style_rejected` function L1186-1189 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_partial_nested_config_preserves_sibling_defaults` function L1192-1204 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_empty_config_file_uses_all_defaults` function L1207-1216 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_config_paths_shell_assets_dir` function L1219-1225 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_shell_config_semantic_prompts_default_false` function L1228-1231 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_shell_config_semantic_prompts_serde` function L1234-1237 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
+-  `test_all_key_actions_deserialize` function L1240-1271 — `()` — - `ConfigPaths` for programmatic control (useful for testing)
 
 #### src/font.rs
 
@@ -1893,13 +1915,16 @@
 
 #### src/menu.rs
 
-- pub `MenuAction` enum L13-47 — `NewTab | NewWindow | RenameWindow | CloseTab | CloseWindow | Quit | Copy | Paste...` — Menu action identifiers
-- pub `tab_index` function L51-64 — `(&self) -> Option<usize>` — Returns the 0-based tab index for SelectTab variants, or None for other actions.
-- pub `MenuIds` struct L69-90 — `{ new_tab: MenuId, new_window: MenuId, rename_window: MenuId, close_tab: MenuId,...` — Menu item IDs stored for event handling
-- pub `build_menu_bar` function L93-426 — `(_theme_names: &[&str], _current_theme: &str) -> (Menu, MenuIds, Submenu)` — Creates and manages the native macOS menu bar with standard terminal actions.
-- pub `set_windows_menu` function L431-452 — `(window_submenu: &Submenu)` — Set the Window submenu as the macOS Windows menu
-- pub `menu_id_to_action` function L455-548 — `(id: &MenuId, ids: &MenuIds) -> Option<MenuAction>` — Creates and manages the native macOS menu bar with standard terminal actions.
--  `MenuAction` type L49-65 — `= MenuAction` — Creates and manages the native macOS menu bar with standard terminal actions.
+- pub `MenuAction` enum L13-49 — `OpenConfig | NewTab | NewWindow | RenameWindow | CloseTab | CloseWindow | Quit |...` — Menu action identifiers
+- pub `tab_index` function L53-66 — `(&self) -> Option<usize>` — Returns the 0-based tab index for SelectTab variants, or None for other actions.
+- pub `MenuIds` struct L71-99 — `{ open_config: MenuId, new_tab: MenuId, new_window: MenuId, rename_window: MenuI...` — Menu item IDs stored for event handling
+- pub `build_menu_bar` function L208-650 — `( theme_names: &[&str], current_theme: &str, keybindings: &crate::config::Keybin...` — Creates and manages the native macOS menu bar with standard terminal actions.
+- pub `set_windows_menu` function L655-676 — `(window_submenu: &Submenu)` — Set the Window submenu as the macOS Windows menu
+- pub `menu_id_to_action` function L679-775 — `(id: &MenuId, ids: &MenuIds) -> Option<MenuAction>` — Creates and manages the native macOS menu bar with standard terminal actions.
+-  `MenuAction` type L51-67 — `= MenuAction` — Creates and manages the native macOS menu bar with standard terminal actions.
+-  `key_string_to_code` function L105-165 — `(key: &str) -> Option<Code>` — Convert a configured key name (e.g.
+-  `mods_to_accel` function L170-183 — `(mods: &[String]) -> Option<AccelMods>` — Convert configured modifier names into muda [`AccelMods`], or `None` for an
+-  `configured_accelerator` function L192-205 — `( keybindings: &crate::config::KeybindingsConfig, action: crate::config::KeyActi...` — Resolve the accelerator for a menu item from the user's keybindings.
 
 #### src/profiling.rs
 
@@ -2164,131 +2189,222 @@
 
 #### src/input/keyboard.rs
 
-- pub `KeyboardAction` enum L20-51 — `Handled | NotHandled | CloseWindow | CloseTab | NewWindow | NewTab | Quit | Scro...` — Result of keyboard event handling
-- pub `InputContext` struct L57-72 — `{ context_menu_visible: bool, tab_editing_active: bool, window_rename_active: bo...` — Read-only context for keyboard action determination.
-- pub `from_state` function L76-86 — `(state: &WindowState) -> Self` — Extract input context from window state
-- pub `determine_command_shortcut` function L93-134 — `( key: &Key, shift_pressed: bool, ctx: &InputContext, ) -> Option<KeyboardAction...` — Determine the keyboard action for a command shortcut (Cmd/Ctrl + key).
-- pub `determine_scroll_action` function L139-159 — `( key: &Key, mod_pressed: bool, shift_pressed: bool, ) -> Option<Scroll>` — Determine the scroll action for a key combination.
-- pub `handle_keyboard_input` function L164-295 — `( state: &mut WindowState, key: &Key, text: Option<&str>, modifiers: &Modifiers,...` — Handle keyboard input event
--  `InputContext` type L74-87 — `= InputContext` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
--  `handle_scroll_shortcuts` function L298-316 — `( state: &mut WindowState, key: &Key, mod_pressed: bool, shift_pressed: bool, ) ...` — Handle scroll shortcuts (Shift+PageUp/PageDown/Home/End)
--  `handle_search_input` function L319-368 — `( state: &mut WindowState, key: &Key, mod_pressed: bool, ) -> Option<KeyboardAct...` — Handle search mode input
--  `handle_command_shortcuts` function L371-460 — `( state: &mut WindowState, key: &Key, shift_pressed: bool, ) -> Option<KeyboardA...` — Handle command shortcuts (Cmd/Ctrl + key)
--  `tests` module L463-571 — `-` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
--  `default_ctx` function L466-476 — `() -> InputContext` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
--  `test_cmd_q_returns_quit` function L479-484 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
--  `test_cmd_t_returns_new_tab` function L487-492 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
--  `test_cmd_n_returns_new_window` function L495-500 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
--  `test_cmd_w_single_tab_returns_close_window` function L503-512 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
--  `test_cmd_w_multiple_tabs_returns_close_tab` function L515-524 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
--  `test_cmd_c_returns_copy` function L527-532 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
--  `test_cmd_f_returns_toggle_search` function L535-540 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
--  `test_cmd_1_returns_select_tab_0` function L543-548 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
--  `test_cmd_shift_bracket_prev_tab` function L551-556 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
--  `test_scroll_shift_pageup` function L559-563 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
--  `test_scroll_no_shift_returns_none` function L566-570 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
+- pub `KeyboardAction` enum L21-62 — `Handled | NotHandled | CloseWindow | CloseTab | NewWindow | NewTab | Quit | Scro...` — Result of keyboard event handling
+- pub `InputContext` struct L68-83 — `{ context_menu_visible: bool, tab_editing_active: bool, window_rename_active: bo...` — Read-only context for keyboard action determination.
+- pub `from_state` function L87-97 — `(state: &WindowState) -> Self` — Extract input context from window state
+- pub `resolve_keybinding` function L203-217 — `( keybindings: &KeybindingsConfig, key: &Key, modifiers: &Modifiers, ) -> Option...` — Resolve an incoming key event to a configured [`KeyAction`], if any binding
+- pub `key_action_to_keyboard_action` function L221-254 — `(action: &KeyAction, ctx: &InputContext) -> KeyboardAction` — Translate a configured [`KeyAction`] into a [`KeyboardAction`], given the
+- pub `determine_command_shortcut` function L262-281 — `( key: &Key, shift_pressed: bool, ctx: &InputContext, ) -> Option<KeyboardAction...` — Determine a hardcoded, non-configurable command shortcut (Cmd/Ctrl + key).
+- pub `determine_scroll_action` function L286-306 — `( key: &Key, mod_pressed: bool, shift_pressed: bool, ) -> Option<Scroll>` — Determine the scroll action for a key combination.
+- pub `handle_keyboard_input` function L311-449 — `( state: &mut WindowState, key: &Key, text: Option<&str>, modifiers: &Modifiers,...` — Handle keyboard input event
+-  `InputContext` type L85-98 — `= InputContext` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
+-  `ModSignature` struct L105-110 — `{ primary: bool, shift: bool, alt: bool, ctrl_extra: bool }` — Normalized modifier signature used to match key events against configured
+-  `event_mod_signature` function L113-133 — `(modifiers: &Modifiers) -> ModSignature` — Build the modifier signature for an incoming key event.
+-  `binding_mod_signature` function L141-162 — `(mods: &[String]) -> ModSignature` — Build the modifier signature a configured binding requires.
+-  `normalize_key_token` function L166-175 — `(token: &str) -> String` — Normalize a key token to a canonical lowercase form so that, e.g., `"="`,
+-  `event_key_token` function L179-199 — `(key: &Key) -> Option<String>` — Extract a normalized key token from a winit key, or `None` for keys that
+-  `handle_scroll_shortcuts` function L452-470 — `( state: &mut WindowState, key: &Key, mod_pressed: bool, shift_pressed: bool, ) ...` — Handle scroll shortcuts (Shift+PageUp/PageDown/Home/End)
+-  `handle_search_input` function L473-522 — `( state: &mut WindowState, key: &Key, mod_pressed: bool, ) -> Option<KeyboardAct...` — Handle search mode input
+-  `handle_configured_keybinding` function L528-545 — `( state: &mut WindowState, key: &Key, modifiers: &Modifiers, keybindings: &Keybi...` — Resolve and dispatch a user-configurable keybinding.
+-  `handle_command_shortcuts` function L548-562 — `( state: &mut WindowState, key: &Key, shift_pressed: bool, ) -> Option<KeyboardA...` — Handle hardcoded, non-configurable command shortcuts (Cmd/Ctrl + key).
+-  `apply_keyboard_action` function L568-640 — `(state: &mut WindowState, action: KeyboardAction) -> KeyboardAction` — Apply any local (window-scoped) side effects for an action and return the
+-  `tests` module L643-817 — `-` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
+-  `default_ctx` function L646-656 — `() -> InputContext` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
+-  `primary_mods` function L659-666 — `() -> Modifiers` — Build a `Modifiers` with only the platform primary command modifier held.
+-  `primary_shift_mods` function L669-676 — `() -> Modifiers` — Build a `Modifiers` with the primary command modifier plus shift.
+-  `test_default_binding_quit` function L679-686 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
+-  `test_default_binding_new_tab` function L689-696 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
+-  `test_default_binding_copy` function L699-706 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
+-  `test_default_binding_select_tab1` function L709-716 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
+-  `test_default_binding_prev_tab_needs_shift` function L719-729 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
+-  `test_no_modifier_does_not_match_primary_binding` function L732-736 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
+-  `test_equal_token_normalization` function L739-747 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
+-  `test_custom_binding_resolves` function L750-764 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
+-  `test_key_action_close_tab_single_tab_closes_window` function L767-775 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
+-  `test_key_action_close_tab_multiple_tabs_closes_tab` function L778-786 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
+-  `test_hardcoded_cmd_n_returns_new_window` function L789-794 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
+-  `test_hardcoded_cmd_f_returns_toggle_search` function L797-802 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
+-  `test_scroll_shift_pageup` function L805-809 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
+-  `test_scroll_no_shift_returns_none` function L812-816 — `()` — Returns actions that main.rs applies, keeping ownership/lifetime concerns there.
 
 #### src/input/mod.rs
 
 - pub `drag` module L5 — `-` — Keyboard and mouse input processing for terminal and tab bar.
-- pub `DetectedUrl` struct L30-41 — `{ url: String, start_col: usize, end_col: usize, line: usize, end_line: usize }` — Detected URL with its position in the terminal (supports multi-line spans)
-- pub `detect_urls_in_line` function L63-80 — `(line_text: &str, line_num: usize) -> Vec<DetectedUrl>` — Scan a line of text for URLs and return their positions
-- pub `find_url_at_position` function L83-85 — `(urls: &[DetectedUrl], col: usize, line: usize) -> Option<&DetectedUrl>` — Check if a position (col, line) is within a detected URL (supports multi-line URLs)
-- pub `find_url_index_at_position` function L88-90 — `(urls: &[DetectedUrl], col: usize, line: usize) -> Option<usize>` — Find the index of a URL at a given position (supports multi-line URLs)
-- pub `merge_wrapped_urls` function L117-151 — `(urls: &mut Vec<DetectedUrl>, line_texts: &BTreeMap<i32, String>, cols: usize)` — Merge URLs that wrap across multiple lines
-- pub `open_url` function L168-179 — `(url: &str)` — Open a URL in the default browser
-- pub `MOUSE_BUTTON_LEFT` variable L187 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
-- pub `MOUSE_BUTTON_MIDDLE` variable L188 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
-- pub `MOUSE_BUTTON_RIGHT` variable L189 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
-- pub `MOUSE_BUTTON_RELEASE` variable L190 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
-- pub `MOUSE_BUTTON_MOTION` variable L191 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
-- pub `MOUSE_BUTTON_SCROLL_UP` variable L192 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
-- pub `MOUSE_BUTTON_SCROLL_DOWN` variable L193 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
-- pub `should_report_mouse` function L196-204 — `(shell: &ShellTerminal) -> bool` — Check if the terminal has mouse reporting enabled
-- pub `should_report_motion` function L207-212 — `(shell: &ShellTerminal, button_pressed: bool) -> bool` — Check if the terminal is tracking mouse motion
-- pub `is_sgr_mouse_mode` function L215-221 — `(shell: &ShellTerminal) -> bool` — Check if SGR extended mouse mode is enabled
-- pub `mouse_report` function L231-246 — `(button: u8, col: usize, line: usize, pressed: bool, sgr_mode: bool) -> Vec<u8>` — Generate mouse escape sequence for terminal
-- pub `TabEditResult` enum L249-254 — `Handled | NotHandled` — Result of handling tab editing input
-- pub `handle_tab_editing` function L257-316 — `(state: &mut WindowState, key: &Key, mod_pressed: bool) -> TabEditResult` — Handle keyboard input for tab title editing
-- pub `handle_shell_input` function L323-434 — `( state: &mut WindowState, key: &Key, text: Option<&str>, mod_pressed: bool, ctr...` — Handle shell input (send to PTY)
-- pub `handle_tab_click` function L437-503 — `(state: &mut WindowState, x: f32, y: f32, now: std::time::Instant) -> bool` — Handle mouse click on tab bar
-- pub `handle_resize` function L506-596 — `( state: &mut WindowState, shared: &crate::gpu::SharedGpuState, new_width: u32, ...` — Handle window resize
-- pub `screen_to_cell` function L600-612 — `(state: &WindowState, x: f32, y: f32) -> Option<(usize, usize)>` — Convert screen coordinates to terminal cell (column, line)
-- pub `handle_terminal_mouse_press` function L617-619 — `(state: &mut WindowState, x: f32, y: f32, now: Instant) -> bool` — Handle mouse press for terminal selection or mouse reporting
-- pub `handle_terminal_mouse_button` function L623-729 — `( state: &mut WindowState, x: f32, y: f32, now: Instant, button: u8, pressed: bo...` — Handle mouse button press/release for any button
-- pub `handle_terminal_mouse_move` function L732-773 — `(state: &mut WindowState, x: f32, y: f32)` — Handle mouse move for terminal selection (dragging) or mouse motion reporting
-- pub `handle_terminal_mouse_release` function L776-806 — `(state: &mut WindowState, x: f32, y: f32)` — Handle mouse release for terminal selection or mouse reporting
-- pub `handle_terminal_scroll` function L810-839 — `(state: &mut WindowState, x: f32, y: f32, delta_y: f32) -> bool` — Handle mouse scroll wheel for terminal scrollback or mouse reporting
-- pub `clear_terminal_selection` function L842-854 — `(state: &mut WindowState)` — Clear terminal selection (e.g., when user types or presses Escape)
-- pub `get_terminal_selection_text` function L857-861 — `(state: &WindowState) -> Option<String>` — Get selected text from terminal (for copy)
-- pub `get_clipboard_content` function L871-908 — `() -> Option<String>` — Get clipboard content from system clipboard
-- pub `set_clipboard_content` function L951-955 — `(text: &str)` — Set clipboard content
-- pub `paste_to_terminal` function L961-1012 — `(state: &mut WindowState, content: &str)` — Paste content to terminal with bracketed paste mode support
-- pub `scroll_to_current_match` function L1015-1057 — `(state: &mut WindowState)` — Scroll terminal to make current search match visible
-- pub `update_search_matches` function L1060-1101 — `(state: &mut WindowState)` — Update search matches based on current query
+- pub `DetectedUrl` struct L31-42 — `{ url: String, start_col: usize, end_col: usize, line: usize, end_line: usize }` — Detected URL with its position in the terminal (supports multi-line spans)
+- pub `detect_urls_in_line` function L98-116 — `(line_text: &str, line_num: usize) -> Vec<DetectedUrl>` — Scan a line of text for URLs and return their positions
+- pub `find_url_at_position` function L119-121 — `(urls: &[DetectedUrl], col: usize, line: usize) -> Option<&DetectedUrl>` — Check if a position (col, line) is within a detected URL (supports multi-line URLs)
+- pub `find_url_index_at_position` function L124-126 — `(urls: &[DetectedUrl], col: usize, line: usize) -> Option<usize>` — Find the index of a URL at a given position (supports multi-line URLs)
+- pub `is_position_in_span` function L138-162 — `( start_col: usize, end_col: usize, start_line: usize, end_line: usize, col: usi...` — Check if a (col, line) position falls within a (possibly multi-line) span.
+- pub `merge_wrapped_urls` function L169-214 — `(urls: &mut Vec<DetectedUrl>, line_texts: &BTreeMap<i32, String>, cols: usize)` — Merge URLs that wrap across multiple lines
+- pub `DetectedPath` struct L238-256 — `{ path: String, target_line: Option<usize>, target_col: Option<usize>, exists: b...` — Detected file path with its position in the terminal grid.
+- pub `detect_paths_in_line` function L322-363 — `(line_text: &str, line_num: usize) -> Vec<DetectedPath>` — Scan a line of text for file-path candidates and return their positions.
+- pub `find_path_at_position` function L366-372 — `( paths: &[DetectedPath], col: usize, line: usize, ) -> Option<&DetectedPath>` — Find the path at a given position (supports multi-line paths).
+- pub `find_path_index_at_position` function L375-381 — `( paths: &[DetectedPath], col: usize, line: usize, ) -> Option<usize>` — Find the index of the path at a given position (supports multi-line paths).
+- pub `resolve_path` function L397-412 — `(token: &str, cwd: Option<&Path>, home: Option<&Path>) -> Option<PathBuf>` — Resolve a detected path token to an absolute [`PathBuf`].
+- pub `PathValidator` struct L427-433 — `{ cwd: Option<PathBuf>, home: Option<PathBuf>, cache: HashMap<PathBuf, bool>, st...` — Validates detected paths against the filesystem, caching results so a frame
+- pub `begin_pass` function L439-447 — `(&mut self, cwd: Option<PathBuf>, home: Option<PathBuf>)` — Begin a validation pass with the given resolution context.
+- pub `validate` function L450-480 — `(&mut self, path: &mut DetectedPath)` — Resolve and validate a single path, setting [`DetectedPath::exists`].
+- pub `validate_all` function L483-487 — `(&mut self, paths: &mut [DetectedPath])` — Resolve and validate every path in `paths`.
+- pub `open_url` function L491-502 — `(url: &str)` — Open a URL in the default browser
+- pub `open_file` function L534-558 — `( path: &Path, line: Option<usize>, col: Option<usize>, command_template: Option...` — Open a file path.
+- pub `MOUSE_BUTTON_LEFT` variable L566 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
+- pub `MOUSE_BUTTON_MIDDLE` variable L567 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
+- pub `MOUSE_BUTTON_RIGHT` variable L568 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
+- pub `MOUSE_BUTTON_RELEASE` variable L569 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
+- pub `MOUSE_BUTTON_MOTION` variable L570 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
+- pub `MOUSE_BUTTON_SCROLL_UP` variable L571 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
+- pub `MOUSE_BUTTON_SCROLL_DOWN` variable L572 — `: u8` — Keyboard and mouse input processing for terminal and tab bar.
+- pub `should_report_mouse` function L575-583 — `(shell: &ShellTerminal) -> bool` — Check if the terminal has mouse reporting enabled
+- pub `should_report_motion` function L586-591 — `(shell: &ShellTerminal, button_pressed: bool) -> bool` — Check if the terminal is tracking mouse motion
+- pub `is_sgr_mouse_mode` function L594-600 — `(shell: &ShellTerminal) -> bool` — Check if SGR extended mouse mode is enabled
+- pub `mouse_report` function L610-625 — `(button: u8, col: usize, line: usize, pressed: bool, sgr_mode: bool) -> Vec<u8>` — Generate mouse escape sequence for terminal
+- pub `TabEditResult` enum L628-633 — `Handled | NotHandled` — Result of handling tab editing input
+- pub `handle_tab_editing` function L636-695 — `(state: &mut WindowState, key: &Key, mod_pressed: bool) -> TabEditResult` — Handle keyboard input for tab title editing
+- pub `handle_shell_input` function L702-813 — `( state: &mut WindowState, key: &Key, text: Option<&str>, mod_pressed: bool, ctr...` — Handle shell input (send to PTY)
+- pub `handle_tab_click` function L816-882 — `(state: &mut WindowState, x: f32, y: f32, now: std::time::Instant) -> bool` — Handle mouse click on tab bar
+- pub `handle_resize` function L885-975 — `( state: &mut WindowState, shared: &crate::gpu::SharedGpuState, new_width: u32, ...` — Handle window resize
+- pub `screen_to_cell` function L979-991 — `(state: &WindowState, x: f32, y: f32) -> Option<(usize, usize)>` — Convert screen coordinates to terminal cell (column, line)
+- pub `handle_terminal_mouse_press` function L996-998 — `(state: &mut WindowState, x: f32, y: f32, now: Instant) -> bool` — Handle mouse press for terminal selection or mouse reporting
+- pub `handle_terminal_mouse_button` function L1002-1108 — `( state: &mut WindowState, x: f32, y: f32, now: Instant, button: u8, pressed: bo...` — Handle mouse button press/release for any button
+- pub `handle_terminal_mouse_move` function L1111-1152 — `(state: &mut WindowState, x: f32, y: f32)` — Handle mouse move for terminal selection (dragging) or mouse motion reporting
+- pub `handle_terminal_mouse_release` function L1155-1185 — `(state: &mut WindowState, x: f32, y: f32)` — Handle mouse release for terminal selection or mouse reporting
+- pub `handle_terminal_scroll` function L1189-1218 — `(state: &mut WindowState, x: f32, y: f32, delta_y: f32) -> bool` — Handle mouse scroll wheel for terminal scrollback or mouse reporting
+- pub `clear_terminal_selection` function L1221-1233 — `(state: &mut WindowState)` — Clear terminal selection (e.g., when user types or presses Escape)
+- pub `get_terminal_selection_text` function L1236-1240 — `(state: &WindowState) -> Option<String>` — Get selected text from terminal (for copy)
+- pub `get_clipboard_content` function L1250-1287 — `() -> Option<String>` — Get clipboard content from system clipboard
+- pub `set_clipboard_content` function L1330-1334 — `(text: &str)` — Set clipboard content
+- pub `paste_to_terminal` function L1340-1391 — `(state: &mut WindowState, content: &str)` — Paste content to terminal with bracketed paste mode support
+- pub `scroll_to_current_match` function L1394-1436 — `(state: &mut WindowState)` — Scroll terminal to make current search match visible
+- pub `update_search_matches` function L1439-1480 — `(state: &mut WindowState)` — Update search matches based on current query
 -  `key_encoder` module L6 — `-` — Keyboard and mouse input processing for terminal and tab bar.
 -  `keyboard` module L7 — `-` — Keyboard and mouse input processing for terminal and tab bar.
 -  `mouse` module L8 — `-` — Keyboard and mouse input processing for terminal and tab bar.
--  `url_regex` function L44-60 — `() -> &'static Regex` — Get the URL regex (compiled once)
--  `URL_REGEX` variable L45 — `: OnceLock<Regex>` — Keyboard and mouse input processing for terminal and tab bar.
--  `is_position_in_url` function L93-110 — `(url: &DetectedUrl, col: usize, line: usize) -> bool` — Check if a (col, line) position falls within a URL's span
--  `find_url_continuation_end` function L154-165 — `(text: &str) -> usize` — Find where URL-like characters end in a continuation line
--  `MULTI_CLICK_THRESHOLD` variable L182 — `: Duration` — Threshold for multi-click detection
--  `MULTI_CLICK_DISTANCE` variable L184 — `: usize` — Maximum distance (in cells) for multi-click to register
--  `save_clipboard_image_to_temp` function L911-948 — `(image_data: &arboard::ImageData) -> Option<String>` — Save clipboard image data to a temporary file and return the path
--  `tests` module L1104-1323 — `-` — Keyboard and mouse input processing for terminal and tab bar.
--  `test_safe_utf8_truncation` function L1112-1156 — `()` — Test that UTF-8 string truncation handles multi-byte characters safely.
--  `detect_https_url` function L1161-1167 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `detect_http_url` function L1170-1175 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `detect_file_url` function L1178-1182 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `detect_www_prefix` function L1185-1189 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `detect_url_with_query_and_fragment` function L1192-1196 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `detect_multiple_urls_in_line` function L1199-1204 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `detect_no_urls_in_plain_text` function L1207-1210 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `find_url_at_position_hit` function L1213-1216 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `find_url_at_position_miss` function L1219-1225 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `find_url_index_at_position_returns_index` function L1228-1232 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `mouse_report_sgr_press` function L1237-1241 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `mouse_report_sgr_release` function L1244-1248 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `mouse_report_legacy_press` function L1251-1255 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `mouse_report_legacy_release` function L1258-1261 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `mouse_report_scroll_buttons` function L1264-1272 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `mouse_report_legacy_clamps_coordinates` function L1275-1281 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `merge_wrapped_urls_single_line` function L1286-1294 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `merge_wrapped_urls_across_lines` function L1297-1309 — `()` — Keyboard and mouse input processing for terminal and tab bar.
--  `merge_wrapped_urls_stops_at_new_protocol` function L1312-1322 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `url_regex` function L45-61 — `() -> &'static Regex` — Get the URL regex (compiled once)
+-  `URL_REGEX` variable L46 — `: OnceLock<Regex>` — Keyboard and mouse input processing for terminal and tab bar.
+-  `URL_TRAILING_PUNCTUATION` variable L65 — `: &[char]` — Trailing characters that read as prose punctuation rather than part of a URL
+-  `trim_url_trailing_punctuation` function L77-95 — `(url: &str) -> &str` — Strip trailing punctuation that the greedy match swallowed from the
+-  `is_position_in_url` function L129-131 — `(url: &DetectedUrl, col: usize, line: usize) -> bool` — Check if a (col, line) position falls within a URL's span
+-  `find_url_continuation_end` function L217-228 — `(text: &str) -> usize` — Find where URL-like characters end in a continuation line
+-  `path_regex` function L259-272 — `() -> &'static Regex` — Get the file-path candidate regex (compiled once).
+-  `PATH_REGEX` variable L260 — `: OnceLock<Regex>` — Keyboard and mouse input processing for terminal and tab bar.
+-  `unquote` function L276-287 — `(token: &str) -> Option<&str>` — Strip one matching pair of surrounding quotes, returning the inner text.
+-  `parse_path_suffix` function L294-307 — `(token: &str) -> (&str, Option<usize>, Option<usize>)` — Split a trailing `:line` or `:line:col` suffix off a path token.
+-  `is_path_like` function L314-316 — `(path: &str) -> bool` — Whether a token (suffix already stripped) looks like a path worth offering.
+-  `is_position_in_path` function L384-386 — `(path: &DetectedPath, col: usize, line: usize) -> bool` — Check if a (col, line) position falls within a path's span.
+-  `MAX_STAT_PER_PASS` variable L417 — `: usize` — Maximum number of filesystem existence checks performed in a single
+-  `PathValidator` type L435-488 — `= PathValidator` — Keyboard and mouse input processing for terminal and tab bar.
+-  `build_open_command` function L511-527 — `( template: &str, file: &str, line: Option<usize>, col: Option<usize>, ) -> Opti...` — Build the program + args for an editor `open_file_command` template.
+-  `MULTI_CLICK_THRESHOLD` variable L561 — `: Duration` — Threshold for multi-click detection
+-  `MULTI_CLICK_DISTANCE` variable L563 — `: usize` — Maximum distance (in cells) for multi-click to register
+-  `save_clipboard_image_to_temp` function L1290-1327 — `(image_data: &arboard::ImageData) -> Option<String>` — Save clipboard image data to a temporary file and return the path
+-  `tests` module L1483-2218 — `-` — Keyboard and mouse input processing for terminal and tab bar.
+-  `test_safe_utf8_truncation` function L1491-1535 — `()` — Test that UTF-8 string truncation handles multi-byte characters safely.
+-  `detect_https_url` function L1540-1546 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_http_url` function L1549-1554 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_file_url` function L1557-1561 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_www_prefix` function L1564-1568 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_url_with_query_and_fragment` function L1571-1575 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_url_trims_trailing_sentence_punctuation` function L1578-1584 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_url_trims_multiple_trailing_punctuation` function L1587-1592 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_url_keeps_balanced_trailing_paren` function L1595-1605 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_url_drops_unbalanced_trailing_paren_keeps_inner` function L1608-1613 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_www_trims_trailing_period` function L1616-1620 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_multiple_urls_in_line` function L1623-1628 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_no_urls_in_plain_text` function L1631-1634 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `find_url_at_position_hit` function L1637-1640 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `find_url_at_position_miss` function L1643-1649 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `find_url_index_at_position_returns_index` function L1652-1656 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_absolute_path` function L1661-1667 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_home_path` function L1670-1674 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_relative_dot_path` function L1677-1681 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_relative_parent_path` function L1684-1688 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_bare_multi_segment_path` function L1691-1695 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_ignores_single_segment_word` function L1698-1701 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_ignores_urls` function L1704-1709 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_path_with_line_suffix` function L1712-1718 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_path_with_line_and_col_suffix` function L1721-1727 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_path_colon_in_name_not_a_suffix` function L1730-1736 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_path_trims_trailing_sentence_punctuation` function L1739-1743 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_path_span_includes_suffix` function L1746-1751 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_multiple_paths_in_line` function L1754-1759 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_double_quoted_path_with_spaces` function L1762-1766 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_single_quoted_path_with_spaces` function L1769-1773 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_backslash_escaped_spaces` function L1776-1784 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_quoted_path_span_includes_quotes` function L1787-1793 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_quoted_path_with_line_suffix` function L1796-1801 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `detect_two_quoted_paths_in_line` function L1804-1809 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `validate_spaced_path_is_clickable` function L1812-1828 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `parse_path_suffix_variants` function L1831-1836 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `find_path_at_position_hit_and_miss` function L1839-1845 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `find_path_index_at_position_returns_index` function L1848-1852 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `resolve_path_absolute` function L1857-1862 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `resolve_path_home` function L1865-1876 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `resolve_path_relative_needs_cwd` function L1879-1887 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `validate_marks_existing_and_missing` function L1890-1916 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `validate_expands_home` function L1919-1938 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `validate_caches_repeated_checks` function L1941-1966 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `validate_cache_invalidates_on_cwd_change` function L1969-1999 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `dp` function L2002-2013 — `(path: &str) -> DetectedPath` — Build a single-line `DetectedPath` for a token (test helper).
+-  `validate_directory_is_clickable` function L2016-2025 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `validate_line_suffix_on_missing_file_not_clickable` function L2028-2040 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `validate_follows_valid_symlink` function L2044-2057 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `validate_caches_full_screen_of_duplicates` function L2060-2070 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `validate_respects_per_pass_budget` function L2073-2085 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `build_open_command_file_only` function L2090-2094 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `build_open_command_with_line` function L2097-2102 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `build_open_command_with_line_and_col` function L2105-2109 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `build_open_command_defaults_missing_line_col` function L2112-2116 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `build_open_command_path_with_spaces_stays_one_arg` function L2119-2122 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `build_open_command_empty_template_is_none` function L2125-2127 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `mouse_report_sgr_press` function L2132-2136 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `mouse_report_sgr_release` function L2139-2143 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `mouse_report_legacy_press` function L2146-2150 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `mouse_report_legacy_release` function L2153-2156 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `mouse_report_scroll_buttons` function L2159-2167 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `mouse_report_legacy_clamps_coordinates` function L2170-2176 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `merge_wrapped_urls_single_line` function L2181-2189 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `merge_wrapped_urls_across_lines` function L2192-2204 — `()` — Keyboard and mouse input processing for terminal and tab bar.
+-  `merge_wrapped_urls_stops_at_new_protocol` function L2207-2217 — `()` — Keyboard and mouse input processing for terminal and tab bar.
 
 #### src/input/mouse.rs
 
-- pub `GridLayout` struct L30-45 — `{ content_offset_x: f32, content_offset_y: f32, padding: f32, cell_width: f32, l...` — Layout parameters needed for coordinate conversion
-- pub `screen_to_grid_position` function L52-67 — `(x: f32, y: f32, layout: &GridLayout) -> Option<(usize, usize)>` — Convert screen pixel coordinates to terminal grid position (col, line).
-- pub `MouseClickTarget` enum L71-92 — `OpenUrl | ContextSubmenuItem | ContextMenuItem | ContextSubmenuParent | DismissC...` — What a mouse click targets
-- pub `determine_click_target` function L98-146 — `( button: MouseButton, button_state: ElementState, cmd_pressed: bool, context_me...` — Determine what a mouse click targets, without performing any side effects.
-- pub `compute_click_count` function L153-175 — `( now: Instant, last_click_time: Option<Instant>, last_click_pos: Option<(usize,...` — Compute click count for multi-click detection (single, double, triple).
-- pub `normalize_scroll_delta` function L181-186 — `(delta: &MouseScrollDelta, line_height: f32) -> f32` — Normalize a pixel scroll delta to a line count.
-- pub `handle_cursor_moved` function L193-222 — `(state: &mut WindowState, x: f32, y: f32)` — Handle cursor moved event
-- pub `handle_mouse_input` function L227-326 — `( state: &mut WindowState, button: MouseButton, button_state: ElementState, modi...` — Handle mouse button event
-- pub `handle_mouse_wheel` function L329-353 — `(state: &mut WindowState, delta: MouseScrollDelta)` — Handle mouse wheel event
--  `grid_layout_from_state` function L358-369 — `(state: &WindowState) -> GridLayout` — Build a `GridLayout` from the current window state.
--  `handle_context_menu_action` function L372-419 — `(state: &mut WindowState, item: ContextMenuItem)` — Handle context menu action (copy, paste, select all)
--  `tests` module L422-646 — `-` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
--  `test_layout` function L425-435 — `() -> GridLayout` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
--  `grid_position_at_origin` function L440-445 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
--  `grid_position_mid_screen` function L448-453 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
--  `grid_position_outside_returns_none` function L456-462 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
--  `grid_position_clamps_to_bounds` function L465-473 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
--  `click_count_single_on_first_click` function L478-490 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
--  `click_count_double_on_rapid_same_position` function L493-506 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
--  `click_count_triple_then_wraps` function L509-536 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
--  `click_count_resets_on_timeout` function L539-552 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
--  `click_count_resets_on_distance` function L555-568 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
--  `click_target_cmd_click_url` function L573-582 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
--  `click_target_right_click_shows_menu` function L585-594 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
--  `click_target_right_click_moves_menu_when_visible` function L597-606 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
--  `click_target_left_press_terminal` function L609-618 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
--  `click_target_release` function L621-630 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
--  `scroll_delta_line_passthrough` function L635-638 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
--  `scroll_delta_pixel_converts_to_lines` function L641-645 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+- pub `GridLayout` struct L31-46 — `{ content_offset_x: f32, content_offset_y: f32, padding: f32, cell_width: f32, l...` — Layout parameters needed for coordinate conversion
+- pub `screen_to_grid_position` function L53-68 — `(x: f32, y: f32, layout: &GridLayout) -> Option<(usize, usize)>` — Convert screen pixel coordinates to terminal grid position (col, line).
+- pub `MouseClickTarget` enum L72-95 — `OpenUrl | OpenFile | ContextSubmenuItem | ContextMenuItem | ContextSubmenuParent...` — What a mouse click targets
+- pub `determine_click_target` function L101-149 — `( button: MouseButton, button_state: ElementState, cmd_pressed: bool, context_me...` — Determine what a mouse click targets, without performing any side effects.
+- pub `ClickLink` enum L153-160 — `Url | Path | None` — Which detected link a Cmd+click cell targets.
+- pub `resolve_click_link` function L167-180 — `( urls: &'a [DetectedUrl], paths: &'a [DetectedPath], col: usize, line: usize, )...` — Decide which detected link a `(col, line)` cell targets.
+- pub `compute_click_count` function L187-209 — `( now: Instant, last_click_time: Option<Instant>, last_click_pos: Option<(usize,...` — Compute click count for multi-click detection (single, double, triple).
+- pub `normalize_scroll_delta` function L215-220 — `(delta: &MouseScrollDelta, line_height: f32) -> f32` — Normalize a pixel scroll delta to a line count.
+- pub `handle_cursor_moved` function L227-268 — `(state: &mut WindowState, x: f32, y: f32)` — Handle cursor moved event
+- pub `handle_mouse_input` function L273-403 — `( state: &mut WindowState, button: MouseButton, button_state: ElementState, modi...` — Handle mouse button event
+- pub `handle_mouse_wheel` function L406-430 — `(state: &mut WindowState, delta: MouseScrollDelta)` — Handle mouse wheel event
+-  `grid_layout_from_state` function L435-446 — `(state: &WindowState) -> GridLayout` — Build a `GridLayout` from the current window state.
+-  `handle_context_menu_action` function L449-496 — `(state: &mut WindowState, item: ContextMenuItem)` — Handle context menu action (copy, paste, select all)
+-  `tests` module L499-784 — `-` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `test_layout` function L502-512 — `() -> GridLayout` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `grid_position_at_origin` function L517-522 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `grid_position_mid_screen` function L525-530 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `grid_position_outside_returns_none` function L533-539 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `grid_position_clamps_to_bounds` function L542-550 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `click_count_single_on_first_click` function L555-567 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `click_count_double_on_rapid_same_position` function L570-583 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `click_count_triple_then_wraps` function L586-613 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `click_count_resets_on_timeout` function L616-629 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `click_count_resets_on_distance` function L632-645 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `url_at` function L649-657 — `(start: usize, end: usize) -> DetectedUrl` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `path_at` function L659-670 — `(start: usize, end: usize) -> DetectedPath` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `click_link_picks_url` function L673-680 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `click_link_picks_path` function L683-690 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `click_link_url_takes_precedence_on_overlap` function L693-701 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `click_link_none_when_empty` function L704-706 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `click_target_cmd_click_url` function L711-720 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `click_target_right_click_shows_menu` function L723-732 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `click_target_right_click_moves_menu_when_visible` function L735-744 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `click_target_left_press_terminal` function L747-756 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `click_target_release` function L759-768 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `scroll_delta_line_passthrough` function L773-776 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
+-  `scroll_delta_pixel_converts_to_lines` function L779-783 — `()` — - `normalize_scroll_delta` — converts pixel scroll delta to line count
 
 ### src/render
 
@@ -2322,47 +2438,47 @@
 -  `VELLO_RESET_INTERVAL` variable L174 — `: u32` — How often to reset vello renderer to clean up atlas resources (in frames)
 -  `ASSUMED_DT` variable L211 — `: f32` — Multi-pass rendering pipeline for terminal content and effects.
 -  `LOGGED_SPRITE` variable L428-429 — `: std::sync::atomic::AtomicBool` — Multi-pass rendering pipeline for terminal content and effects.
--  `render_tab_titles` function L1170-1297 — `( state: &mut WindowState, shared: &SharedGpuState, encoder: &mut wgpu::CommandE...` — Render tab title text with glow effect
--  `tests` module L1300-1807 — `-` — Multi-pass rendering pipeline for terminal content and effects.
--  `shell_overrides_no_events_produces_empty` function L1309-1315 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `shell_overrides_bell_sets_bell_triggered` function L1318-1324 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `shell_overrides_command_success_sets_clear_fail` function L1327-1333 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `shell_overrides_command_fail_no_flags` function L1336-1342 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `shell_overrides_no_activations_when_theme_has_no_overrides` function L1345-1355 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `shell_overrides_bell_activation_when_theme_has_on_bell` function L1358-1369 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `shell_overrides_command_fail_activation_when_theme_configured` function L1372-1384 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `shell_overrides_command_success_activation` function L1387-1398 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `shell_overrides_multiple_events_produce_multiple_activations` function L1401-1416 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `shell_overrides_mixed_configured_and_unconfigured` function L1419-1431 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `shell_overrides_event_type_from_shell_event` function L1434-1447 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `override_state_default_empty` function L1452-1456 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `override_state_add_and_has_active` function L1459-1470 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `override_state_add_replaces_same_type` function L1473-1492 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `override_state_different_types_coexist` function L1495-1512 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `override_state_patched_tracking` function L1515-1523 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `override_state_clear_event` function L1526-1545 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `override_state_clear_all` function L1548-1566 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `override_state_update_removes_expired` function L1569-1584 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `override_state_update_keeps_active` function L1587-1599 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `effect_patches_empty_when_no_overrides` function L1604-1609 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `effect_patches_apply_when_starfield_patch_present` function L1612-1631 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `effect_patches_no_double_apply_when_already_patched` function L1634-1654 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `effect_patches_restore_when_patch_removed_and_theme_has_base` function L1657-1667 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `effect_patches_no_restore_when_no_base_theme_config` function L1670-1678 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `effect_patches_multiple_effects` function L1681-1709 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `active_override_long_duration_is_active` function L1714-1725 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `active_override_zero_duration_expired` function L1728-1740 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `pty_update_result_fields` function L1745-1754 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `pty_update_result_no_changes` function L1757-1766 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `effect_patch_action_apply_variant` function L1771-1788 — `()` — Multi-pass rendering pipeline for terminal content and effects.
--  `effect_patch_action_restore_variant` function L1791-1806 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `render_tab_titles` function L1170-1307 — `( state: &mut WindowState, shared: &SharedGpuState, encoder: &mut wgpu::CommandE...` — Render tab title text with glow effect
+-  `tests` module L1310-1817 — `-` — Multi-pass rendering pipeline for terminal content and effects.
+-  `shell_overrides_no_events_produces_empty` function L1319-1325 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `shell_overrides_bell_sets_bell_triggered` function L1328-1334 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `shell_overrides_command_success_sets_clear_fail` function L1337-1343 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `shell_overrides_command_fail_no_flags` function L1346-1352 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `shell_overrides_no_activations_when_theme_has_no_overrides` function L1355-1365 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `shell_overrides_bell_activation_when_theme_has_on_bell` function L1368-1379 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `shell_overrides_command_fail_activation_when_theme_configured` function L1382-1394 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `shell_overrides_command_success_activation` function L1397-1408 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `shell_overrides_multiple_events_produce_multiple_activations` function L1411-1426 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `shell_overrides_mixed_configured_and_unconfigured` function L1429-1441 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `shell_overrides_event_type_from_shell_event` function L1444-1457 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `override_state_default_empty` function L1462-1466 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `override_state_add_and_has_active` function L1469-1480 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `override_state_add_replaces_same_type` function L1483-1502 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `override_state_different_types_coexist` function L1505-1522 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `override_state_patched_tracking` function L1525-1533 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `override_state_clear_event` function L1536-1555 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `override_state_clear_all` function L1558-1576 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `override_state_update_removes_expired` function L1579-1594 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `override_state_update_keeps_active` function L1597-1609 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `effect_patches_empty_when_no_overrides` function L1614-1619 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `effect_patches_apply_when_starfield_patch_present` function L1622-1641 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `effect_patches_no_double_apply_when_already_patched` function L1644-1664 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `effect_patches_restore_when_patch_removed_and_theme_has_base` function L1667-1677 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `effect_patches_no_restore_when_no_base_theme_config` function L1680-1688 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `effect_patches_multiple_effects` function L1691-1719 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `active_override_long_duration_is_active` function L1724-1735 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `active_override_zero_duration_expired` function L1738-1750 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `pty_update_result_fields` function L1755-1764 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `pty_update_result_no_changes` function L1767-1776 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `effect_patch_action_apply_variant` function L1781-1798 — `()` — Multi-pass rendering pipeline for terminal content and effects.
+-  `effect_patch_action_restore_variant` function L1801-1816 — `()` — Multi-pass rendering pipeline for terminal content and effects.
 
 #### src/render/overlays.rs
 
 - pub `render_bell_flash` function L9-58 — `( state: &mut WindowState, shared: &SharedGpuState, encoder: &mut wgpu::CommandE...` — Render bell flash overlay (theme-driven color and intensity)
-- pub `render_zoom_indicator` function L61-180 — `( state: &mut WindowState, shared: &SharedGpuState, encoder: &mut wgpu::CommandE...` — Render zoom indicator overlay (centered pill showing zoom percentage)
-- pub `render_copy_indicator` function L183-300 — `( state: &mut WindowState, shared: &SharedGpuState, encoder: &mut wgpu::CommandE...` — Render copy indicator ("Copied!" feedback pill)
-- pub `render_toast` function L303-435 — `( state: &mut WindowState, shared: &SharedGpuState, encoder: &mut wgpu::CommandE...` — Render toast notification (bottom-centered)
+- pub `render_zoom_indicator` function L61-182 — `( state: &mut WindowState, shared: &SharedGpuState, encoder: &mut wgpu::CommandE...` — Render zoom indicator overlay (centered pill showing zoom percentage)
+- pub `render_copy_indicator` function L185-305 — `( state: &mut WindowState, shared: &SharedGpuState, encoder: &mut wgpu::CommandE...` — Render copy indicator ("Copied!" feedback pill)
+- pub `render_toast` function L308-440 — `( state: &mut WindowState, shared: &SharedGpuState, encoder: &mut wgpu::CommandE...` — Render toast notification (bottom-centered)
 
 #### src/render/selection.rs
 
@@ -2383,40 +2499,40 @@
 - pub `is_separator` function L85-87 — `(&self) -> bool` — Returns true if this is a separator item
 - pub `is_selectable` function L90-92 — `(&self) -> bool` — Returns true if this is a selectable (non-separator) item
 - pub `edit_items` function L95-101 — `() -> Vec<ContextMenuItem>` — Get the base edit menu items
-- pub `InteractionState` struct L108-127 — `{ cursor_position: (f32, f32), last_click_time: Option<Instant>, last_click_tab:...` — Interaction state (cursor, mouse, selection, URLs)
-- pub `ContextMenu` struct L131-159 — `{ visible: bool, x: f32, y: f32, hovered_item: Option<usize>, focused_item: Opti...` — Context menu state
-- pub `items` function L163-170 — `(&self) -> Vec<ContextMenuItem>` — Build the main menu items (Themes shown as a parent item, not expanded)
-- pub `theme_items` function L173-178 — `(&self) -> Vec<ContextMenuItem>` — Build the theme submenu items
-- pub `show` function L181-189 — `(&mut self, x: f32, y: f32)` — Show the context menu at the given position
-- pub `hide` function L192-198 — `(&mut self)` — Hide the context menu
-- pub `focus_next` function L201-221 — `(&mut self)` — Move focus to the next selectable item (wraps around, skips separators)
-- pub `focus_prev` function L224-244 — `(&mut self)` — Move focus to the previous selectable item (wraps around, skips separators)
-- pub `get_focused_item` function L247-250 — `(&self) -> Option<ContextMenuItem>` — Get the currently focused item
-- pub `contains` function L253-258 — `(&self, x: f32, y: f32) -> bool` — Check if a point is inside the main menu
-- pub `contains_submenu` function L261-269 — `(&self, x: f32, y: f32) -> bool` — Check if a point is inside the submenu
-- pub `item_at` function L272-280 — `(&self, x: f32, y: f32) -> Option<ContextMenuItem>` — Get the menu item at the given position (main menu only)
-- pub `submenu_item_at` function L283-291 — `(&self, x: f32, y: f32) -> Option<ContextMenuItem>` — Get the submenu item at the given position
-- pub `is_current_theme` function L294-296 — `(&self, name: &str) -> bool` — Check if a theme name is the currently active theme
-- pub `update_hover` function L299-327 — `(&mut self, x: f32, y: f32)` — Update hover state based on mouse position
-- pub `themes_item_index` function L330-334 — `(&self) -> Option<usize>` — Get the index of the Themes item in the main menu
+- pub `InteractionState` struct L108-133 — `{ cursor_position: (f32, f32), last_click_time: Option<Instant>, last_click_tab:...` — Interaction state (cursor, mouse, selection, URLs)
+- pub `ContextMenu` struct L137-165 — `{ visible: bool, x: f32, y: f32, hovered_item: Option<usize>, focused_item: Opti...` — Context menu state
+- pub `items` function L169-176 — `(&self) -> Vec<ContextMenuItem>` — Build the main menu items (Themes shown as a parent item, not expanded)
+- pub `theme_items` function L179-184 — `(&self) -> Vec<ContextMenuItem>` — Build the theme submenu items
+- pub `show` function L187-195 — `(&mut self, x: f32, y: f32)` — Show the context menu at the given position
+- pub `hide` function L198-204 — `(&mut self)` — Hide the context menu
+- pub `focus_next` function L207-227 — `(&mut self)` — Move focus to the next selectable item (wraps around, skips separators)
+- pub `focus_prev` function L230-250 — `(&mut self)` — Move focus to the previous selectable item (wraps around, skips separators)
+- pub `get_focused_item` function L253-256 — `(&self) -> Option<ContextMenuItem>` — Get the currently focused item
+- pub `contains` function L259-264 — `(&self, x: f32, y: f32) -> bool` — Check if a point is inside the main menu
+- pub `contains_submenu` function L267-275 — `(&self, x: f32, y: f32) -> bool` — Check if a point is inside the submenu
+- pub `item_at` function L278-286 — `(&self, x: f32, y: f32) -> Option<ContextMenuItem>` — Get the menu item at the given position (main menu only)
+- pub `submenu_item_at` function L289-297 — `(&self, x: f32, y: f32) -> Option<ContextMenuItem>` — Get the submenu item at the given position
+- pub `is_current_theme` function L300-302 — `(&self, name: &str) -> bool` — Check if a theme name is the currently active theme
+- pub `update_hover` function L305-333 — `(&mut self, x: f32, y: f32)` — Update hover state based on mouse position
+- pub `themes_item_index` function L336-340 — `(&self) -> Option<usize>` — Get the index of the Themes item in the main menu
 -  `ContextMenuItem` type L46-102 — `= ContextMenuItem` — Groups state related to user interaction, mouse handling, search, and context menus.
--  `ContextMenu` type L161-335 — `= ContextMenu` — Groups state related to user interaction, mouse handling, search, and context menus.
+-  `ContextMenu` type L167-341 — `= ContextMenu` — Groups state related to user interaction, mouse handling, search, and context menus.
 
 #### src/window/mod.rs
 
 - pub `WindowState` struct L37-61 — `{ window: Arc<Window>, gpu: WindowGpuState, shells: HashMap<TabId, ShellTerminal...` — Per-window state containing window handle, GPU state, shells, and interaction state
 - pub `set_theme` function L65-94 — `(&mut self, name: &str, theme: Theme)` — Set the theme for this window, updating all GPU resources
-- pub `update_text_buffer` function L99-504 — `( &mut self, shared_gpu: &SharedGpuState, ) -> Option<TextBufferUpdateResult>` — Update text buffer for this window's active shell
-- pub `create_shell_for_tab` function L507-526 — `(&mut self, tab_id: u64, options: SpawnOptions)` — Create a shell for a new tab with spawn options
-- pub `active_shell_cwd` function L529-533 — `(&self) -> Option<std::path::PathBuf>` — Get the current working directory of the active tab's shell
-- pub `remove_shell_for_tab` function L536-540 — `(&mut self, tab_id: u64)` — Remove shell for a closed tab
-- pub `force_active_tab_redraw` function L543-548 — `(&mut self)` — Force redraw of active tab by clearing its content hash
+- pub `update_text_buffer` function L99-524 — `( &mut self, shared_gpu: &SharedGpuState, ) -> Option<TextBufferUpdateResult>` — Update text buffer for this window's active shell
+- pub `create_shell_for_tab` function L527-546 — `(&mut self, tab_id: u64, options: SpawnOptions)` — Create a shell for a new tab with spawn options
+- pub `active_shell_cwd` function L549-553 — `(&self) -> Option<std::path::PathBuf>` — Get the current working directory of the active tab's shell
+- pub `remove_shell_for_tab` function L556-560 — `(&mut self, tab_id: u64)` — Remove shell for a closed tab
+- pub `force_active_tab_redraw` function L563-568 — `(&mut self)` — Force redraw of active tab by clearing its content hash
 -  `interaction` module L5 — `-` — Per-window state including shells, GPU resources, and interaction state.
 -  `overrides` module L6 — `-` — Per-window state including shells, GPU resources, and interaction state.
 -  `render` module L7 — `-` — Per-window state including shells, GPU resources, and interaction state.
 -  `types` module L8 — `-` — Per-window state including shells, GPU resources, and interaction state.
 -  `ui` module L9 — `-` — Per-window state including shells, GPU resources, and interaction state.
--  `WindowState` type L63-549 — `= WindowState` — Per-window state including shells, GPU resources, and interaction state.
+-  `WindowState` type L63-569 — `= WindowState` — Per-window state including shells, GPU resources, and interaction state.
 
 #### src/window/overrides.rs
 
@@ -2453,13 +2569,15 @@
 - pub `PreparedCell` struct L78-93 — `{ character: char, x: f32, y: f32, fg_color: [f32; 4], bold: bool, italic: bool,...` — A cell prepared for rendering, with computed colors and routing.
 - pub `TerminalRenderData` struct L98-105 — `{ cells: Vec<PreparedCell>, cursor: CursorInfo, decorations: Vec<TextDecoration>...` — Renderer-agnostic terminal render data, prepared from terminal state.
 - pub `RenderLayout` struct L108-114 — `{ offset_x: f32, offset_y: f32, padding: f32, cell_width: f32, line_height: f32 ...` — Layout parameters for terminal rendering
-- pub `RenderContext` struct L117-133 — `{ layout: RenderLayout, display_offset: i32, cursor_viewport_line: i32, palette:...` — Context for preparing terminal render data (read-only references)
-- pub `prepare_render_cells` function L139-303 — `( collected_cells: &[CollectedCell], ctx: &RenderContext<'_>, ) -> (Vec<Prepared...` — Prepare terminal render data from collected cells.
-- pub `CachedRenderState` struct L307-320 — `{ decorations: Vec<TextDecoration>, cursor: Option<CursorInfo>, line_texts: std:...` — Cached rendering state that persists across frames
-- pub `RenderState` struct L326-339 — `{ dirty: bool, frame_count: u32, occluded: bool, focused: bool, cached: CachedRe...` — Render state (dirty tracking, frame count, visibility)
+- pub `RenderContext` struct L117-135 — `{ layout: RenderLayout, display_offset: i32, cursor_viewport_line: i32, palette:...` — Context for preparing terminal render data (read-only references)
+- pub `prepare_render_cells` function L141-314 — `( collected_cells: &[CollectedCell], ctx: &RenderContext<'_>, ) -> (Vec<Prepared...` — Prepare terminal render data from collected cells.
+- pub `CachedRenderState` struct L318-331 — `{ decorations: Vec<TextDecoration>, cursor: Option<CursorInfo>, line_texts: std:...` — Cached rendering state that persists across frames
+- pub `RenderState` struct L337-350 — `{ dirty: bool, frame_count: u32, occluded: bool, focused: bool, cached: CachedRe...` — Render state (dirty tracking, frame count, visibility)
 -  `CollectedCell` struct L66-73 — `{ col: usize, grid_line: i32, c: char, flags: CellFlags, fg: AnsiColor, bg: Ansi...` — Collected cell data for single-pass processing
--  `tests` module L342-435 — `-` — `prepare_render_cells()` function for renderer-agnostic terminal data.
--  `test_prepare_render_cells_smoke` function L347-434 — `()` — `prepare_render_cells()` function for renderer-agnostic terminal data.
+-  `tests` module L353-520 — `-` — `prepare_render_cells()` function for renderer-agnostic terminal data.
+-  `test_prepare_render_cells_smoke` function L358-447 — `()` — `prepare_render_cells()` function for renderer-agnostic terminal data.
+-  `underline_cells` function L449-455 — `(cells: &[CollectedCell], ctx: &RenderContext) -> usize` — `prepare_render_cells()` function for renderer-agnostic terminal data.
+-  `hovered_path_is_underlined` function L458-519 — `()` — `prepare_render_cells()` function for renderer-agnostic terminal data.
 
 #### src/window/types.rs
 

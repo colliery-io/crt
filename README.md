@@ -115,7 +115,7 @@ Create your own at `~/.config/crt/themes/mytheme.css` and set `name = "mytheme"`
 | Shift+Page Down | Scroll down through history |
 | Shift+Home | Jump to top of scrollback |
 | Shift+End | Jump to bottom |
-| Cmd+Click | Open URL under cursor |
+| Cmd+Click | Open URL or file path under cursor |
 
 </details>
 
@@ -161,6 +161,29 @@ cargo build --release
 ### Configuration
 
 Config lives at `~/.config/crt/config.toml`. Themes at `~/.config/crt/themes/`.
+
+#### Opening files
+
+Cmd+Click (Ctrl+Click on Linux) a file path in the terminal to open it. Absolute
+(`/etc/hosts`), home (`~/.config/crt/config.toml`), and relative (`src/main.rs`) paths are
+recognized; relative paths are resolved against the shell's current working directory, and a
+path is only clickable if it exists on disk. A trailing `:line` or `:line:col` (e.g.
+`src/main.rs:42`) is parsed for editors that support it. Paths containing spaces are
+recognized when quoted (`"My Folder/file.txt"`) or backslash-escaped
+(`My\ Folder/file.txt`).
+
+By default files open in the OS default app. To open them in an editor instead, set
+`open_file_command` — the placeholders `{file}`, `{line}`, `{col}` are substituted:
+
+```toml
+# Open in VS Code at the right line/column
+open_file_command = "code -g {file}:{line}:{col}"
+# Or Vim:
+# open_file_command = "vim +{line} {file}"
+```
+
+Note: paths are resolved against the *current* foreground process's working directory, which
+may differ from where older scrollback output was produced.
 
 ### Accessibility
 

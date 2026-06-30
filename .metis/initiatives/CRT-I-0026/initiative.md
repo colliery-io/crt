@@ -4,14 +4,14 @@ level: initiative
 title: "Tab Detachment to New Window"
 short_code: "CRT-I-0026"
 created_at: 2025-12-31T14:28:08.984646+00:00
-updated_at: 2026-03-26T16:20:41.720779+00:00
+updated_at: 2026-03-26T17:48:39.086909+00:00
 parent: CRT-V-0001
 blocked_by: []
 archived: false
 
 tags:
   - "#initiative"
-  - "#phase/active"
+  - "#phase/completed"
 
 
 exit_criteria_met: false

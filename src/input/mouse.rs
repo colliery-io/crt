@@ -16,10 +16,11 @@ use winit::event::{ElementState, Modifiers, MouseButton, MouseScrollDelta};
 use crate::window::{ContextMenuItem, WindowState};
 
 use super::{
-    MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT, find_url_at_position,
+    DetectedPath, DetectedUrl, MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT,
+    find_path_at_position, find_path_index_at_position, find_url_at_position,
     find_url_index_at_position, get_clipboard_content, get_terminal_selection_text,
     handle_tab_click, handle_terminal_mouse_button, handle_terminal_mouse_move,
-    handle_terminal_mouse_release, handle_terminal_scroll, open_url, paste_to_terminal,
+    handle_terminal_mouse_release, handle_terminal_scroll, open_file, open_url, paste_to_terminal,
     set_clipboard_content,
 };
 
@@ -71,6 +72,8 @@ pub fn screen_to_grid_position(x: f32, y: f32, layout: &GridLayout) -> Option<(u
 pub enum MouseClickTarget {
     /// Cmd+click on a URL at grid position (col, line)
     OpenUrl { col: usize, line: usize },
+    /// Cmd+click on a file path at grid position (col, line)
+    OpenFile { col: usize, line: usize },
     /// Left-click on a context menu submenu item
     ContextSubmenuItem,
     /// Left-click on a context menu main item
@@ -145,6 +148,37 @@ pub fn determine_click_target(
     }
 }
 
+/// Which detected link a Cmd+click cell targets.
+#[derive(Debug)]
+pub enum ClickLink<'a> {
+    /// A URL at this cell.
+    Url(&'a DetectedUrl),
+    /// A file path at this cell.
+    Path(&'a DetectedPath),
+    /// No link at this cell.
+    None,
+}
+
+/// Decide which detected link a `(col, line)` cell targets.
+///
+/// URLs take precedence over file paths when both overlap a cell, so a
+/// `file://` link (handled as a URL) or an `http(s)` link is never shadowed by
+/// path detection. Pure: no side effects.
+pub fn resolve_click_link<'a>(
+    urls: &'a [DetectedUrl],
+    paths: &'a [DetectedPath],
+    col: usize,
+    line: usize,
+) -> ClickLink<'a> {
+    if let Some(url) = find_url_at_position(urls, col, line) {
+        ClickLink::Url(url)
+    } else if let Some(path) = find_path_at_position(paths, col, line) {
+        ClickLink::Path(path)
+    } else {
+        ClickLink::None
+    }
+}
+
 /// Compute click count for multi-click detection (single, double, triple).
 ///
 /// Returns 1 for single click, 2 for double, 3 for triple. Cycles back to 1
@@ -206,16 +240,28 @@ pub fn handle_cursor_moved(state: &mut WindowState, x: f32, y: f32) {
     // Update selection if dragging
     handle_terminal_mouse_move(state, x, y);
 
-    // Check for URL hover and update underline state
+    // Check for URL / file-path hover and update underline state
     let layout = grid_layout_from_state(state);
-    let new_hovered = screen_to_grid_position(x, y, &layout)
-        .and_then(|(col, line)| {
-            find_url_index_at_position(&state.interaction.detected_urls, col, line)
-        });
+    let grid_pos = screen_to_grid_position(x, y, &layout);
+    let new_hovered_url = grid_pos.and_then(|(col, line)| {
+        find_url_index_at_position(&state.interaction.detected_urls, col, line)
+    });
+    // URLs take precedence: only consider a path hover when no URL is hovered,
+    // so overlapping detections never produce a double underline.
+    let new_hovered_path = if new_hovered_url.is_some() {
+        None
+    } else {
+        grid_pos.and_then(|(col, line)| {
+            find_path_index_at_position(&state.interaction.detected_paths, col, line)
+        })
+    };
 
-    // Redraw if hover state changed
-    if new_hovered != state.interaction.hovered_url_index {
-        state.interaction.hovered_url_index = new_hovered;
+    // Redraw if either hover state changed
+    if new_hovered_url != state.interaction.hovered_url_index
+        || new_hovered_path != state.interaction.hovered_path_index
+    {
+        state.interaction.hovered_url_index = new_hovered_url;
+        state.interaction.hovered_path_index = new_hovered_path;
         // Force content re-render to update decorations
         state.force_active_tab_redraw();
     }
@@ -229,6 +275,7 @@ pub fn handle_mouse_input(
     button: MouseButton,
     button_state: ElementState,
     modifiers: &Modifiers,
+    open_file_command: Option<&str>,
 ) -> bool {
     let (x, y) = state.interaction.cursor_position;
 
@@ -241,10 +288,40 @@ pub fn handle_mouse_input(
     if cmd_pressed && button == MouseButton::Left && button_state == ElementState::Pressed {
         let layout = grid_layout_from_state(state);
         if let Some((col, line)) = screen_to_grid_position(x, y, &layout) {
-            if let Some(url) = find_url_at_position(&state.interaction.detected_urls, col, line) {
-                log::info!("Opening URL: {}", url.url);
-                open_url(&url.url);
-                return true;
+            // Resolve to owned data first so we don't hold a borrow of `state`
+            // across the `active_shell_cwd()` call below.
+            let link = match resolve_click_link(
+                &state.interaction.detected_urls,
+                &state.interaction.detected_paths,
+                col,
+                line,
+            ) {
+                ClickLink::Url(url) => Some((Some(url.url.clone()), None)),
+                ClickLink::Path(path) => Some((
+                    None,
+                    Some((path.path.clone(), path.target_line, path.target_col)),
+                )),
+                ClickLink::None => None,
+            };
+            if let Some((url, path)) = link {
+                if let Some(url) = url {
+                    log::info!("Opening URL: {}", url);
+                    open_url(&url);
+                    return true;
+                }
+                if let Some((token, target_line, target_col)) = path {
+                    // Re-resolve against the same context the detector used so a
+                    // relative token becomes an absolute path before opening.
+                    let cwd = state.active_shell_cwd();
+                    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+                    if let Some(resolved) =
+                        crate::input::resolve_path(&token, cwd.as_deref(), home.as_deref())
+                    {
+                        log::info!("Opening file: {}", resolved.display());
+                        open_file(&resolved, target_line, target_col, open_file_command);
+                        return true;
+                    }
+                }
             }
         }
     }
@@ -565,6 +642,67 @@ mod tests {
             1,
         );
         assert_eq!(count, 1);
+    }
+
+    // ── resolve_click_link tests ───────────────────────────────────────
+
+    fn url_at(start: usize, end: usize) -> DetectedUrl {
+        DetectedUrl {
+            url: "https://example.com".to_string(),
+            start_col: start,
+            end_col: end,
+            line: 0,
+            end_line: 0,
+        }
+    }
+
+    fn path_at(start: usize, end: usize) -> DetectedPath {
+        DetectedPath {
+            path: "src/main.rs".to_string(),
+            target_line: None,
+            target_col: None,
+            exists: true,
+            start_col: start,
+            end_col: end,
+            line: 0,
+            end_line: 0,
+        }
+    }
+
+    #[test]
+    fn click_link_picks_url() {
+        let urls = vec![url_at(0, 5)];
+        let paths = vec![];
+        assert!(matches!(
+            resolve_click_link(&urls, &paths, 2, 0),
+            ClickLink::Url(_)
+        ));
+    }
+
+    #[test]
+    fn click_link_picks_path() {
+        let urls = vec![];
+        let paths = vec![path_at(0, 5)];
+        assert!(matches!(
+            resolve_click_link(&urls, &paths, 2, 0),
+            ClickLink::Path(_)
+        ));
+    }
+
+    #[test]
+    fn click_link_url_takes_precedence_on_overlap() {
+        // A URL and a path overlap the same cell → URL wins.
+        let urls = vec![url_at(0, 10)];
+        let paths = vec![path_at(0, 10)];
+        assert!(matches!(
+            resolve_click_link(&urls, &paths, 3, 0),
+            ClickLink::Url(_)
+        ));
+    }
+
+    #[test]
+    fn click_link_none_when_empty() {
+        assert!(matches!(resolve_click_link(&[], &[], 3, 0), ClickLink::None));
     }
 
     // ── determine_click_target tests ───────────────────────────────────

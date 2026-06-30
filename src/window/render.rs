@@ -123,6 +123,8 @@ pub struct RenderContext<'a> {
     pub default_bg: [f32; 4],
     pub hovered_url_index: Option<usize>,
     pub detected_urls: &'a [crate::input::DetectedUrl],
+    pub hovered_path_index: Option<usize>,
+    pub detected_paths: &'a [crate::input::DetectedPath],
     pub search_active: bool,
     pub search_matches: &'a [SearchMatch],
     pub current_match: usize,
@@ -215,28 +217,37 @@ pub fn prepare_render_cells(
             });
         }
 
-        // Check if this cell is part of the hovered URL
-        let in_hovered_url = if let Some(hovered_idx) = ctx.hovered_url_index
-            && let Some(url) = ctx.detected_urls.get(hovered_idx)
-        {
-            let vp_line = viewport_line as usize;
-            vp_line >= url.line
-                && vp_line <= url.end_line
-                && {
-                    if url.line == url.end_line {
-                        col >= url.start_col && col < url.end_col
-                    } else if vp_line == url.line {
-                        col >= url.start_col
-                    } else if vp_line == url.end_line {
-                        col < url.end_col
-                    } else {
-                        true
-                    }
-                }
-        } else {
-            false
-        };
-        if in_hovered_url {
+        // Check if this cell is part of the hovered URL or file path. Both draw
+        // the same underline; URL and path hover are mutually exclusive (the
+        // input layer clears the path hover whenever a URL is hovered).
+        let vp_line = viewport_line as usize;
+        let in_hovered_url = ctx
+            .hovered_url_index
+            .and_then(|idx| ctx.detected_urls.get(idx))
+            .is_some_and(|url| {
+                crate::input::is_position_in_span(
+                    url.start_col,
+                    url.end_col,
+                    url.line,
+                    url.end_line,
+                    col,
+                    vp_line,
+                )
+            });
+        let in_hovered_path = ctx
+            .hovered_path_index
+            .and_then(|idx| ctx.detected_paths.get(idx))
+            .is_some_and(|path| {
+                crate::input::is_position_in_span(
+                    path.start_col,
+                    path.end_col,
+                    path.line,
+                    path.end_line,
+                    col,
+                    vp_line,
+                )
+            });
+        if in_hovered_url || in_hovered_path {
             decorations.push(TextDecoration {
                 x,
                 y,
@@ -400,6 +411,8 @@ mod tests {
             default_bg,
             hovered_url_index: None,
             detected_urls: &[],
+            hovered_path_index: None,
+            detected_paths: &[],
             search_active: false,
             search_matches: &[],
             current_match: 0,
@@ -431,5 +444,77 @@ mod tests {
         assert_eq!(prepared[0].x, 10.0); // padding + 0 * cell_width
         assert_eq!(prepared[0].y, 10.0); // padding + 0 * line_height
         assert_eq!(prepared[1].x, 18.0); // padding + 1 * cell_width
+    }
+
+    fn underline_cells(cells: &[CollectedCell], ctx: &RenderContext) -> usize {
+        let (_prepared, decorations) = prepare_render_cells(cells, ctx);
+        decorations
+            .iter()
+            .filter(|d| d.kind == DecorationKind::Underline)
+            .count()
+    }
+
+    #[test]
+    fn hovered_path_is_underlined() {
+        let cells = vec![
+            CollectedCell {
+                col: 0,
+                grid_line: 0,
+                c: 'a',
+                flags: CellFlags::empty(),
+                fg: AnsiColor::Named(NamedColor::Foreground),
+                bg: AnsiColor::Named(NamedColor::Background),
+            },
+            CollectedCell {
+                col: 1,
+                grid_line: 0,
+                c: 'b',
+                flags: CellFlags::empty(),
+                fg: AnsiColor::Named(NamedColor::Foreground),
+                bg: AnsiColor::Named(NamedColor::Background),
+            },
+        ];
+        let palette = AnsiPalette::default();
+        // A path spanning cols 0..2 on viewport line 0.
+        let paths = vec![crate::input::DetectedPath {
+            path: "src/a.rs".to_string(),
+            target_line: None,
+            target_col: None,
+            exists: true,
+            start_col: 0,
+            end_col: 2,
+            line: 0,
+            end_line: 0,
+        }];
+
+        let mk_ctx = |hovered: Option<usize>| RenderContext {
+            layout: RenderLayout {
+                offset_x: 0.0,
+                offset_y: 0.0,
+                padding: 10.0,
+                cell_width: 8.0,
+                line_height: 16.0,
+            },
+            display_offset: 0,
+            cursor_viewport_line: 0,
+            palette: &palette,
+            default_fg: [1.0, 1.0, 1.0, 1.0],
+            default_bg: [0.0, 0.0, 0.0, 1.0],
+            hovered_url_index: None,
+            detected_urls: &[],
+            hovered_path_index: hovered,
+            detected_paths: &paths,
+            search_active: false,
+            search_matches: &[],
+            current_match: 0,
+            highlight_style: None,
+            has_semantic_zones: false,
+            get_line_zone: Box::new(|_| SemanticZone::Unknown),
+        };
+
+        // Hovered → both cells underlined.
+        assert_eq!(underline_cells(&cells, &mk_ctx(Some(0))), 2);
+        // Not hovered → no path underline.
+        assert_eq!(underline_cells(&cells, &mk_ctx(None)), 0);
     }
 }
